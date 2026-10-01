@@ -1,0 +1,109 @@
+/* The widget board and its tiles (macOS-style stack). Tokens only. Colour means state:
+   working = ok (green), waiting for you = warn (amber), done = info (blue), idle = grey. */
+.cs-boardwrap { min-block-size: 100dvh; padding: var(--sp-3); background: radial-gradient(circle at 15% 0%, var(--c-accent-soft), transparent 55%), radial-gradient(circle at 100% 100%, var(--c-gate-soft), transparent 50%), var(--c-bg); }
+.cs-board__bar { display: flex; align-items: center; gap: var(--sp-2); margin-block-end: var(--sp-3); }
+.cs-board__mark { color: var(--c-accent); display: inline-flex; }
+.cs-board__title { font-weight: var(--fw-semibold); }
+.cs-board { display: grid; gap: var(--sp-3); grid-template-columns: repeat(auto-fill, var(--tile)); grid-auto-rows: var(--tile); grid-auto-flow: dense; justify-content: center; }
+.cs-solo { display: grid; place-items: center; min-block-size: 100dvh; padding: var(--sp-2); background: var(--c-bg); }
+.cs-solo .cs-tile { inline-size: 100%; block-size: calc(100dvh - var(--sp-4)); }
+
+.cs-tile { position: relative; display: flex; flex-direction: column; gap: var(--sp-2); min-inline-size: 0; overflow: hidden; padding: var(--sp-3); border-radius: var(--r-xl); background: var(--c-surface-raised); border: var(--bw) solid var(--c-line); box-shadow: var(--sh-2); color: var(--c-text); font-size: var(--fs-s); }
+.cs-tile--m { grid-column: span 2; }
+.cs-tile--l { grid-column: span 2; grid-row: span 2; }
+.cs-tile--add { align-items: center; justify-content: center; border-style: dashed; border-color: var(--c-line-strong); background: transparent; box-shadow: none; color: var(--c-text-soft); font: inherit; cursor: pointer; }
+.cs-tile--add:hover { color: var(--c-accent); border-color: var(--c-accent); }
+.cs-tile__head { display: flex; align-items: center; gap: var(--sp-1); min-inline-size: 0; color: var(--c-text-soft); font-size: var(--fs-xs); font-weight: var(--fw-semibold); }
+.cs-tile__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--c-text); font-size: var(--fs-s); }
+.cs-tile__pick { max-inline-size: 50%; border: 0; border-radius: var(--r-m); background: var(--c-sunken); color: var(--c-text); font: inherit; font-size: var(--fs-xs); padding: var(--sp-1); }
+.cs-tile__quiet { margin: auto 0; color: var(--c-text-soft); }
+.cs-tile__big { font-family: var(--font-display); font-size: var(--fs-2xl); font-weight: var(--fw-semibold); line-height: var(--lh-tight); }
+.cs-tile__big--inline { font-size: var(--fs-l); color: var(--c-text); }
+.cs-tile__sub { color: var(--c-text-soft); font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; gap: var(--sp-1); }
+.cs-tile__note { margin-block-start: auto; color: var(--c-text-soft); font-size: var(--fs-xs); }
+.cs-tile__foot { margin-block-start: auto; text-align: center; }
+.cs-tile__name { font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--c-text-soft); }
+.cs-tile__muted { color: var(--c-text-soft); font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-tile__cta { margin-block-start: auto; align-self: flex-start; padding: var(--sp-1) var(--sp-3); border: 0; border-radius: var(--r-pill); background: var(--c-accent); color: var(--c-on-accent); font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold); cursor: pointer; }
+.cs-tile__pop { position: absolute; inset-block-start: var(--sp-2); inset-inline-end: var(--sp-2); display: none; padding: var(--sp-1); border: 0; border-radius: var(--r-pill); background: var(--c-sunken); color: var(--c-text-soft); cursor: pointer; }
+.cs-tile:hover .cs-tile__pop, .cs-tile__pop:focus-visible { display: inline-flex; }
+.cs-tile button:focus-visible, .cs-tile select:focus-visible { outline: var(--bw-strong) solid var(--c-focus); outline-offset: var(--bw); }
+
+/* rings: one per agent */
+.cs-ringbox { position: relative; display: inline-grid; place-items: center; inline-size: calc(var(--sp-8) * 0.9); block-size: calc(var(--sp-8) * 0.9); flex: none; }
+.cs-ring { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; }
+.cs-ring__track { fill: none; stroke: var(--c-sunken); stroke-width: 4.5; }
+.cs-ring__bar { fill: none; stroke: var(--c-line-strong); stroke-width: 4.5; stroke-linecap: round; transition: stroke-dasharray var(--dur-slow) var(--ease); }
+.cs-ring--working .cs-ring__bar { stroke: var(--c-ok); }
+.cs-ring--waiting .cs-ring__bar { stroke: var(--c-warn); }
+.cs-ring--done .cs-ring__bar { stroke: var(--c-info); }
+.cs-ring__in { position: relative; font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--c-text); }
+.cs-tile__rings4 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); place-items: center; flex: 1; }
+.cs-tile__ringrow { display: flex; justify-content: space-around; gap: var(--sp-2); flex: 1; align-items: center; }
+.cs-tile__ringgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sp-2); flex: 1; align-content: start; }
+.cs-tile__agent { display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); min-inline-size: 0; text-align: center; }
+.cs-tile__agentname { max-inline-size: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); font-weight: var(--fw-medium); }
+.cs-tile__agentstate { font-size: var(--fs-xs); }
+.cs-tile__legend { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); color: var(--c-text-soft); font-size: var(--fs-xs); }
+.cs-tile__legend > span { display: inline-flex; align-items: center; gap: var(--sp-1); }
+
+/* state colours */
+.cs-st--working { color: var(--c-ok); }
+.cs-st--waiting { color: var(--c-warn); }
+.cs-st--done { color: var(--c-info); }
+.cs-st--idle { color: var(--c-text-soft); }
+.cs-st--danger { color: var(--c-danger); }
+.cs-dotst { display: inline-block; inline-size: var(--sp-2); block-size: var(--sp-2); border-radius: var(--r-pill); background: var(--c-line-strong); flex: none; }
+.cs-dotst--working { background: var(--c-ok); }
+.cs-dotst--waiting { background: var(--c-warn); }
+.cs-dotst--done { background: var(--c-info); }
+.cs-dotst--danger { background: var(--c-danger); }
+
+/* spending */
+.cs-tile__provs { display: flex; flex-direction: column; gap: var(--sp-1); }
+.cs-tile__prov { display: grid; grid-template-columns: calc(var(--sp-8) * 0.9) 1fr max-content; align-items: center; gap: var(--sp-2); font-size: var(--fs-xs); }
+.cs-tile__provname { font-weight: var(--fw-semibold); }
+.cs-tile__provbar { block-size: var(--sp-2); border-radius: var(--r-pill); background: var(--c-sunken); overflow: hidden; }
+.cs-tile__provfill { display: block; block-size: 100%; inline-size: var(--pct, 0%); border-radius: var(--r-pill); background: currentColor; }
+.cs-tile__provval { font-variant-numeric: tabular-nums; }
+.cs-prov--claude { color: var(--c-gate); }
+.cs-prov--codex { color: var(--c-info); }
+.cs-prov--gemini { color: var(--c-accent); }
+.cs-prov--copilot { color: var(--c-ok); }
+.cs-tile__days { display: flex; align-items: flex-end; gap: var(--bw-strong); block-size: var(--sp-8); }
+.cs-tile__day { flex: 1; block-size: var(--pct, 3%); border-radius: var(--r-s); background: var(--c-gate); }
+.cs-tile__folders { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); color: var(--c-text-soft); font-size: var(--fs-xs); }
+
+/* workflow steps */
+.cs-tile__steps { list-style: none; margin: 0; padding: 0; display: flex; align-items: flex-start; flex: 1; }
+.cs-tile__step { position: relative; flex: 1; display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); min-inline-size: 0; color: var(--c-text-soft); }
+.cs-tile__step + .cs-tile__step::before { content: ""; position: absolute; inset-block-start: calc(var(--sp-5) / 2); inset-inline-end: 50%; inline-size: 100%; border-block-start: var(--bw-strong) solid var(--c-line); z-index: 0; }
+.cs-tile__stepdot { position: relative; z-index: 1; display: inline-grid; place-items: center; inline-size: var(--sp-5); block-size: var(--sp-5); border-radius: var(--r-pill); border: var(--bw-strong) solid var(--c-line-strong); background: var(--c-surface-raised); font-size: var(--fs-xs); font-weight: var(--fw-semibold); }
+.cs-tile__step.cs-st--working .cs-tile__stepdot { border-color: var(--c-ok); background: var(--c-ok-soft); }
+.cs-tile__step.cs-st--waiting .cs-tile__stepdot { border-color: var(--c-warn); background: var(--c-warn-soft); }
+.cs-tile__step.cs-st--done .cs-tile__stepdot { border-color: var(--c-info); background: var(--c-info); color: var(--c-on-accent); }
+.cs-tile__steplabel { max-inline-size: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); }
+
+/* lists, rows, stats */
+.cs-tile__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); min-inline-size: 0; }
+.cs-tile__list > li { display: flex; align-items: center; gap: var(--sp-2); min-inline-size: 0; }
+.cs-tile__row { display: flex; align-items: center; gap: var(--sp-2); inline-size: 100%; min-inline-size: 0; padding: var(--sp-1); border: 0; border-radius: var(--r-m); background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.cs-tile__row:hover { background: var(--c-hover); }
+.cs-tile__rowtext { display: flex; flex-direction: column; flex: 1; min-inline-size: 0; }
+.cs-tile__rowtext strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--fw-medium); }
+.cs-tile__go { flex: none; font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--c-accent); }
+.cs-tile__badge { flex: none; font-size: var(--fs-xs); font-weight: var(--fw-semibold); }
+.cs-tile__stats { display: flex; gap: var(--sp-3); }
+.cs-tile__stat { display: flex; flex-direction: column; font-size: var(--fs-xs); }
+.cs-tile__stat strong { font-family: var(--font-display); font-size: var(--fs-xl); line-height: var(--lh-tight); }
+
+/* edit mode */
+.cs-board--editing .cs-tile:not(.cs-tile--add) { outline: var(--bw-strong) dashed var(--c-accent); outline-offset: calc(var(--bw-strong) * -1); }
+.cs-tile__edit { position: absolute; inset-inline: 0; inset-block-end: 0; display: flex; justify-content: center; gap: var(--sp-1); padding: var(--sp-2); background: linear-gradient(to top, var(--c-surface-raised), transparent); }
+.cs-tile__ctl { display: inline-grid; place-items: center; min-inline-size: var(--sp-6); block-size: var(--sp-6); padding: 0 var(--sp-1); border: var(--bw) solid var(--c-line-strong); border-radius: var(--r-pill); background: var(--c-surface-raised); color: var(--c-text); font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold); cursor: pointer; }
+.cs-tile__ctl:disabled { opacity: 0.4; cursor: default; }
+.cs-tile__ctl--x { color: var(--c-danger); }
+.cs-gallery { display: grid; gap: var(--sp-3); grid-template-columns: repeat(auto-fill, minmax(var(--w-s), 1fr)); }
+.cs-gallery__item { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); border: var(--bw) solid var(--c-line); border-radius: var(--r-l); }
+.cs-gallery__item p { margin: 0; }
+.cs-tile__ctl--on { background: var(--c-accent); border-color: var(--c-accent); color: var(--c-on-accent); }

@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "projectId": "sample_test",
+  "updatedAt": "2026-09-30T10:34:56.598Z",
+  "idea": "a basic check for the system ",
+  "brief": {
+    "name": "sample-test",
+    "what": "a basic check for the system ",
+    "who": "Single user, this PC, local only.",
+    "mustHave": [],
+    "notDoing": [],
+    "constraints": { "deadline": "", "budget": "", "stack": "", "platforms": "", "compliance": "" },
+    "existingCode": "None",
+    "howFar": "production",
+    "anythingElse": ""
+  },
+  "lanes": { "frontend": true, "backend": true, "migrations": false, "contract": true },
+  "localOnly": true,
+  "humanDoesGit": true,
+  "phases": [
+    { "id": "research", "title": "Research", "enabled": true, "gate": { "enabled": true, "label": "Choose among the options" }, "agents": [], "skills": [], "notes": "" },
+    { "id": "plan", "title": "Plan", "enabled": true, "gate": { "enabled": true, "label": "Answer the open questions" }, "agents": [], "skills": [], "notes": "" },
+    { "id": "stack", "title": "Stack", "enabled": true, "gate": { "enabled": true, "label": "G3: accept or amend the stack ADR" }, "agents": [], "skills": [], "notes": "" },
+    { "id": "security", "title": "Security design review", "enabled": true, "gate": { "enabled": false, "label": "Findings are shown at G3" }, "agents": [], "skills": [], "notes": "" },
+    { "id": "split", "title": "Split", "enabled": true, "gate": { "enabled": true, "label": "G1: ratify the split" }, "agents": [], "skills": [], "notes": "" },
+    { "id": "design", "title": "Design", "enabled": true, "gate": { "enabled": true, "label": "G2: pick a direction" }, "agents": [], "skills": [], "notes": "" },
+    { "id": "build", "title": "Build", "enabled": true, "gate": { "enabled": true, "label": "Task completion gates" }, "agents": [], "skills": [], "notes": "" },
+    { "id": "deploy", "title": "Deploy", "enabled": true, "gate": { "enabled": true, "label": "Choose the deployment target" }, "agents": [], "skills": [], "notes": "" }
+  ],
+  "pins": []
+}

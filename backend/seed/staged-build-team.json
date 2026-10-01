@@ -1,0 +1,519 @@
+{
+  "schema": "circle-workflow/1",
+  "name": "Staged build team",
+  "version": "1.0.0",
+  "description": "Idea to working software in eight stages, with a human gate at each decision. Every agent names the engine and model that runs it.",
+  "lanes": {
+    "frontend": true,
+    "backend": true,
+    "contract": true,
+    "migrations": false
+  },
+  "flags": {
+    "localOnly": true,
+    "humanDoesGit": true
+  },
+  "links": [],
+  "nodes": [
+    {
+      "id": "you",
+      "kind": "human",
+      "title": "You",
+      "does": "Decides at every checkpoint that waits for you."
+    },
+    {
+      "id": "research",
+      "kind": "stage",
+      "title": "Research",
+      "gate": {
+        "on": true,
+        "label": "Pick one of the options"
+      },
+      "needs": [],
+      "skills": [],
+      "links": [],
+      "notes": ""
+    },
+    {
+      "id": "researcher",
+      "kind": "agent",
+      "parent": "research",
+      "title": "researcher",
+      "does": "Scrapes the web for prior art, competitors, pricing, libraries and standards before anything is planned or split. Produces options with evidence, never a single recommendation. One-shot per question.",
+      "engine": "claude",
+      "model": "haiku",
+      "consult": [
+        "gemini",
+        "copilot",
+        "codex"
+      ],
+      "optional": true,
+      "defaultOn": true,
+      "skills": [],
+      "links": []
+    },
+    {
+      "id": "business-auditor",
+      "kind": "agent",
+      "parent": "research",
+      "title": "business-auditor",
+      "does": "Audits whether the thing is worth building at all - unit economics, demand evidence, regulatory exposure, competitive moat. Optional: switch it off when the project does not need it. One-shot.",
+      "engine": "claude",
+      "model": "sonnet",
+      "consult": [
+        "gemini",
+        "copilot",
+        "codex"
+      ],
+      "optional": true,
+      "defaultOn": false,
+      "skills": [],
+      "links": []
+    },
+    {
+      "id": "scaler",
+      "kind": "agent",
+      "parent": "research",
+      "title": "scaler",
+      "does": "Asks whether this design survives growth - load, cost curve, team size, data volume - and names the first thing that breaks. Optional: switch it off when the project does not need it. One-shot.",
+      "engine": "claude",
+      "model": "sonnet",
+      "consult": [
+        "gemini",
+        "copilot",
+        "codex"
+      ],
+      "optional": true,
+      "defaultOn": false,
+      "skills": [],
+      "links": []
+    },
+    {
+      "id": "plan",
+      "kind": "stage",
+      "title": "Plan",
+      "gate": {
+        "on": true,
+        "label": "Answer the open questions"
+      },
+      "needs": [],
+      "skills": [],
+      "links": [],
+      "notes": ""
+    },
+    {
+      "id": "planner",
+      "kind": "agent",
+      "parent": "plan",
+      "title": "planner",
+      "does": "Produces the master plan and ADRs before any split or build. One-shot.",
+      "engine": "claude",
+      "model": "sonnet",
+      "consult": [
+        "gemini",
+        "copilot",
+        "codex"
+      ],
+      "optional": false,
+      "defaultOn": true,
+      "skills": [],
+      "links": []
+    },
+    {
+      "id": "stack",
+      "kind": "stage",
+      "title": "Stack",
+      "gate": {
+        "on": true,
+        "label": "Accept the stack choice (the stack ADR)"
+      },
+      "needs": [
+        "plan"
+      ],
+      "skills": [],
+      "links": [],
+      "notes": ""
+    },
+    {
+      "id": "stack-advisor",
+      "kind": "agent",
+      "parent": "stack",
+      "title": "stack-advisor",
+      "does": "Turns the human's stated stack preferences into options with explicit drawbacks, writes the stack ADR as proposed, then exits. One-shot.",
+      "engine": "claude",
+      "model": "sonnet",
+      "consult": [
+        "gemini",
+        "copilot",
+        "codex"
+      ],
+      "optional": false,
+      "defaultOn": true,
+      "skills": [],
+      "links": []
+    },
+    {
+      "id": "security-review",
+      "kind": "stage",
+      "title": "Security design review",
+      "gate": {
+        "on": true,
+        "label": "Read the security findings"
+      },
+      "needs": [
+        "stack"
+      ],
+      "skills": [],
+      "links": [],
+      "notes": ""
+    },
+    {
+      "id": "security",
+      "kind": "agent",
+      "parent": "security-review",
+      "title": "security",
+      "does": "Reviews the plan and decision records for design flaws before any code exists, then scans source, containers and data handling against the project rules. Read-only on source; writes findings only.",
+      "engine": "claude",
+      "model": "opus",
+      "consult": [
+        "copilot",
+        "gemini",
+        "codex"
+      ],
+      "optional": true,
+      "defaultOn": true,
+      "skills": [],
+      "links": []
+    },
+    {
+      "id": "split",
+      "kind": "stage",
+      "title": "Split",
+      "gate": {
+        "on": true,
+        "label": "Approve how the work is split"
+      },
+      "needs": [
+        "stack"
+      ],
+      "skills": [],
+      "links": [],
+      "notes": ""
+    },
+    {
+      "id": "splitter",
+      "kind": "agent",
+      "parent": "split",
+      "title": "splitter",
+      "does": "Produces contracts/split.json — the frontend/backend split and the shared contract region. Works from the brief, the plan and the accepted stack ADR; reads source code only when the project already has code. One-shot.",
+      "engine": "claude",
+      "model": "opus",
+      "consult": [
+        "copilot",
+        "gemini",
+        "codex"
+      ],
+      "optional": false,
+      "defaultOn": true,
+      "skills": [],
+      "links": []
+    },
+    {
+      "id": "design",
+      "kind": "stage",
+      "title": "Design",
+      "gate": {
+        "on": true,
+        "label": "Pick a design direction"
+      },
+      "needs": [
+        "split"
+      ],
+      "skills": [],
+      "links": [],
+      "notes": "",
+      "skipWhen": "the project has no frontend"
+    },
+    {
+      "id": "designer",
+      "kind": "agent",
+      "parent": "design",
+      "title": "designer",
+      "does": "Produces at least three distinct design directions with tradeoffs, asking other engines for reference research. One-shot. Never renders components.",
+      "engine": "claude",
+      "model": "haiku",
+      "consult": [
+        "gemini",
+        "copilot",
+        "codex"
+      ],
+      "optional": false,
+      "defaultOn": true,
+      "skills": [],
+      "links": []
+    },
+    {
+      "id": "design-tooling",
+      "kind": "agent",
+      "parent": "design",
+      "title": "design-tooling",
+      "does": "Turns the ratified design decision into concrete tokens and assets via Figma/Stitch MCP. Runs in either display mode.",
+      "engine": "claude",
+      "model": "haiku",
+      "consult": [
+        "gemini",
+        "copilot",
+        "codex"
+      ],
+      "optional": false,
+      "defaultOn": true,
+      "skills": [],
+      "links": []
+    },
+    {
+      "id": "build",
+      "kind": "stage",
+      "title": "Build",
+      "gate": {
+        "on": true,
+        "label": "Check the finished work"
+      },
+      "needs": [
+        "split",
+        "stack"
+      ],
+      "skills": [],
+      "links": [],
+      "notes": ""
+    },
+    {
+      "id": "fe-builder",
+      "kind": "agent",
+      "parent": "build",
+      "title": "fe-builder",
+      "does": "Builds the frontend. Sole writer of frontend/**. Consumes generated types and design tokens; never edits contracts.",
+      "engine": "claude",
+      "model": "sonnet",
+      "consult": [
+        "copilot",
+        "gemini",
+        "codex"
+      ],
+      "optional": false,
+      "defaultOn": true,
+      "skills": [],
+      "links": []
+    },
+    {
+      "id": "be-builder",
+      "kind": "agent",
+      "parent": "build",
+      "title": "be-builder",
+      "does": "Builds the backend. Sole writer of backend/** except migrations. Never edits contracts or migrations.",
+      "engine": "claude",
+      "model": "sonnet",
+      "consult": [
+        "copilot",
+        "gemini",
+        "codex"
+      ],
+      "optional": false,
+      "defaultOn": true,
+      "skills": [],
+      "links": []
+    },
+    {
+      "id": "executor",
+      "kind": "agent",
+      "parent": "build",
+      "title": "executor",
+      "does": "The only agent permitted to write contracts/** and README.md. Applies ratified common-region changes and nothing else.",
+      "engine": "claude",
+      "model": "opus",
+      "consult": [
+        "copilot",
+        "gemini",
+        "codex"
+      ],
+      "optional": false,
+      "defaultOn": true,
+      "skills": [],
+      "links": []
+    },
+    {
+      "id": "versioner",
+      "kind": "agent",
+      "parent": "build",
+      "title": "versioner",
+      "does": "Keeps the change history tidy: detects breaking changes and drafts commit messages for you to run. Never runs git write commands itself; you do git.",
+      "engine": "claude",
+      "model": "sonnet",
+      "consult": [
+        "copilot",
+        "gemini",
+        "codex"
+      ],
+      "optional": false,
+      "defaultOn": true,
+      "skills": [],
+      "links": []
+    },
+    {
+      "id": "migrator",
+      "kind": "agent",
+      "parent": "build",
+      "title": "migrator",
+      "does": "Sole writer of backend/migrations/**. Schema changes only, forward and reverse.",
+      "engine": "claude",
+      "model": "sonnet",
+      "consult": [
+        "copilot",
+        "gemini",
+        "codex"
+      ],
+      "optional": true,
+      "defaultOn": true,
+      "skills": [],
+      "links": []
+    },
+    {
+      "id": "connector",
+      "kind": "agent",
+      "parent": "build",
+      "title": "connector",
+      "does": "Owns contract tests. Proves frontend and backend actually agree. Read-only outside tests/contract/**.",
+      "engine": "claude",
+      "model": "sonnet",
+      "consult": [
+        "copilot",
+        "gemini",
+        "codex"
+      ],
+      "optional": true,
+      "defaultOn": true,
+      "skills": [],
+      "links": []
+    },
+    {
+      "id": "qa",
+      "kind": "agent",
+      "parent": "build",
+      "title": "qa",
+      "does": "Correctness testing distinct from security. Owns tests/** outside tests/contract/.",
+      "engine": "claude",
+      "model": "sonnet",
+      "consult": [
+        "copilot",
+        "gemini",
+        "codex"
+      ],
+      "optional": true,
+      "defaultOn": true,
+      "skills": [],
+      "links": []
+    },
+    {
+      "id": "texter",
+      "kind": "agent",
+      "parent": "build",
+      "title": "texter",
+      "does": "One-shot dispatcher. After a recorded decision changes what the team must build, turns it into task orders for the affected agents, messages them, and raises any discrepancy to the human instead of guessing. Sole writer of docs/tasks/**.",
+      "engine": "claude",
+      "model": "sonnet",
+      "consult": [
+        "gemini",
+        "copilot",
+        "codex"
+      ],
+      "optional": false,
+      "defaultOn": true,
+      "skills": [],
+      "links": []
+    },
+    {
+      "id": "auditor",
+      "kind": "agent",
+      "parent": "build",
+      "title": "auditor",
+      "does": "Read-only independent review of a proposed common-region change. Spawned per change request, exits after.",
+      "engine": "claude",
+      "model": "opus",
+      "consult": [
+        "copilot",
+        "gemini",
+        "codex"
+      ],
+      "optional": false,
+      "defaultOn": true,
+      "skills": [],
+      "links": []
+    },
+    {
+      "id": "deploy",
+      "kind": "stage",
+      "title": "Deploy",
+      "gate": {
+        "on": true,
+        "label": "Choose where it runs"
+      },
+      "needs": [
+        "build"
+      ],
+      "skills": [],
+      "links": [],
+      "notes": ""
+    },
+    {
+      "id": "deployer",
+      "kind": "agent",
+      "parent": "deploy",
+      "title": "deployer",
+      "does": "After frontend and backend exist, works out where and how to deploy them from the human's actual constraints - budget, region, ops appetite, compliance - and writes the runbook. Sole writer of deploy/**.",
+      "engine": "claude",
+      "model": "sonnet",
+      "consult": [
+        "gemini",
+        "copilot",
+        "codex"
+      ],
+      "optional": true,
+      "defaultOn": true,
+      "skills": [],
+      "links": []
+    }
+  ],
+  "edges": [
+    {
+      "from": "you",
+      "to": "research"
+    },
+    {
+      "from": "research",
+      "to": "plan"
+    },
+    {
+      "from": "plan",
+      "to": "stack"
+    },
+    {
+      "from": "stack",
+      "to": "security-review"
+    },
+    {
+      "from": "security-review",
+      "to": "split"
+    },
+    {
+      "from": "split",
+      "to": "design"
+    },
+    {
+      "from": "design",
+      "to": "build"
+    },
+    {
+      "from": "build",
+      "to": "deploy"
+    }
+  ]
+}
