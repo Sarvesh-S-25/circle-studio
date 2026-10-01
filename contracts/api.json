@@ -1,0 +1,468 @@
+{
+  "_comment": "The shared contract between frontend/ and backend/. Every HTTP route the backend serves under /api is listed here and nothing else; every request the frontend builds targets one of these. tests/contract/routes.test.mjs enforces both directions and fails closed on any path it cannot read as a literal.",
+  "version": 1,
+  "routes": [
+    {
+      "id": "app.health",
+      "method": "GET",
+      "path": "/api/health",
+      "doc": "Claude CLI login state, node version, data dir."
+    },
+    {
+      "id": "app.state",
+      "method": "GET",
+      "path": "/api/state",
+      "doc": "Taskbar data: recent projects and most-used skills."
+    },
+    {
+      "id": "stats.get",
+      "method": "GET",
+      "path": "/api/stats",
+      "doc": "Dashboard numbers per project, and what is running now."
+    },
+    {
+      "id": "system.pickFolder",
+      "method": "POST",
+      "path": "/api/system/pick-folder",
+      "doc": "Show the Windows folder dialog on this PC and return the chosen path."
+    },
+    {
+      "id": "skills.list",
+      "method": "GET",
+      "path": "/api/skills",
+      "doc": "Every skill in the local library."
+    },
+    {
+      "id": "skills.get",
+      "method": "GET",
+      "path": "/api/skills/:name",
+      "doc": "One skill: SKILL.md text and its extra files."
+    },
+    {
+      "id": "skills.save",
+      "method": "PUT",
+      "path": "/api/skills/:name",
+      "doc": "Create or replace a skill's SKILL.md in the library."
+    },
+    {
+      "id": "skills.remove",
+      "method": "DELETE",
+      "path": "/api/skills/:name",
+      "doc": "Delete a skill from the library (not from projects)."
+    },
+    {
+      "id": "skills.use",
+      "method": "POST",
+      "path": "/api/skills/:name/use",
+      "doc": "Bump the usage counter behind the taskbar."
+    },
+    {
+      "id": "skills.scan",
+      "method": "POST",
+      "path": "/api/skills/scan",
+      "doc": "List the skills found in a public GitHub repo URL."
+    },
+    {
+      "id": "skills.fetch",
+      "method": "POST",
+      "path": "/api/skills/fetch",
+      "doc": "Download the picked skills from a GitHub repo into the library."
+    },
+    {
+      "id": "import.files",
+      "method": "POST",
+      "path": "/api/import",
+      "doc": "Import dropped files (a folder or .md) into the library."
+    },
+    {
+      "id": "projects.list",
+      "method": "GET",
+      "path": "/api/projects",
+      "doc": "Registered projects, recent first."
+    },
+    {
+      "id": "projects.add",
+      "method": "POST",
+      "path": "/api/projects",
+      "doc": "Register an existing project folder."
+    },
+    {
+      "id": "projects.create",
+      "method": "POST",
+      "path": "/api/projects/create",
+      "doc": "Preview (confirm:false) or create a project from a template: writes the rendered files after the diff is confirmed."
+    },
+    {
+      "id": "projects.get",
+      "method": "GET",
+      "path": "/api/projects/:id",
+      "doc": "Inspect a project: agents, skills, models, engines, roster."
+    },
+    {
+      "id": "projects.remove",
+      "method": "DELETE",
+      "path": "/api/projects/:id",
+      "doc": "Forget a project (files stay)."
+    },
+    {
+      "id": "projects.health",
+      "method": "GET",
+      "path": "/api/projects/:id/health",
+      "doc": "Freezes, proposed ADRs, secrets in .mcp.json, git mode, board."
+    },
+    {
+      "id": "projects.plan.get",
+      "method": "GET",
+      "path": "/api/projects/:id/plan",
+      "doc": "The plan: phases, gates, attached skills and agents, pins."
+    },
+    {
+      "id": "projects.plan.save",
+      "method": "PUT",
+      "path": "/api/projects/:id/plan",
+      "doc": "Save the plan inside the app (no project files written)."
+    },
+    {
+      "id": "projects.permissions",
+      "method": "PUT",
+      "path": "/api/projects/:id/permissions",
+      "doc": "Change what Circle Studio may do in a project: change files, run its scripts, send text to Claude."
+    },
+    {
+      "id": "projects.file",
+      "method": "GET",
+      "path": "/api/projects/:id/file",
+      "doc": "Read one project file (?path=...), read-only."
+    },
+    {
+      "id": "projects.chat.get",
+      "method": "GET",
+      "path": "/api/projects/:id/chat",
+      "doc": "Stored chat transcript for a project."
+    },
+    {
+      "id": "projects.chat.reset",
+      "method": "DELETE",
+      "path": "/api/projects/:id/chat",
+      "doc": "Forget the stored chat transcript and start a new conversation."
+    },
+    {
+      "id": "projects.chat.link",
+      "method": "POST",
+      "path": "/api/projects/:id/chat/link",
+      "doc": "Continue a Claude Code conversation from the terminal in this chat ({nodeId?, sessionId}). The first turn forks it."
+    },
+    {
+      "id": "projects.history.list",
+      "method": "GET",
+      "path": "/api/projects/:id/history",
+      "doc": "The Claude Code conversations held in this folder outside the app (read only), and the runs of a node's agent."
+    },
+    {
+      "id": "projects.history.get",
+      "method": "GET",
+      "path": "/api/projects/:id/history/:sid",
+      "doc": "One Claude Code conversation (or ?run=agent-x, one subagent run in it) as chat messages, redacted."
+    },
+    {
+      "id": "changes.preview",
+      "method": "POST",
+      "path": "/api/changes/preview",
+      "doc": "Turn edit operations into a diff. Writes nothing."
+    },
+    {
+      "id": "changes.apply",
+      "method": "POST",
+      "path": "/api/changes/apply",
+      "doc": "Apply a previewed change set to the real files."
+    },
+    {
+      "id": "chat.send",
+      "method": "POST",
+      "path": "/api/chat",
+      "doc": "Stream a turn from the chosen engine in the project folder (server-sent events, including approval and question requests)."
+    },
+    {
+      "id": "chat.stop",
+      "method": "POST",
+      "path": "/api/chat/stop",
+      "doc": "Stop a running chat or advisor process."
+    },
+    {
+      "id": "advisor.run",
+      "method": "POST",
+      "path": "/api/advisor",
+      "doc": "Ask the claude CLI what to keep, build and fix in a file."
+    },
+    {
+      "id": "engines.list",
+      "method": "GET",
+      "path": "/api/engines",
+      "doc": "Every engine (claude, codex, gemini, copilot): installed, version, login state, what it can do. No model call."
+    },
+    {
+      "id": "engines.check",
+      "method": "POST",
+      "path": "/api/engines/check",
+      "doc": "Re-detect every engine now (bypasses the short cache)."
+    },
+    {
+      "id": "requests.list",
+      "method": "GET",
+      "path": "/api/requests",
+      "doc": "The Inbox: approvals and questions agents raised (?status=pending|all&projectId=)."
+    },
+    {
+      "id": "alerts.list",
+      "method": "GET",
+      "path": "/api/alerts",
+      "doc": "Questions a team's texter raised for the human in docs/tasks/ALERTS.md, across all projects (?status=open|all). Answered by changes.preview/apply with the alert-answer op."
+    },
+    {
+      "id": "requests.respond",
+      "method": "POST",
+      "path": "/api/requests/:id/respond",
+      "doc": "Answer a pending approval or question: allow, deny or answer."
+    },
+    {
+      "id": "events.stream",
+      "method": "GET",
+      "path": "/api/events",
+      "doc": "Server-sent events for the whole app: request, request-resolved, run, usage."
+    },
+    {
+      "id": "projects.live",
+      "method": "GET",
+      "path": "/api/projects/:id/live",
+      "doc": "Runs in this project right now, per graph node: status, tokens, context, pending requests."
+    },
+    {
+      "id": "templates.list",
+      "method": "GET",
+      "path": "/api/templates",
+      "doc": "Saved workflow templates."
+    },
+    {
+      "id": "templates.create",
+      "method": "POST",
+      "path": "/api/templates",
+      "doc": "Create a template: blank, from another template, or from a workflow."
+    },
+    {
+      "id": "templates.import",
+      "method": "POST",
+      "path": "/api/templates/import",
+      "doc": "Import a workflow.json (path or pasted JSON) as a new template. Reads that one file only."
+    },
+    {
+      "id": "templates.get",
+      "method": "GET",
+      "path": "/api/templates/:id",
+      "doc": "One template with its workflow and version history."
+    },
+    {
+      "id": "templates.save",
+      "method": "PUT",
+      "path": "/api/templates/:id",
+      "doc": "Save a template: appends a semantic version."
+    },
+    {
+      "id": "templates.remove",
+      "method": "DELETE",
+      "path": "/api/templates/:id",
+      "doc": "Delete a template (projects made from it keep their own copy)."
+    },
+    {
+      "id": "workflow.get",
+      "method": "GET",
+      "path": "/api/projects/:id/workflow",
+      "doc": "A project's workflow graph, its version history and lint warnings."
+    },
+    {
+      "id": "workflow.save",
+      "method": "PUT",
+      "path": "/api/projects/:id/workflow",
+      "doc": "Save a project's workflow (appends a version) and optionally write files through the diff review."
+    },
+    {
+      "id": "workflow.restore",
+      "method": "POST",
+      "path": "/api/projects/:id/workflow/restore",
+      "doc": "Restore an older version as a new version."
+    },
+    {
+      "id": "workflow.suggest",
+      "method": "POST",
+      "path": "/api/projects/:id/workflow/suggest",
+      "doc": "Ask the workflow helper (Claude, no tools) to answer or propose a better workflow. Writes nothing."
+    },
+    {
+      "id": "settings.get",
+      "method": "GET",
+      "path": "/api/settings",
+      "doc": "App settings (desktop alerts, update checks) and which app shortcuts exist."
+    },
+    {
+      "id": "settings.save",
+      "method": "PUT",
+      "path": "/api/settings",
+      "doc": "Change app settings: {desktopAlerts?, updates?:{check:\"daily\"|\"off\"}}."
+    },
+    {
+      "id": "desktop.shortcut",
+      "method": "POST",
+      "path": "/api/desktop/shortcut",
+      "doc": "Make or remove a Windows shortcut: {where:\"desktop\"|\"startmenu\"|\"startup\", projectId?, remove?}. A project shortcut opens its widget."
+    },
+    {
+      "id": "desktop.status",
+      "method": "GET",
+      "path": "/api/desktop/status",
+      "doc": "Which shortcuts exist, for the app or ?projectId=."
+    },
+    {
+      "id": "desktop.open",
+      "method": "POST",
+      "path": "/api/desktop/open",
+      "doc": "Open an app window: {kind:\"app\"|\"widget\", projectId?}."
+    },
+    {
+      "id": "projects.git",
+      "method": "GET",
+      "path": "/api/projects/:id/git",
+      "doc": "Read-only git state, and GitHub Actions runs and open pull requests when turned on for the project (?fresh=1 skips the one-minute cache)."
+    },
+    {
+      "id": "projects.git.github",
+      "method": "PUT",
+      "path": "/api/projects/:id/git/github",
+      "doc": "Turn GitHub reads on or off for a project: {on}."
+    },
+    {
+      "id": "projects.pulse",
+      "method": "GET",
+      "path": "/api/projects/:id/pulse",
+      "doc": "Everything a project's widget shows: live runs, pending requests and team questions, workflow stages, git, numbers, the last Claude Code conversation."
+    },
+    {
+      "id": "app.update.get",
+      "method": "GET",
+      "path": "/api/update",
+      "doc": "Circle Studio's version and the last update check (?check=1 checks the remote now, read only)."
+    },
+    {
+      "id": "app.update.apply",
+      "method": "POST",
+      "path": "/api/update",
+      "doc": "Fast-forward the app to its remote (only when its folder is clean and not ahead), then restart it."
+    },
+    {
+      "id": "projects.cost",
+      "method": "GET",
+      "path": "/api/projects/:id/cost",
+      "doc": "What the project costs with Claude Code: context loaded per session, the model of each agent, 30 days of measured usage from its transcripts (priced at API rates), problems and cheaper options."
+    },
+    {
+      "id": "guide.ask",
+      "method": "POST",
+      "path": "/api/guide",
+      "doc": "Ask Circle: {message, engine?} -> matching help topics (no AI) and, unless engine is \"none\", a read-only answer from the chosen or first signed-in engine."
+    },
+    {
+      "id": "usage.providers",
+      "method": "GET",
+      "path": "/api/usage",
+      "doc": "Use per provider across this PC for ?days=7|30|90: Claude priced at API rates, Codex tokens, Gemini and Copilot turns run from Circle Studio. Cached five minutes (?fresh=1)."
+    },
+    {
+      "id": "connections.list",
+      "method": "GET",
+      "path": "/api/connections",
+      "doc": "MCP servers of every engine (for ?projectId=, its own and the user-level ones; else the whole PC), with names only, never values, and the security findings."
+    },
+    {
+      "id": "connections.check",
+      "method": "POST",
+      "path": "/api/connections/check",
+      "doc": "Health of one server: {id, projectId?, remote?}. A remote server is contacted only when remote is true."
+    },
+    {
+      "id": "security.scan",
+      "method": "GET",
+      "path": "/api/security",
+      "doc": "The local security check over every project and this PC: connectors, git remotes, tracked secrets, agent settings."
+    },
+    {
+      "id": "vault.list",
+      "method": "GET",
+      "path": "/api/vault",
+      "doc": "The names in the key vault and where each may be used. Never the values."
+    },
+    {
+      "id": "vault.set",
+      "method": "PUT",
+      "path": "/api/vault/:key",
+      "doc": "Store or update a key: {value?, note?, projects: [ids] | \"all\"}. Encrypted with Windows DPAPI. Anthropic keys are refused."
+    },
+    {
+      "id": "vault.remove",
+      "method": "DELETE",
+      "path": "/api/vault/:key",
+      "doc": "Delete a key from the vault."
+    },
+    {
+      "id": "vault.import",
+      "method": "POST",
+      "path": "/api/vault/import",
+      "doc": "Move a literal key from a project's .mcp.json into the vault: {projectId, server, field, key, name}; returns the mcp-env-ref op to review."
+    },
+    {
+      "id": "catalog.get",
+      "method": "GET",
+      "path": "/api/catalog",
+      "doc": "The building-block catalog (skills, agents, connectors, links), rebuilt when older than 10 minutes; ?q= searches it (BM25), ?type= filters."
+    },
+    {
+      "id": "catalog.rebuild",
+      "method": "POST",
+      "path": "/api/catalog/rebuild",
+      "doc": "Rebuild the catalog from the library, projects, templates and connectors now."
+    },
+    {
+      "id": "catalog.describe",
+      "method": "POST",
+      "path": "/api/catalog/describe",
+      "doc": "One Haiku call writes short descriptions and tags for up to 40 entries that lack a good one."
+    },
+    {
+      "id": "catalog.index",
+      "method": "POST",
+      "path": "/api/catalog/index",
+      "doc": "Fetch one https page once ({url}) and keep its text in chunks so it can be retrieved (the helper's RAG)."
+    },
+    {
+      "id": "widgets.feed",
+      "method": "GET",
+      "path": "/api/widgets/feed",
+      "doc": "The desktop widgets' tiles, ready to draw (text, rings, rows, bars), with the tokens.css palette for ?theme=dark|light."
+    },
+    {
+      "id": "desktop.widgets",
+      "method": "POST",
+      "path": "/api/desktop/widgets",
+      "doc": "Start, stop or ask about the native desktop widgets: {action: \"start\"|\"stop\"|\"status\"}."
+    },
+    {
+      "id": "connections.test",
+      "method": "POST",
+      "path": "/api/connections/test",
+      "doc": "Start one MCP server for real and do the handshake: {id, projectId?} -> result, plain-words diagnosis with fixes, its output (redacted)."
+    },
+    {
+      "id": "connections.fix",
+      "method": "POST",
+      "path": "/api/connections/fix",
+      "doc": "Claude reads the failed test, the server config (names only) and its code, and answers: cause, steps, safe commands, a config fix (as an mcp-server-set op for a project .mcp.json) and advice for the codebase."
+    }
+  ]
+}

@@ -1,0 +1,137 @@
+/* Circle Studio base: breakpoints, reset, page shell. Values come from tokens.css only (docs/design-rules.md). */
+
+/* ---- the only media conditions in the app: CSS cannot read variables here ----------------------
+   narrow  <= 48rem : the rail becomes a drawer (Ctrl+B) and the inspector overlays the content
+   ------------------------------------------------------------------------------------------------ */
+@media (max-width: 48rem) {
+  .cs-app.cs-app { grid-template-columns: minmax(0, 1fr); }
+  .cs-app .cs-rail {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(var(--rail-w), 90vw);
+    z-index: var(--z-rail);
+    transform: translateX(-100%);
+    transition: transform var(--dur-med) var(--ease);
+    visibility: hidden;
+  }
+  .cs-app[data-rail="open"] .cs-rail { transform: none; visibility: visible; box-shadow: var(--sh-3); }
+  .cs-app[data-rail="open"] .cs-rail-scrim { display: block; }
+  .cs-app .cs-topbar { display: flex; }
+  .cs-app .cs-inspector {
+    position: fixed;
+    inset: 0 0 0 auto;
+    width: min(var(--panel-w), 100vw);
+    z-index: var(--z-modal);
+    box-shadow: var(--sh-3);
+  }
+  .cs-app .cs-view { padding: var(--sp-4); }
+  .cs-app .cs-cols { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ---- reset (zero specificity, so components always win) ---------------------------------------- */
+:where(*, *::before, *::after) { box-sizing: border-box; }
+:where(html) { -webkit-text-size-adjust: 100%; }
+:where(body) {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-m);
+  line-height: var(--lh-normal);
+  -webkit-font-smoothing: antialiased;
+}
+:where(h1, h2, h3, h4, p, ul, ol, figure, dl, dd) { margin: 0; }
+:where(ul, ol) { padding: 0; list-style: none; }
+:where(button, input, select, textarea) { font: inherit; color: inherit; }
+:where(button) { cursor: pointer; }
+:where(a) { color: var(--c-accent); }
+:where(img, svg) { display: block; max-width: 100%; }
+:where(code, pre, kbd, samp) { font-family: var(--font-mono); }
+:where([hidden]) { display: none !important; }
+
+:focus-visible { outline: var(--bw-strong) solid var(--c-focus); outline-offset: var(--bw); }
+:focus:not(:focus-visible) { outline: none; }
+
+::selection { background: var(--c-accent-soft); color: var(--c-text); }
+
+/* ---- page shell --------------------------------------------------------------------------------- */
+.cs-app {
+  display: grid;
+  grid-template-columns: var(--rail-w) minmax(0, 1fr);
+  min-height: 100dvh;
+}
+
+.cs-rail {
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: var(--sp-4) var(--sp-3);
+  background: var(--c-bg);
+}
+
+.cs-rail-scrim {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-rail) - 1);
+  background: var(--c-scrim);
+}
+
+.cs-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--c-surface);
+  border-inline-start: var(--bw) solid var(--c-line);
+}
+
+.cs-topbar {
+  display: none;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-block-end: var(--bw) solid var(--c-line);
+  background: var(--c-bg);
+  position: sticky;
+  top: 0;
+  z-index: var(--z-rail);
+}
+
+.cs-content { display: flex; min-width: 0; flex: 1; }
+.cs-view { flex: 1; min-width: 0; max-width: var(--content-max); margin-inline: auto; padding: var(--sp-5) var(--sp-6) var(--sp-7); width: 100%; }
+.cs-view:focus { outline: none; }
+
+.cs-skip {
+  position: absolute;
+  inset-inline-start: var(--sp-2);
+  top: calc(var(--sp-8) * -1);
+  z-index: var(--z-toast);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--c-surface-raised);
+  border: var(--bw) solid var(--c-line-strong);
+  border-radius: var(--r-m);
+}
+.cs-skip:focus { top: var(--sp-2); }
+
+.cs-sr {
+  position: absolute;
+  inline-size: var(--bw);
+  block-size: var(--bw);
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.cs-icon { flex: none; }
+.cs-icon--s { inline-size: var(--icon-s); block-size: var(--icon-s); }
+.cs-icon--m { inline-size: var(--icon-m); block-size: var(--icon-m); }
+.cs-icon--l { inline-size: var(--icon-l); block-size: var(--icon-l); }
+.cs-icon--spinner { animation: cs-spin var(--dur-spin) linear infinite; }
+.cs-mark__bead { fill: var(--c-gate); }
+.cs-sigil__bead { fill: var(--c-accent); }
+@keyframes cs-spin { to { transform: rotate(360deg); } }

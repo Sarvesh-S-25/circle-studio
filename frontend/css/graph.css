@@ -1,0 +1,170 @@
+/* Workflow graph: canvas, nodes, edges, legend, live status, versions. Design values come from tokens.css only. */
+
+.cs-graph { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.cs-graph__bar { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.cs-graph__tools { display: flex; align-items: center; gap: var(--sp-1); flex-wrap: wrap; }
+.cs-graph__stage { position: relative; height: 70vh; min-height: calc(var(--sp-8) * 5); border: var(--bw) solid var(--c-line); border-radius: var(--r-l); background: var(--c-sunken); overflow: hidden; }
+.cs-graph__foot { min-height: var(--sp-5); }
+
+.cs-graph__canvas {
+  position: absolute; inset: 0; overflow: hidden; cursor: grab; touch-action: none;
+  background-image: radial-gradient(var(--c-line) var(--bw), transparent var(--bw));
+  background-size: var(--sp-5) var(--sp-5);
+}
+.cs-graph__canvas[hidden] { display: none; }
+.cs-graph__canvas[data-panning] { cursor: grabbing; }
+.cs-graph__world { position: absolute; left: 0; top: 0; transform-origin: 0 0; transform: translate(var(--gx, 0), var(--gy, 0)) scale(var(--gz, 1)); }
+.cs-graph__edges { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; max-inline-size: none; max-block-size: none; }
+.cs-graph__nodes { position: absolute; left: 0; top: 0; }
+
+/* edges */
+.cs-gedge { fill: none; stroke: var(--c-line-strong); stroke-width: var(--bw-strong); }
+.cs-gedge--dashed { stroke-dasharray: var(--sp-2) var(--sp-1); }
+.cs-gedge--draft { stroke: var(--c-accent); stroke-dasharray: var(--sp-1) var(--sp-1); }
+.cs-garrow { fill: var(--c-line-strong); }
+.cs-gedge__label rect { fill: var(--c-surface-raised); stroke: var(--c-line-strong); stroke-width: var(--bw); }
+.cs-gedge__label text { fill: var(--c-text-soft); font-size: var(--fs-xs); font-family: var(--font-ui); }
+
+/* nodes */
+.cs-gnode {
+  position: absolute; left: var(--x); top: var(--y); width: var(--w); height: var(--h); box-sizing: border-box;
+  display: flex; flex-direction: column; gap: var(--sp-1); padding: var(--sp-2) var(--sp-3); overflow: hidden;
+  background: var(--c-surface-raised); color: var(--c-text); border: var(--bw) solid var(--c-line-strong); border-radius: var(--r-l);
+  box-shadow: var(--sh-1); cursor: pointer; user-select: none;
+  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+.cs-gnode:hover { border-color: var(--c-accent); }
+.cs-gnode:focus-visible { outline: var(--bw-strong) solid var(--c-focus); outline-offset: var(--sp-1); }
+.cs-gnode[aria-pressed="true"] { border-color: var(--c-accent); box-shadow: 0 0 0 var(--bw-strong) var(--c-accent); }
+.cs-gnode[data-dragging] { box-shadow: var(--sh-2); cursor: grabbing; z-index: 2; }
+.cs-gnode--stage { border-top: var(--bw-strong) solid var(--c-accent); }
+.cs-gnode--human { background: var(--c-accent-soft); }
+.cs-gnode--agent { background: var(--c-surface); }
+.cs-gnode__head { display: flex; align-items: center; gap: var(--sp-2); font-weight: var(--fw-semibold); font-size: var(--fs-m); }
+.cs-gnode__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-gnode__chips { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.cs-gnode__does { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.cs-gnode__skills { font-size: var(--fs-xs); color: var(--c-text-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-gnode__live { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-xs); color: var(--c-text-soft); margin-top: auto; }
+.cs-gnode__tok { margin-left: auto; }
+.cs-gnode__handle {
+  position: absolute; right: var(--sp-1); bottom: var(--sp-1); display: inline-flex; align-items: center; justify-content: center;
+  width: var(--sp-5); height: var(--sp-5); padding: 0; border: var(--bw) solid var(--c-line-strong); border-radius: var(--r-pill);
+  background: var(--c-surface-raised); color: var(--c-text-soft); cursor: crosshair; opacity: 0;
+}
+.cs-gnode:hover .cs-gnode__handle, .cs-gnode:focus-within .cs-gnode__handle, .cs-gnode[aria-pressed="true"] .cs-gnode__handle { opacity: 1; }
+.cs-gnode__handle:hover { color: var(--c-accent); border-color: var(--c-accent); }
+
+/* live status */
+.cs-gnode--active { border-color: var(--c-info); box-shadow: 0 0 0 var(--bw-strong) var(--c-info-soft), var(--sh-1); }
+.cs-gnode--waiting { border-color: var(--c-warn); box-shadow: 0 0 0 var(--bw-strong) var(--c-warn-soft), var(--sh-1); animation: cs-gpulse calc(var(--dur-slow) * 3) var(--ease) infinite alternate; }
+.cs-gnode--off { opacity: 0.6; }
+@keyframes cs-gpulse { from { box-shadow: 0 0 0 var(--bw-strong) var(--c-warn-soft), var(--sh-1); } to { box-shadow: 0 0 0 calc(var(--bw-strong) * 3) var(--c-warn-soft), var(--sh-1); } }
+.cs-gdot { display: inline-block; width: var(--sp-2); height: var(--sp-2); border-radius: var(--r-pill); background: var(--c-text-faint); flex: none; }
+.cs-gdot--active { background: var(--c-info); }
+.cs-gdot--ready { background: var(--c-ok); }
+.cs-gdot--waiting { background: var(--c-warn); }
+.cs-gdot--off { background: var(--c-text-faint); }
+.cs-gctx { display: inline-block; width: calc(var(--sp-6) * 2); height: var(--sp-1); border-radius: var(--r-pill); background: var(--c-sunken); overflow: hidden; }
+.cs-gctx__fill { display: block; height: 100%; width: var(--ctx, 0%); background: var(--c-accent); }
+
+/* chips */
+.cs-gchip { display: inline-flex; align-items: center; gap: var(--sp-1); padding: 0 var(--sp-2); border-radius: var(--r-pill); border: var(--bw) solid var(--c-line-strong); font-size: var(--fs-xs); line-height: var(--lh-normal); color: var(--c-text); background: var(--c-surface); }
+.cs-gchip--engine { border-color: var(--c-accent); color: var(--c-accent); }
+.cs-gchip--quiet { border-color: var(--c-line); color: var(--c-text-soft); }
+.cs-gchip--gate { border-color: var(--c-gate); color: var(--c-gate); background: var(--c-gate-soft); }
+
+/* legend */
+.cs-glegend[hidden] { display: none; }
+.cs-glegend { position: absolute; max-height: calc(100% - var(--sp-5)); overflow-y: auto; right: var(--sp-3); top: var(--sp-3); width: var(--w-m); max-width: calc(100% - var(--sp-5)); z-index: 3; box-shadow: var(--sh-2); }
+.cs-glegend__list { list-style: none; margin: var(--sp-2) 0 0; padding: 0; display: grid; gap: var(--sp-2); }
+.cs-glegend__list li { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.cs-glegend__line { display: inline-block; width: var(--sp-6); border-top: var(--bw-strong) solid var(--c-line-strong); }
+.cs-glegend__line--dashed { border-top-style: dashed; }
+
+/* versions */
+.cs-graph__versions { position: absolute; inset: 0; overflow: auto; padding: var(--sp-4); background: var(--c-surface); }
+.cs-graph__versions[hidden] { display: none; }
+.cs-gver { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--sp-4); align-items: start; }
+.cs-gver__chain { list-style: none; margin: 0; padding: 0; position: relative; }
+.cs-gver__chain::before { content: ""; position: absolute; left: var(--sp-3); top: var(--sp-3); bottom: var(--sp-3); border-left: var(--bw-strong) solid var(--c-line-strong); }
+.cs-gver__item { position: relative; }
+.cs-gver__item--branch { margin-left: var(--sp-5); }
+.cs-gver__item--branch::before { content: ""; position: absolute; left: calc(var(--sp-5) * -1 + var(--sp-3)); top: var(--sp-4); width: var(--sp-4); border-top: var(--bw-strong) dashed var(--c-line-strong); }
+.cs-gver__node { display: flex; align-items: flex-start; gap: var(--sp-3); width: 100%; text-align: left; padding: var(--sp-2) var(--sp-3); background: transparent; color: inherit; border: var(--bw) solid transparent; border-radius: var(--r-m); cursor: pointer; font: inherit; }
+.cs-gver__node:hover { background: var(--c-hover); }
+.cs-gver__node:focus-visible { outline: var(--bw-strong) solid var(--c-focus); outline-offset: var(--sp-1); }
+.cs-gver__node[aria-pressed="true"] { background: var(--c-accent-soft); border-color: var(--c-accent); }
+.cs-gver__dot { flex: none; width: var(--sp-3); height: var(--sp-3); margin-top: var(--sp-1); border-radius: var(--r-pill); background: var(--c-surface-raised); border: var(--bw-strong) solid var(--c-accent); position: relative; z-index: 1; }
+.cs-gver__body { display: grid; gap: var(--sp-1); min-width: 0; }
+.cs-gver__row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.cs-gver__add { color: var(--c-diff-add-fg); }
+.cs-gver__del { color: var(--c-diff-del-fg); }
+.cs-gver__chg { color: var(--c-info); }
+.cs-gver__changes { margin: var(--sp-2) 0 0; padding-left: var(--sp-5); display: grid; gap: var(--sp-1); }
+.cs-gver__detail { position: sticky; top: 0; }
+
+/* the node panel (inspector) */
+.cs-inspector > * { flex-shrink: 0; }
+.cs-inspector__head { display: flex; align-items: center; gap: var(--sp-2); }
+.cs-inspector__body { min-width: 0; }
+.cs-npanel { display: grid; gap: var(--sp-3); }
+.cs-npanel__chips { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.cs-npanel__chat { min-height: calc(var(--sp-8) * 5); }
+
+@media (max-width: 48rem) {
+  .cs-gver { grid-template-columns: minmax(0, 1fr); }
+  .cs-graph__stage { height: 56vh; }
+}
+
+/* checkpoints: a marker on the arrow after a stage (brass = you decide, petrol = an engine checks) */
+.cs-gcheck {
+  position: absolute; left: var(--x); top: var(--y); transform: translate(-50%, -50%); z-index: 1;
+  display: flex; flex-direction: column; align-items: center; gap: var(--bw); max-width: calc(var(--sp-8) * 2.4);
+  padding: var(--sp-1) var(--sp-2); border: var(--bw-strong) solid var(--c-gate); border-radius: var(--r-l);
+  background: var(--c-gate-soft); color: var(--c-gate); font: inherit; font-size: var(--fs-xs); line-height: var(--lh-tight);
+  text-align: center; cursor: pointer; box-shadow: var(--sh-1);
+}
+.cs-gcheck:hover { box-shadow: var(--sh-2); }
+.cs-gcheck:focus-visible { outline: var(--bw-strong) solid var(--c-focus); outline-offset: var(--bw-strong); }
+.cs-gcheck__who { display: inline-flex; align-items: center; gap: var(--sp-1); font-weight: var(--fw-semibold); white-space: nowrap; }
+.cs-gcheck__what { color: var(--c-text-soft); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.cs-gcheck--engine { border-color: var(--c-accent); background: var(--c-accent-soft); color: var(--c-accent); border-style: dashed; }
+.cs-gcheck--both { border-color: var(--c-gate); background: var(--c-accent-soft); }
+.cs-gcheck--inline { position: static; transform: none; box-shadow: none; cursor: default; }
+.cs-npanel__switches { display: grid; gap: var(--sp-1); }
+.cs-npanel__check { scroll-margin-top: var(--sp-4); }
+.cs-npanel__check:focus { outline: none; }
+.cs-npanel__check .cs-radio__hint { display: block; padding-inline-start: 0; }
+
+/* the workflow helper in the side panel */
+.cs-helper { block-size: 100dvh; }
+.cs-helper__log { display: flex; flex-direction: column; gap: var(--sp-3); overflow-y: auto; min-block-size: calc(var(--sp-8) * 3); flex: 1 1 auto; }
+.cs-helper__intro { display: grid; gap: var(--sp-3); color: var(--c-text-soft); }
+.cs-helper__starters { display: grid; gap: var(--sp-1); }
+.cs-helper__starters .cs-btn { justify-content: flex-start; white-space: normal; text-align: start; min-block-size: var(--tap); }
+.cs-helper__msg { display: grid; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-l); background: var(--c-surface); border: var(--bw) solid var(--c-line); }
+.cs-helper__msg .cs-prose { font-size: var(--fs-m); }
+.cs-helper__msg--you { align-self: flex-end; background: var(--c-accent-soft); border-color: transparent; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cs-helper__proposal { display: grid; gap: var(--sp-2); padding: var(--sp-2); border: var(--bw) dashed var(--c-accent); border-radius: var(--r-m); }
+.cs-helper__changes { margin: 0; padding-inline-start: var(--sp-4); display: grid; gap: var(--sp-1); font-size: var(--fs-s); list-style: disc; }
+.cs-wfstart { display: grid; gap: var(--sp-2); border-color: var(--c-accent); border-style: dashed; }
+
+/* linking: a dot on the right edge of every card; drag it to another card */
+.cs-gnode__handle {
+  right: var(--sp-1); bottom: auto; top: calc(50% - var(--sp-2)); width: var(--sp-4); height: var(--sp-4);
+  border: var(--bw-strong) solid var(--c-accent); background: var(--c-surface-raised); opacity: 0.55; z-index: 2;
+}
+.cs-gnode__handle:hover { background: var(--c-accent); opacity: 1; }
+.cs-gnode[data-droptarget="yes"] { border-color: var(--c-accent); box-shadow: 0 0 0 calc(var(--bw-strong) * 2) var(--c-accent-soft), var(--sh-2); }
+.cs-gnode[data-droptarget="no"] { border-color: var(--c-danger); box-shadow: 0 0 0 calc(var(--bw-strong) * 2) var(--c-danger-soft); }
+/* links: click one to select it, then remove it */
+.cs-gedge__hit { fill: none; stroke: transparent; stroke-width: calc(var(--sp-3) * 1.5); pointer-events: stroke; cursor: pointer; }
+.cs-gedge--picked { stroke: var(--c-accent); stroke-width: calc(var(--bw-strong) * 2); }
+.cs-gedgebar {
+  position: absolute; left: var(--x); top: var(--y); transform: translate(-50%, calc(-100% - var(--sp-2))); z-index: 3;
+  display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-1) var(--sp-2); white-space: nowrap;
+  background: var(--c-surface-raised); border: var(--bw) solid var(--c-line-strong); border-radius: var(--r-l); box-shadow: var(--sh-2);
+}
+.cs-npanel__links { display: grid; gap: var(--sp-1); }
+.cs-npanel__link { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-s); }

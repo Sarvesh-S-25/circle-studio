@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" width="32" height="32">
+  <style>
+    .ring { fill: none; stroke: #016e73; stroke-width: 2.2; stroke-linecap: round; }
+    .bead { fill: #715700; }
+    @media (prefers-color-scheme: dark) {
+      .ring { stroke: #29a0a6; }
+      .bead { fill: #dbbb56; }
+    }
+  </style>
+  <path class="ring" d="M16.67 7.89A7 7 0 1 1 12.11 3.33"/>
+  <circle class="bead" cx="14.95" cy="5.05" r="2.2"/>
+</svg>

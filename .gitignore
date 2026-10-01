@@ -1,0 +1,11 @@
+# Runtime state of the app: skills library, project registry, plans, chats, backups.
+data/*
+!data/.gitkeep
+
+node_modules/
+.env
+.env.*
+*.pem
+*.log
+tests/e2e/shots/
+.playwright-mcp/

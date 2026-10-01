@@ -1,0 +1,123 @@
+# Decisions
+
+One line per decision: what, why, and whether it departs from `docs/spec.md`. The builder appends
+below the line. Keep it short; this is a log, not an essay.
+
+## Made during planning (2026-09-29)
+
+* **Browser tab on `http://127.0.0.1:4380`**, optional Edge `--app` window. Why: no Electron, no build,
+  nothing to install.
+* **Node 24 built-ins only, vanilla JS frontend, no build step.** Why: a small local tool that must be
+  trivial to run and to audit. A preference, not a rule: change it if a dependency clearly earns its place.
+* **Skill model and skill engine order.** A skill's model is the real SKILL.md `model:` front matter
+  field; its engine order is `roles["<skill>"]` in `consult.config.json`, effective only if the skill
+  calls `consult.mjs --role <skill>`. Why: those are the only real mechanisms found (research).
+* **Read-only chat uses `--permission-mode dontAsk --tools Read,Grep,Glob`, not `plan`.** Why: plan
+  mode wrote a plan file under `~/.claude/plans/` in the probe.
+* **Project hooks are switched off for chat and advisor runs** (`--settings '{"disableAllHooks":true}'`).
+  Why: they run under `-p` and wrote into the project's state files.
+* **Credential guard.** Projects whose settings could redirect credentials are run with
+  `--setting-sources user`. Why: a project `apiKeyHelper` hijacked the login in the probe.
+* **The "human does git" ignore block is anchored and keeps `contracts/` tracked.** Why: the human's own
+  A2G block swallows `backend/scripts/` and blinds the contracts gate (both reproduced).
+* **Research verification was skipped** (the human stopped the run). Items marked `[unverified]` in
+  `docs/research/` are checked by building and running the code that depends on them.
+
+## Builder log
+
+
+
+### 2026-09-30, first build
+
+* **Home is a dashboard, not a create box.** The human asked to open the app, name a folder, grant permissions and see statistics per project. `GET /api/stats` reads each project's own files (models, ADRs, board, `.claude/state/activity.jsonl`) and Circle Studio's chat records; "running" = Circle Studio's own chat/advisor runs plus team sessions with activity in the last 10 minutes. The taskbar create box stays (feature 7).
+* **Per-project permissions** (`write`, `run`, `claude`; reading is implied). A folder added without them is read-only. Why: the human wanted the app to ask; it also enforces hard rules 4 and 5 structurally. Contract grows by `projects.permissions`.
+* **Folder choice uses the Windows folder dialog** (`POST /api/system/pick-folder`, PowerShell + WinForms, no shell string). A browser cannot reveal a folder path. A pasted path still works.
+* **Engines are edited as "Main" and "Backup"**, not an ordered list. The file format is unchanged (`engine` + `failover`); engines the file already lists after the backup are kept, "self" stays last. Why: the human found the ordered list hard to understand. `frontend/js/chain.js` is tested.
+* **Drag and drop is no longer advertised on main pages** (no instruction text). It still works: skills/agents onto a taskbar project or a plan phase, files onto the window, and `A` on a focused item.
+* **Contract has 29 routes, not 25**: added `projects.chat.reset`, `projects.permissions`, `stats.get`, `system.pickFolder`.
+* **15 change operations**: the spec's 14 plus `sync-agents` (fixes tier drift).
+* **Dropped `.circle/plan.json`** from `plan-write`; the plan lives in `data/plans/` and the managed block in `docs/brief.md`.
+* **Board rows use `URGENT - ` (ASCII hyphen)**, not an em dash, so the row is safe in any file encoding.
+* **Tier drift is computed from the files**, not by running `apply-models.mjs --check`; the script still runs after a write.
+* **GitHub `truncated` trees answer 413 with a hint** to paste a `/tree/<branch>/<folder>` URL, instead of the per-directory fallback (no repo probed was truncated).
+* **Team template is read-only in the app** (`template` id), so the app can never edit `claude-teams`.
+* **Removed**: the 192-metric checklist (`docs/metrics.*`, `scripts/render-metrics.mjs`) at the human's request, fixtures no test uses, `.gitkeep` files, `tests/smoke`. `docs/spec.md` was rewritten to describe what exists.
+* **Test seams**: `ClaudeService({ bin, prefixArgs })` lets tests run `tests/helpers/fake-claude.mjs`, which replays the recorded fixtures; `createApp(config, { fetch, pickFolder })` injects GitHub and the folder dialog.
+
+### 2026-09-30, v2 (engines, templates, graph)
+
+* **Engine-neutral.** Claude, Codex, Gemini (`agy`) and Copilot are engines behind one adapter shape (`backend/lib/engines/`). Why: the human wanted more than Claude. Codex is built from its documented protocol and labelled not live-tested (no sign-in on this PC); `agy` cannot relay approvals headless, so it answers only; the open-source Gemini CLI is not used (rejected by the Google login).
+* **Chat gets a shell, and every step asks.** Replaces the old rule that chat never gets Bash. Claude runs as one bidirectional stream-json process per turn; the app answers every `can_use_tool` request. Live proof: `tests/live/claude-live.mjs`.
+* **Claude is told to send every Bash and edit to the app** (`permissions.ask` in the run's `--settings`). Why: verified live that Claude runs read-only commands (`echo`, `cat`) without asking in default mode, which would have let `cat .env` bypass the policy.
+* **`policy.mjs` decides before any popup**: allow (reads inside the project), ask, ask with a warning (outside the project), or refuse without a popup (dangerous, secrets, the app's own data). Deny by default for anything it cannot read.
+* **Inbox instead of a modal only.** Every request is stored (redacted), survives a reload, shows in the taskbar badge, and expires when its run ends or the app restarts.
+* **The plan is a graph** (`circle-workflow/1`): stages, agents, a human node, edges, positions. Three modes on one canvas. The old phase list migrates on first open.
+* **Semantic versions for workflows.** Every save is a version: patch (settings), minor (added), major (removed or reordered), suggested from the diff. A restore is a new version.
+* **No `claude-teams`, no template folder, no reserved `template` project id.** Templates are the human's own (`data/templates`); one is seeded once from `backend/seed/staged-build-team.json`. Import reads a single `workflow.json`.
+* **New projects are rendered from the workflow**: `workflow.json`, `docs/brief.md`, `AGENTS.md`, a one-line `CLAUDE.md`, Claude agent files, skills per partition. No git, no scripts copied.
+* **Skills are partitioned** (shared, Claude, Copilot, Gemini) and installed into each engine's own folder (`.claude/skills`, `.agents/skills`, `.gemini/skills` (unverified)).
+* **Boot does not wait for slow checks.** Engine detection and the login check run in the background.
+* **Not done**: the graph's "seen Nx" edge counts (nothing counts hand-offs yet), agent-to-agent delegation events, Codex and Copilot live approval tests through the UI, Gemini skill and instruction folders.
+
+### 2026-09-30, v3 (team questions in the Inbox, launcher)
+
+* **A team's `docs/tasks/ALERTS.md` shows in the Inbox** as "Team questions", with a badge and a toast when one appears. Why: texter's questions for the human only reached the team's own tracker, so a human working in Circle Studio never saw them. They are read from the files every 10 seconds (and on window focus), not pushed, because a Claude Code session in the project writes them, not this app.
+* **The app writes the answer into the alert** (`alert-answer` op: `Status: answered` plus an `Answer:` line), after the usual diff review. **This departs from texter's spec** ("the human's answer, relayed by the lead, closes an alert"): here the human answers directly. Why: the tracker already hides an alert once its status is answered, so one write closes it in both places, and the human's own answer needs no relay. The line says "(human, via Circle Studio, date)" so a reader can tell who wrote it. A lead or texter can still overwrite it.
+* **Answering twice is refused, a secret-looking answer is refused, and only that one entry changes** (other entries, line endings and the final newline are kept). `docs/tasks/ALERTS.md` joins the write allowlist for this op only.
+* **Leaving the Chat view no longer aborts a run** (it expired the run's pending question). Stop is the Stop button; closing the whole window still ends the stream.
+* **Click to open**: `scripts/launch.mjs` (+ `launch.vbs`, `install-shortcut.mjs`) starts the server hidden or reuses it, and opens the Edge app window. It uses `node:http`, not `fetch`: `process.exit()` right after a fetch crashes Node on Windows with a libuv assertion.
+* **Open team questions count in "Need attention"** (Home tile, per-project pills, taskbar dot) as one item per project ("2 team questions"), so the tile counts items, not questions.
+* **Option buttons only when the options read as `a (cost); b (cost)`.** An alert's options are one free-text line, so this is a guess at texter's habit: two or more `;`-separated parts become buttons that fill the answer box with the part before any bracket (the box stays editable). Any other shape shows the line and the human types.
+* **The Permissions dialog no longer says "Only apply-models.mjs"**: it names the project's own script and says chat commands are asked one by one, which is what actually happens.
+
+### 2026-09-30, v4 (checkpoints, engine access, workflow helper, plain Health, no silent templates)
+
+* **A project never shows a template it did not choose.** Before, a project with no workflow got a copy of the first template (8 stages, 20 agents the folder did not have). Now it gets the folder's own `workflow.json`, else its real `.claude/agents` in one stage, else blank. Records made the old way show a banner with "Use the agents in this folder / Start blank / Keep the template". Why: the human saw a workflow that "does not even exist here".
+* **Gates are checkpoints on the arrows, and an engine may do the checking.** `gate.by` = you / engine / both, `gate.engine`. The human chose "checkpoint on the arrow" over a per-stage line or a separate list. Seed labels lost the G1/G2/G3 jargon.
+* **Engine access is optional per agent**, on/off per engine like skills (`consult`), and shown on the agent card.
+* **The workflow helper** (route `workflow.suggest`, 46 routes now) proposes a whole workflow; the human applies it to the graph, then saves a version. Claude only, no tools, nothing written.
+* **Health speaks plain words** and groups by urgency; the board composer and pause controls moved under "Tools". Team questions (ALERTS.md) appear in Health too.
+* **Lint does not wait for engine detection**: `workflow.get` took 6.9 s on a cold start because it asked every engine CLI; it now uses what is already known (`Engines.known()`) and warms the cache.
+* **Legend fixed**: the JS and CSS used different class names, so it never floated over the graph.
+* **Updates are picked up by opening the app.** The server reports a fingerprint of its code (`/api/health` `code`, `stale`); the desktop launcher restarts a running server that is older than the files on disk (or too old to report one). Why: the launcher reused the running server, so an update never showed until the human stopped it by hand.
+* **"What's new" opens once per release** (`frontend/js/components/whatsnew.js`, id `RELEASE`): what changed and what to do, with the projects that need a look (template copies, no workflow, agents in one stage). Reopen it from Settings or the palette. A window still talking to an old server gets a warning to reopen the app.
+
+### 2026-10-01, v5 (your Claude Code history, widgets, alerts, git, cost, guide, installer and updater)
+
+* **Claude Code's own transcripts are read (never written)** from `~/.claude/projects/<folder key>/` (`CIRCLE_CLAUDE_HOME` or `CLAUDE_CONFIG_DIR` override it; tests always use a temp folder). Why: the human's conversations with their orchestrator happened in a terminal, so the app showed an empty chat. "You" in the graph now opens the main session with those conversations; an agent node lists its own subagent runs (`subagents/*.meta.json` `agentType`). Text is redacted; only the last 150 messages of a conversation are returned.
+* **"Continue it here" forks** (`--resume <id> --fork-session` on the first turn), so the terminal's transcript is never appended to by the app.
+* **Route params are lowercase only** (`:([a-z]+)` in the router): `:sessionId` silently broke into `:session` + "Id", so the route is `:sid`.
+* **Windows notifications come from the server only while no window is open** (count of open `/api/events` streams); an open window shows its own popup and a browser notification when it is in the background. Toasts are PowerShell's registered app id with a `protocol` launch to `#/inbox`. Team questions are polled every 30 s for this.
+* **Widgets are small Edge app windows** (`widget.html?p=<id>`, 400x660) with one `/pulse` call, not Windows 11 board widgets (those need a packaged app). Shortcuts (Desktop, Start menu) run `launch.vbs --widget <id>`; start-at-login runs `--background`. All shortcut writes are confirmed in the UI; the CLI installer asks before start-at-login.
+* **A dynamic web manifest** lists a widget per recent project, so Edge can install the app with a jump list.
+* **Git is read with `GIT_OPTIONAL_LOCKS=0`** (status never touches the index). GitHub Actions and pull requests are read only after the human turns GitHub on per project: through `gh` when installed (its own sign-in), else the public REST API (`GITHUB_TOKEN` when set).
+* **The app updates itself only on a click, and only by fast-forward.** The daily check is `git ls-remote` (read only); the update is `git pull --ff-only`, refused when the app folder has changes or commits of its own; then the launcher (started through `wscript`, so it is not in the server's process tree) restarts the server and the window reloads into What's new. This is the one git write the app makes, in its own folder, approved by the human ("Check daily, update on my click"). ZIP copies say how to update by hand. Updater tests make throwaway repositories in the temp folder only.
+* **Prices for the Cost tab** come from the Claude API price table bundled with Claude Code's claude-api reference (cached 2026-09-25), with the standard cache multipliers (write 1.25x for 5 minutes, 2x for 1 hour; read 0.1x unless listed). Aliases are priced as the current family model (sonnet = Sonnet 5.5). The tab says plainly that a Pro or Max plan pays the subscription instead. Usage is summed from transcripts with each answer counted once (Claude Code writes one answer over several lines, each repeating its usage).
+* **Cheaper options go through the usual path**: a model change is saved as a new workflow version, then `workflow-write` is reviewed as a diff; agents that are only in `models.json` use the `model` op. "Let AI rearrange for cost" is the workflow helper with a cost brief.
+* **Ask Circle (Ctrl+J) works without any engine**: next steps are computed in the browser, help topics are a local search, and an engine (any signed-in one: Claude, Codex, Copilot or Gemini, Claude on Haiku) answers read-only in an empty `data/guide` folder with every tool request refused and only project names and their attention titles as context.
+* **Installer and commands**: `Install Circle Studio.cmd` (checks Node 24, no admin rights, nothing downloaded) runs `scripts/circle.mjs install`; `npm run setup/open/widget/stop/status/update/doctor/uninstall`. Uninstall removes only Circle Studio shortcuts and keeps `data/`. `scripts/install-shortcut.mjs` is replaced by it; the icon drawing moved to `backend/lib/icon.mjs`.
+* **Home was rebuilt** around "what needs you": a greeting with a one-line summary, a Needs-you strip, and project cards that show only what exists (workflow, git, the last conversation, 30 days of use, team numbers only when there are team files). The empty "No ADRs / No tasks" charts are gone.
+* **Version 1.0.0** in `package.json`; the release id for What's new is `2026-10-01-desktop`.
+
+### 2026-10-01, v6 (widget board, connections and vault, the helper reads the project, Haiku reader)
+
+* **Widgets are a board of tiles** (`widget.html`, `frontend/js/components/tiles.js`, `board.js`): small 1x1, medium 2x1, large 2x2 on a `--tile` grid, macOS-stack style. Kinds: agents (rings), spending, workflow (with a project switcher), waiting for you, project, all projects. The layout is kept in `settings.json` `widgets`. Each tile opens on its own (`widget.html?w=<kind>&size=..`). One colour per state everywhere: working = ok, waiting = warn, done = info, idle = grey. Windows 11 board widgets still need a packaged app, so these stay Edge app windows.
+* **Agent state** (`lib/agentstate.mjs`) comes only from what is recorded: a Circle run or pending request, a Claude Code transcript written in the last 3 minutes (working) or the last day (done), or the team's activity log. Nothing is guessed.
+* **Spending by provider** (`lib/usage.mjs`, `usage.providers`): Claude across every folder in `~/.claude/projects`, priced; Codex from `~/.codex/sessions` token totals, not priced (no verified OpenAI price table here); Gemini and Copilot keep nothing readable, so only turns run from Circle Studio count. Cached five minutes; the first count takes a few seconds.
+* **Connections** (`lib/connections.mjs`, page `#/connections`): MCP servers from `.mcp.json`, `~/.claude.json` (user and per-project), `~/.codex/config.toml` (a small TOML reader), `~/.gemini/settings.json`, `~/.copilot/mcp-config.json`, `.vscode/mcp.json`. Only names are returned, never values. Health: stdio programs are looked up on PATH without running them; local URLs get a TCP connect; a remote server is contacted only when the human presses Check.
+* **The key vault** (`lib/vault.mjs`) encrypts with Windows DPAPI for the signed-in user (PowerShell `ConvertFrom-SecureString`), returns names only, and hands keys to engine runs as environment variables only in the projects each key is allowed for (`startChild` `extraEnv`, still through `cleanEnv`). It refuses `ANTHROPIC_*` names and any value that looks like an Anthropic key: hard rule 2 stands. "Move to the vault" reads the literal from `.mcp.json` server-side and the file then changes to `${NAME}` through the usual diff (`mcp-env-ref` op; the diff is redacted). Keys in `~/.claude.json` are not edited (Claude Code rewrites that file); the page says how to fix them.
+* **The security check** (`lib/secscan.mjs`) is local: plain-text keys and Anthropic keys in connector configs, credentials in URLs, http remote servers, unpinned `npx` servers, whole-drive file access, programs run from temp folders, credentials in git remote URLs, tracked files that really hold a credential (`.env.example` and friends are skipped; a tracked `.npmrc` counts only when it has a token), `.env` not ignored, `bypassPermissions`, `Bash(*)`, hooks that call the network, and project settings that redirect Claude's sign-in.
+* **The workflow helper reads the project**: a deterministic digest of the folder (`lib/digest.mjs`, at most 6 000 characters, redacted), the 12 best building blocks from the **catalog** (`lib/catalog.mjs`, `data/catalog.json`: skills, agents from projects and templates, connectors, links; BM25, no embeddings or model needed), and the 3 best passages of indexed links (fetched once on the human's click, https only, never the local network, kept in `data/knowledge/`). The answer says what was read. "Describe with Haiku" writes missing one-line descriptions in one structured call (live: 22 items, $0.03).
+* **Reading links are not RAG for the agents themselves**: an agent still reads its links at run time with its own web tool. The retrieval is for the helper (and the catalog search); copying passages into a project would be a file write and is not done.
+* **The Haiku reader** (`reader: true` on a Claude agent): `workflow-write` adds `.claude/agents/reader.md` (Haiku, read-only tools) and tells the agent to hand long reads to it. The Cost tab suggests it only where transcripts show an Opus or Sonnet agent with a read-heavy role carrying more than 60k tokens per answer.
+* **The side panel** fills the window height and is resizable (drag its left edge or Alt+Shift+Left/Right; width kept per browser). Project tabs wrap instead of scrolling. The chat log can be made taller.
+* **Route parameters** stay lowercase: the vault uses `:key` because `:name` is checked against the skill-name pattern.
+
+### 2026-10-02, v7 (native desktop widgets, connection repair)
+
+* **The widgets are now real desktop widgets.** The human pinned a project and got a Desktop shortcut that opens a window: not what was wanted. `scripts/widgets/desktop-widgets.ps1` draws every board tile as a borderless, rounded WPF window **owned by the desktop window** (Progman), so it sits on the desktop layer, stays through Win+D, has no taskbar button and no Alt+Tab entry. Drag to move (places kept in `data/desktop-widgets.json`), click to open the app there, right-click for "Keep on top of windows", "Edit widgets", "Close". It reads `/api/widgets/feed` every 15 s: the server turns each tile into text, rings, rows and bars (`lib/feed.mjs`) and sends the colours of `tokens.css` (`lib/palette.mjs`, light or dark from the Windows app theme), so design values still have one source. Windows 11 board widgets were not used: they need a packaged (MSIX) app.
+* **Why PowerShell and WPF**: no dependency, no build step, already on every Windows 10/11; the app already uses PowerShell for shortcuts and notifications. A PowerShell started detached straight from Node exits at once, so the host starts through `scripts/widgets/start-widgets.vbs` (wscript, hidden), like the main launcher. One host per user (a named mutex); it writes its own PID.
+* **Sticky**: once on the desktop (`settings.desktopWidgets`), the server starts the widgets whenever it starts, and the sign-in shortcut gets `--widgets`. A tile's `desktop: false` keeps it on the board only. The project Widget menu now says "Put its agents and workflow on the desktop"; the old Desktop shortcut is still there, named for what it is ("opens a window").
+* **Connection repair** (`lib/mcpprobe.mjs`, `connections.test`, `connections.fix`, op `mcp-server-set`): Test starts the configured server without a shell (npx through `node npx-cli.js`; other .cmd launchers are reported, not run), sends `initialize` and `tools/list`, kills the tree, and explains the failure in plain words with commands to copy (missing virtual environment, missing module, port in use, a key refused, a variable not set, wrong URL, timeouts). **A working twin**: when the same server name starts fine in another project, the exact `claude mcp remove/add` commands that repeat that setup are given, with `-e NAME=$env:NAME` instead of any value. "Ask Claude to fix it" sends the test, the diagnosis, the server config with names only and a digest of the server's own code, and gets back the cause, steps, safe commands, a config fix (placeholders such as PATH_TO_SERVER are dropped) and advice for the code; a fix to a project `.mcp.json` goes through the diff review and is tested again. Claude is told never to suggest printing config files that hold keys.
+* **Two lookup bugs found by trying it on the human's real configs**: `\` alone counted as an existing program (it is the drive root on Windows), and an extensionless `npx` (a Unix script) was preferred over `npx.cmd`. Programs are now looked up with PATHEXT and must be files.
+* **A test mistake, fixed**: turning widgets on from the private test server rewrote the human's real start-at-sign-in shortcut (it exists, so the app refreshes its arguments). It was restored to `--background` at once. Manual checks now run with `CIRCLE_SHORTCUT_DIR` pointing to a temp folder.

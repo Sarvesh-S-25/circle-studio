@@ -1,0 +1,29 @@
+{
+  "name": "circle-studio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A local control room for AI agent teams (Claude Code, Codex, Gemini, Copilot). Single user, this PC, nothing hosted.",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node backend/server.mjs",
+    "setup": "node scripts/circle.mjs install",
+    "open": "node scripts/circle.mjs open",
+    "widget": "node scripts/circle.mjs widget",
+    "stop": "node scripts/circle.mjs stop",
+    "status": "node scripts/circle.mjs status",
+    "update": "node scripts/circle.mjs update",
+    "doctor": "node scripts/circle.mjs doctor",
+    "uninstall": "node scripts/circle.mjs uninstall",
+    "test": "node --test \"tests/**/*.test.mjs\"",
+    "test:unit": "node --test \"tests/unit/*.test.mjs\"",
+    "test:contract": "node --test \"tests/contract/*.test.mjs\"",
+    "test:integration": "node --test \"tests/integration/*.test.mjs\"",
+    "contrast": "node scripts/check-contrast.mjs"
+  },
+  "bin": {
+    "circle": "scripts/circle.mjs"
+  }
+}

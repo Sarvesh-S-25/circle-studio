@@ -1,0 +1,64 @@
+/* A project's widget window (widget.html): small, glanceable, tokens only. */
+.cs-wbody { background: var(--c-bg); min-block-size: 100dvh; }
+.cs-w { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-3); max-inline-size: var(--w-l); margin-inline: auto; }
+
+.cs-w__head { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-1); }
+.cs-w__title { display: flex; flex-direction: column; gap: var(--sp-1); flex: 1; min-inline-size: 0; }
+.cs-w__name { margin: 0; font-family: var(--font-display); font-size: var(--fs-l); font-weight: var(--fw-semibold); line-height: var(--lh-tight); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-w__state { display: inline-flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--c-text-soft); }
+.cs-w__state--warn { color: var(--c-warn); }
+.cs-w__state--ok { color: var(--c-ok); }
+
+.cs-w__dot { inline-size: var(--sp-2); block-size: var(--sp-2); border-radius: var(--r-pill); background: var(--c-line-strong); flex: none; }
+.cs-w__dot--ok { background: var(--c-ok); box-shadow: 0 0 0 var(--sp-1) var(--c-ok-soft); }
+.cs-w__dot--warn { background: var(--c-warn); box-shadow: 0 0 0 var(--sp-1) var(--c-warn-soft); animation: cs-w-pulse var(--dur-spin) var(--ease) infinite; }
+@keyframes cs-w-pulse { 50% { box-shadow: 0 0 0 var(--sp-1) transparent; } }
+@media (prefers-reduced-motion: reduce) { .cs-w__dot--warn { animation: none; } }
+
+.cs-w__sec { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); border: var(--bw) solid var(--c-line); border-radius: var(--r-l); background: var(--c-surface); }
+.cs-w__sec--needs { border-color: var(--c-warn); background: var(--c-warn-soft); }
+.cs-w__h { display: flex; align-items: center; gap: var(--sp-1); margin: 0; font-size: var(--fs-xs); font-weight: var(--fw-semibold); text-transform: uppercase; color: var(--c-text-soft); }
+.cs-w__sec--needs .cs-w__h { color: var(--c-warn); }
+.cs-w__quiet { margin: 0; color: var(--c-text-soft); font-size: var(--fs-s); }
+.cs-w__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+
+.cs-w__ask { display: flex; align-items: center; gap: var(--sp-2); inline-size: 100%; padding: var(--sp-2); border: var(--bw) solid var(--c-line); border-radius: var(--r-m); background: var(--c-surface-raised); color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.cs-w__ask:hover { border-color: var(--c-warn); }
+.cs-w__ask:focus-visible { outline: var(--bw-strong) solid var(--c-focus); outline-offset: var(--bw); }
+.cs-w__asktext { display: flex; flex-direction: column; flex: 1; min-inline-size: 0; }
+.cs-w__asktext strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--fw-medium); }
+.cs-w__go { flex: none; padding: 0 var(--sp-2); border-radius: var(--r-pill); background: var(--c-accent); color: var(--c-on-accent); font-size: var(--fs-xs); font-weight: var(--fw-semibold); line-height: var(--lh-normal); }
+
+.cs-w__run { display: flex; align-items: center; gap: var(--sp-2); }
+.cs-w__runname { display: flex; flex-direction: column; flex: 1; min-inline-size: 0; }
+.cs-w__ctx { flex: none; min-inline-size: var(--sp-7); padding: 0 var(--sp-1); border-radius: var(--r-s); font-size: var(--fs-xs); text-align: center; background: linear-gradient(to right, var(--c-accent-soft) var(--pct, 0%), var(--c-sunken) var(--pct, 0%)); }
+
+.cs-w__stages { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); counter-reset: none; }
+.cs-w__stage { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-s); }
+.cs-w__stagenum { display: inline-grid; place-items: center; inline-size: var(--sp-5); block-size: var(--sp-5); flex: none; border: var(--bw) solid var(--c-line-strong); border-radius: var(--r-pill); font-size: var(--fs-xs); color: var(--c-text-soft); }
+.cs-w__stagename { flex: 1; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-w__check { color: var(--c-gate); display: inline-flex; }
+
+.cs-w__commit { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-w__ci { display: inline-flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-s); color: var(--c-accent); }
+
+.cs-w__foot { display: flex; gap: var(--sp-2); align-items: center; }
+.cs-w__conv { flex: 1; min-inline-size: 0; justify-content: flex-start; }
+.cs-w__convtext { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-w__updated { margin: 0; text-align: center; color: var(--c-text-soft); }
+
+.cs-w__tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(calc(var(--sp-8) * 1.25), 1fr)); gap: var(--sp-2); }
+.cs-w__tile { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-1); padding: var(--sp-2) var(--sp-3); border: var(--bw) solid var(--c-line); border-radius: var(--r-l); background: var(--c-surface); color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.cs-w__tile:hover { border-color: var(--c-accent); }
+.cs-w__tile:focus-visible, .cs-w__look:focus-visible { outline: var(--bw-strong) solid var(--c-focus); outline-offset: var(--bw); }
+.cs-w__num { font-family: var(--font-display); font-size: var(--fs-xl); font-weight: var(--fw-semibold); line-height: var(--lh-tight); }
+.cs-w__lab { font-size: var(--fs-xs); color: var(--c-text-soft); }
+.cs-w__look { display: flex; align-items: center; gap: var(--sp-2); inline-size: 100%; padding: var(--sp-1) 0; border: 0; background: none; color: inherit; font: inherit; font-size: var(--fs-s); text-align: start; cursor: pointer; }
+.cs-w__look:hover span:last-child { text-decoration: underline; }
+.cs-w__mark { color: var(--c-accent); display: inline-flex; }
+.cs-w__proj { display: flex; align-items: center; gap: var(--sp-2); }
+.cs-w__projname { flex: 1; min-inline-size: 0; padding: var(--sp-1) 0; border: 0; background: none; color: inherit; font: inherit; font-weight: var(--fw-medium); text-align: start; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-w__projname:hover { color: var(--c-accent); text-decoration: underline; }
+.cs-w__projname:focus-visible { outline: var(--bw-strong) solid var(--c-focus); outline-offset: var(--bw); }
+.cs-w__state--danger { color: var(--c-danger); }
+.cs-w__dot--danger { background: var(--c-danger); }

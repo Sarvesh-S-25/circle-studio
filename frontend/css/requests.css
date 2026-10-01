@@ -1,0 +1,26 @@
+/* Approval and question popups, the Inbox, engine cards. Design values come from tokens.css only. */
+
+.cs-inbox__row > summary { cursor: pointer; list-style: none; }
+.cs-inbox__row > summary::-webkit-details-marker { display: none; }
+.cs-inbox__row > summary:focus-visible { outline: var(--bw-strong) solid var(--c-focus); outline-offset: var(--sp-1); }
+.cs-inbox__detail { margin-top: var(--sp-3); }
+.cs-navlink__count { margin-left: auto; }
+
+.cs-engines { display: grid; grid-template-columns: repeat(auto-fit, minmax(var(--w-s), 1fr)); gap: var(--sp-3); }
+.cs-engine { display: flex; flex-direction: column; gap: var(--sp-2); }
+.cs-engine__caps { margin: 0; padding-left: var(--sp-5); display: grid; gap: var(--sp-1); font-size: var(--fs-s); color: var(--c-text-soft); }
+
+.cs-tplgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--w-s), 1fr)); gap: var(--sp-2); }
+.cs-tpl { text-align: left; display: grid; gap: var(--sp-1); padding: var(--sp-3); border: var(--bw) solid var(--c-line-strong); border-radius: var(--r-l); background: var(--c-surface-raised); color: inherit; font: inherit; cursor: pointer; }
+.cs-tpl:hover { border-color: var(--c-accent); }
+.cs-tpl:focus-visible { outline: var(--bw-strong) solid var(--c-focus); outline-offset: var(--sp-1); }
+.cs-tpl[aria-pressed="true"] { border-color: var(--c-accent); background: var(--c-accent-soft); box-shadow: 0 0 0 var(--bw-strong) var(--c-accent); }
+.cs-files { display: grid; gap: var(--sp-1); max-height: 40vh; overflow: auto; }
+.cs-partitions { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+
+/* the new-project flow: the graph and its node panel side by side */
+.cs-modal--xl { inline-size: min(calc(var(--w-xl) * 1.35), 100%); }
+.cs-newproj { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--sp-3); align-items: start; }
+.cs-newproj .cs-graph__stage { height: 46vh; }
+.cs-newproj__side .cs-inspector { position: static; inline-size: auto; block-size: auto; max-block-size: 46vh; border: var(--bw) solid var(--c-line); border-radius: var(--r-l); }
+@media (max-width: 48rem) { .cs-newproj { grid-template-columns: minmax(0, 1fr); } }

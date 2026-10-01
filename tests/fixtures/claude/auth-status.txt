@@ -1,0 +1,79 @@
+# claude auth status - captured live on 2026-09-29 with 2.1.284 (Claude Code)
+# Child env: ANTHROPIC_API_KEY and ANTHROPIC_AUTH_TOKEN deleted (except where a case says otherwise). No model call is made.
+# E-mail, org id and org name are replaced with <redacted>. cwd of every call: the probe project (a scratch copy of a team scaffold).
+
+## claude auth status   (default output is JSON)
+argv: claude auth status
+exit code: 0   wall: 426 ms   stderr bytes: 0
+stdout:
+{
+  "loggedIn": true,
+  "authMethod": "claude.ai",
+  "apiProvider": "firstParty",
+  "analyticsDisabled": false,
+  "projectsDirectory": "C:\\Users\\sarve\\.claude\\projects",
+  "configDirectory": "C:\\Users\\sarve\\.claude",
+  "email":"<redacted>",
+  "orgId":"<redacted>",
+  "orgName":"<redacted>",
+  "subscriptionType": "pro"
+}
+
+## claude auth status --json
+argv: claude auth status --json
+exit code: 0   wall: 413 ms   stderr bytes: 0
+stdout:
+{
+  "loggedIn": true,
+  "authMethod": "claude.ai",
+  "apiProvider": "firstParty",
+  "analyticsDisabled": false,
+  "projectsDirectory": "C:\\Users\\sarve\\.claude\\projects",
+  "configDirectory": "C:\\Users\\sarve\\.claude",
+  "email":"<redacted>",
+  "orgId":"<redacted>",
+  "orgName":"<redacted>",
+  "subscriptionType": "pro"
+}
+
+## claude auth status --text
+argv: claude auth status --text
+exit code: 0   wall: 495 ms   stderr bytes: 0
+stdout:
+Login method: Claude Pro account
+Organization: <redacted>'s Organization
+Email: <redacted>
+
+## claude auth status   with a DUMMY ANTHROPIC_API_KEY left in the environment (what happens if the app forgets to strip it)
+argv: claude auth status
+exit code: 0   wall: 464 ms   stderr bytes: 0
+stdout:
+{
+  "loggedIn": true,
+  "authMethod": "api_key",
+  "apiProvider": "firstParty",
+  "analyticsDisabled": false,
+  "projectsDirectory": "C:\\Users\\sarve\\.claude\\projects",
+  "configDirectory": "C:\\Users\\sarve\\.claude",
+  "apiKeySource": "ANTHROPIC_API_KEY"
+}
+
+## claude auth status   with CLAUDE_CONFIG_DIR pointing at an empty folder (simulates logged out)
+argv: claude auth status
+exit code: 1   wall: 702 ms   stderr bytes: 0
+stdout:
+{
+  "loggedIn": false,
+  "authMethod": "none",
+  "apiProvider": "firstParty",
+  "analyticsDisabled": false,
+  "projectsDirectory": "C:\\Users\\sarve\\AppData\\Local\\Temp\\claude\\C--Users-sarve-Desktop-claude-teams\\c1f7e7f2-bb46-476e-8137-0d937b872f27\\scratchpad\\live2\\empty-config\\projects",
+  "configDirectory": "C:/Users/sarve/AppData/Local/Temp/claude/C--Users-sarve-Desktop-claude-teams/c1f7e7f2-bb46-476e-8137-0d937b872f27/scratchpad/live2/empty-config"
+}
+
+## claude auth status --text   with CLAUDE_CONFIG_DIR pointing at an empty folder
+argv: claude auth status --text
+exit code: 1   wall: 463 ms   stderr bytes: 0
+stdout:
+Not logged in. Run claude auth login to authenticate.
+
