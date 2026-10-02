@@ -218,3 +218,17 @@ a.cs-tile:hover { border-color: var(--c-accent); }
 .cs-cx__out { max-block-size: calc(var(--sp-8) * 3); overflow: auto; margin: 0; padding: var(--sp-2); border-radius: var(--r-s); background: var(--c-code-bg); font-family: var(--font-mono); font-size: var(--fs-xs); white-space: pre-wrap; }
 .cs-cx__fix { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); border: var(--bw) dashed var(--c-accent); border-radius: var(--r-m); }
 .cs-cx__fix p { margin: 0; }
+.cs-cxm__group { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); border: var(--bw) solid var(--c-line); border-radius: var(--r-m); }
+.cs-cxm__findings, .cs-cxm__results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.cs-cxm__finding { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-3); border-inline-start: var(--sp-1) solid var(--c-line-strong); border-radius: var(--r-s); background: var(--c-sunken); }
+.cs-cxm__finding--danger { border-inline-start-color: var(--c-danger); }
+.cs-cxm__finding--warn { border-inline-start-color: var(--c-warn); }
+.cs-cxm__finding--info { border-inline-start-color: var(--c-info); }
+.cs-cxm__steps { margin: 0; padding-inline-start: var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-2); }
+.cs-cxm__steps li { display: flex; flex-direction: column; gap: var(--sp-1); }
+.cs-cxm__steps code { overflow-x: auto; white-space: nowrap; padding: var(--sp-1) var(--sp-2); border-radius: var(--r-s); background: var(--c-code-bg); }
+.cs-cxm__results li { display: flex; gap: var(--sp-2); align-items: flex-start; }
+.cs-cxm__ok { color: var(--c-text); }
+.cs-cxm__ok > svg { color: var(--c-ok); }
+.cs-cxm__bad > svg { color: var(--c-danger); }
+.cs-cxm__key { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); border: var(--bw) solid var(--c-line); border-radius: var(--r-m); }

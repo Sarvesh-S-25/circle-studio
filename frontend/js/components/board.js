@@ -18,8 +18,8 @@ async function loadShell() {
   notify();
 }
 
-function listen(redraw) {
-  initRequests();
+function listen(redraw, windowKey) {
+  initRequests(windowKey);
   initAlerts();
   for (const ev of ['circle:requests', 'circle:alerts', 'circle:run']) window.addEventListener(ev, redraw);
 }
@@ -36,14 +36,21 @@ export async function mountSingleTile(root, { kind, size, projectId, openApp }) 
   draw();
   await loadShell();
   await refresh(true);
-  listen(() => refresh());
+  listen(() => refresh(), `tile:${kind}:${size}${projectId ? `:${projectId}` : ''}`);
   setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, POLL_MS);
   setInterval(() => refresh(true), USAGE_MS);
 }
 
-export async function mountBoard(root, { openApp }) {
+/**
+ * The board. In its own window (widget.html) it has its own bar; `embedded` puts it on the Widgets page of the app,
+ * where the page has the title and the app already listens for requests. Returns { destroy() }.
+ */
+export async function mountBoard(root, { openApp, embedded = false }) {
   let tiles = [];
   let editing = false;
+  let gone = false;
+  const timers = [];
+  const offs = [];
   const ctx = createTileData({ openApp });
   const save = async () => { try { await api.saveSettings({ widgets: tiles }); } catch (e) { toast(e.message, { kind: 'danger' }); } };
   ctx.setProject = (t, id) => { t.projectId = id; save(); refresh(); };
@@ -76,31 +83,42 @@ export async function mountBoard(root, { openApp }) {
   }
 
   function draw() {
-    const bar = h('header', { class: 'cs-board__bar' }, h('span', { class: 'cs-board__mark' }, icon('mark', 'm')), h('span', { class: 'cs-board__title' }, 'Circle Studio'), h('span', { class: 'cs-grow' }),
+    if (gone) return;
+    const buttons = [
       editing ? h('button', { class: 'cs-btn cs-btn--small', type: 'button', onclick: gallery }, icon('plus', 's'), 'Add') : null,
-      h('button', { class: 'cs-btn cs-btn--small', type: 'button', title: 'Show these tiles on the desktop itself, as widgets', onclick: async () => { try { await api.desktopWidgets('start'); toast('On your desktop now. Drag a tile to move it; right-click for options.', { kind: 'ok' }); } catch (e) { toast(e.message, { kind: 'danger' }); } } }, icon('pin', 's'), 'Put on desktop'),
-      h('button', { class: `cs-btn cs-btn--small ${editing ? 'cs-btn--primary' : 'cs-btn--quiet'}`, type: 'button', 'aria-pressed': String(editing), onclick: () => { editing = !editing; draw(); } }, editing ? 'Done' : 'Edit'),
-      h('button', { class: 'cs-btn cs-btn--small cs-btn--quiet cs-btn--icon', type: 'button', 'aria-label': 'Open Circle Studio', title: 'Open Circle Studio', onclick: () => openApp('#/') }, icon('external', 's')));
-    const grid = h('div', { class: `cs-board ${editing ? 'cs-board--editing' : ''}` }, tiles.map((t, i) => {
+      embedded ? null : h('button', { class: 'cs-btn cs-btn--small', type: 'button', title: 'Show these tiles on the desktop itself, as widgets', onclick: async () => { try { await api.desktopWidgets('start'); toast('On your desktop now. Drag a tile to move it; right-click for options.', { kind: 'ok' }); } catch (e) { toast(e.message, { kind: 'danger' }); } } }, icon('pin', 's'), 'Put on desktop'),
+      h('button', { class: `cs-btn cs-btn--small ${editing ? 'cs-btn--primary' : embedded ? '' : 'cs-btn--quiet'}`, type: 'button', 'aria-pressed': String(editing), onclick: () => { editing = !editing; draw(); } }, editing ? 'Done' : embedded ? 'Edit tiles' : 'Edit'),
+      embedded ? null : h('button', { class: 'cs-btn cs-btn--small cs-btn--quiet cs-btn--icon', type: 'button', 'aria-label': 'Open Circle Studio', title: 'Open Circle Studio', onclick: () => openApp('#/') }, icon('external', 's')),
+    ];
+    const bar = embedded
+      ? h('div', { class: 'cs-row cs-row--wrap' }, h('h2', { class: 'cs-h3 cs-grow' }, 'Your tiles'), ...buttons)
+      : h('header', { class: 'cs-board__bar' }, h('span', { class: 'cs-board__mark' }, icon('mark', 'm')), h('span', { class: 'cs-board__title' }, 'Circle Studio'), h('span', { class: 'cs-grow' }), ...buttons);
+    const grid = h('div', { class: `cs-board ${embedded ? 'cs-board--start' : ''} ${editing ? 'cs-board--editing' : ''}` }, tiles.map((t, i) => {
       const el = renderTile(t, ctx);
       if (editing) el.append(controls(t, i));
       else el.append(h('button', { class: 'cs-tile__pop', type: 'button', 'aria-label': `Open ${KINDS[t.kind]?.title} in its own window`, title: 'Open in its own window', onclick: () => popOut(t) }, icon('external', 's')));
       return el;
     }), !tiles.length || editing ? h('button', { class: 'cs-tile cs-tile--s cs-tile--add', type: 'button', onclick: gallery }, icon('plus', 'l'), 'Add a widget') : null);
-    root.replaceChildren(h('div', { class: 'cs-boardwrap' }, bar, grid));
+    root.replaceChildren(h('div', { class: embedded ? 'cs-stack' : 'cs-boardwrap' }, bar, grid));
   }
 
-  async function refresh(usage = false) { await ctx.refresh(tiles, { usage }); draw(); }
+  async function refresh(usage = false) { if (gone) return; await ctx.refresh(tiles, { usage }); draw(); }
+  const destroy = () => { gone = true; timers.forEach(clearInterval); offs.forEach((f) => f()); };
 
-  document.title = 'Circle Studio widgets';
+  if (!embedded) document.title = 'Circle Studio widgets';
   draw();
-  await loadShell();
+  if (!embedded) await loadShell();
   try { tiles = (await api.settings()).settings.widgets || []; } catch { tiles = []; }
   draw();
   await ctx.refresh(tiles, { usage: false, skipUsage: true }); // quick data first; the use per provider takes longer the first time
   draw();
   refresh(true);
-  listen(() => refresh());
-  setInterval(() => { if (document.visibilityState === 'visible' && !editing) refresh(); }, POLL_MS);
-  setInterval(() => refresh(true), USAGE_MS);
+  if (embedded) {
+    // the app already listens for requests: only redraw on its announcements, and stop when the page is left
+    const redraw = () => refresh();
+    for (const ev of ['circle:requests', 'circle:alerts', 'circle:run']) { window.addEventListener(ev, redraw); offs.push(() => window.removeEventListener(ev, redraw)); }
+  } else listen(() => refresh(), 'board');
+  timers.push(setInterval(() => { if (document.visibilityState === 'visible' && !editing) refresh(); }, POLL_MS));
+  timers.push(setInterval(() => refresh(true), USAGE_MS));
+  return { destroy };
 }

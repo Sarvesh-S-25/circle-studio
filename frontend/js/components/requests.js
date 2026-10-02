@@ -5,7 +5,7 @@ import { api } from '../api.js';
 import { h, icon, timeAgo } from '../dom.js';
 import { notify, state } from '../state.js';
 import { openModal, toast } from './overlay.js';
-import { desktopAlert, setWaitingCount } from './notify.js';
+import { comeForward, desktopAlert, setWaitingCount } from './notify.js';
 
 let started = false;
 const countWaiting = () => setWaitingCount(state.pending.length + state.alerts.filter((a) => a.open !== false).length);
@@ -17,14 +17,19 @@ export const engineName = (id) => ENGINE[id] || id;
 const projectName = (id) => state.projects.find((p) => p.id === id)?.name || id;
 const announce = (name, detail) => window.dispatchEvent(new CustomEvent(name, { detail }));
 
-export function initRequests() {
+/** `windowKey`: what this window shows ('app', 'board', 'widget:<id>', 'tile:<kind>:<size>[:<id>]'). */
+export function initRequests(windowKey = '') {
   if (started) return;
   started = true;
   reload();
   window.addEventListener('circle:requests', countWaiting);
   window.addEventListener('circle:alerts', countWaiting);
   api.events((name, data) => {
-    if (name === 'request') {
+    if (name === 'show') {
+      // Circle Studio was opened again: this window comes forward (on the page asked for) instead of a second one
+      if (typeof data.hash === 'string' && data.hash.startsWith('#/') && location.pathname === '/') location.hash = data.hash;
+      comeForward(data.mark);
+    } else if (name === 'request') {
       if (!state.pending.some((r) => r.id === data.id)) {
         state.pending.push(data);
         desktopAlert({ title: `${projectName(data.projectId)}: ${data.nodeId || engineName(data.engine)} ${data.kind === 'question' ? 'has a question' : 'asks to go ahead'}`, body: data.title || '', tag: data.id, onClick: () => openRequest(data.id) });
@@ -40,7 +45,7 @@ export function initRequests() {
       announce('circle:requests', data);
       showNext();
     } else if (name === 'run' || name === 'usage') announce('circle:run', data);
-  });
+  }, windowKey);
 }
 
 async function reload() {

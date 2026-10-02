@@ -6,9 +6,13 @@ import { pref, setPref, state, subscribe } from '../state.js';
 import { openModal, toast } from './overlay.js';
 
 /** Change this id when there is something new to tell. */
-export const RELEASE = '2026-10-02-desktop-widgets';
+export const RELEASE = '2026-10-02-one-window';
 
 const CHANGES = [
+  ['widgets', 'One window, and Widgets in the menu',
+    'Opening Circle Studio while it is already open brings that window to the front instead of opening another one; the same goes for the widget board and each project\'s widget, and for clicks on the desktop widgets. Widgets now has its own page in the menu, below Connections: choose and arrange your tiles there, and put them on the desktop or take them off.'],
+  ['link', 'Connections fix themselves',
+    'Connections, Manager: every connector grouped across your projects, with what is broken, copied over and over, set up for folders that are gone, or keeping a key in plain text, and a button that fixes each one. "Fix it for me" repeats a working setup; "Make it one shared server" replaces the copies; pasting a key saves it in your Windows environment so no file holds it. Every fix shows its steps first, backs up Claude Code\'s config, puts it back if a step fails, and tests the server afterwards. Circle Studio also checks every few hours and tells you when a connection breaks.'],
   ['pin', 'Real widgets on your desktop',
     'Settings, Desktop, "Show widgets on the desktop": rounded tiles that live on the desktop itself (not windows, not shortcuts): agent rings, spending, a workflow, what waits for you. Drag them anywhere; click to open Circle Studio there; right-click to keep them above windows or close them. In a project, Widget, "Put its agents and workflow on the desktop".'],
   ['link', 'Broken connections get fixed',
@@ -19,10 +23,6 @@ const CHANGES = [
     'The new Connections page lists every MCP server each engine uses, checks that it works, and flags keys written in plain text, unpinned downloads, risky agent settings and passwords in git remotes. The key vault keeps connector keys encrypted for your Windows account and gives them only to the projects you allow.'],
   ['sparkle', 'The workflow helper reads your project',
     'It now reads the folder (stack, size, docs, tests, existing agents), the building blocks you already have (Library, Catalog) and the pages you indexed, and recommends from those. Describe with Haiku writes one-line descriptions for the catalog.'],
-  ['agent', 'A Haiku reader for expensive agents',
-    'Turn on "Haiku reader for long reads" on an agent: a cheap reader reads big files, logs and pages for it and answers in a few lines. The Cost tab suggests it where your transcripts show an agent carrying a large context.'],
-  ['settings', 'A side panel you can resize',
-    'Drag the left edge of the helper or a node panel (or Alt+Shift+Left/Right). It now fills the window, and the chat log can be made taller.'],
 ];
 
 export function openWhatsNew() {

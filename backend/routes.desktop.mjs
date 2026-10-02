@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { badRequest, notReady } from './lib/errors.mjs';
-import { shortcutPath, writeShortcut, removeShortcut, openAppWindow } from './lib/desktop.mjs';
+import { shortcutPath, writeShortcut, removeShortcut } from './lib/desktop.mjs';
 import { repoState, githubState } from './lib/gitstatus.mjs';
 import { projectStats } from './lib/stats.mjs';
 import { listConversations } from './lib/cchistory.mjs';
@@ -143,19 +143,24 @@ export function buildDesktopHandlers(app) {
       const id = query.get('projectId');
       return { shortcuts: shortcuts(id ? projects.get(id) : null) };
     },
-    'desktop.open': ({ body }) => {
+    // Shows a window: the one already open for the same thing is brought to the front (one Circle Studio, one board,
+    // one widget per project), a new one is opened only when none is.
+    'desktop.open': async ({ body }) => {
       const project = body?.projectId ? projects.get(String(body.projectId)) : null;
       const kind = ['widget', 'tile'].includes(body?.kind) ? body.kind : 'app';
+      const settle = body?.settle === true; // the launcher has just restarted the server: open windows are reconnecting
       if (kind === 'tile') {
         const t = body?.tile || {};
         if (!WIDGET_KINDS.includes(t.kind) || !['s', 'm', 'l'].includes(t.size)) throw badRequest('Say which tile (kind and size s, m or l).');
         const url = `${base()}/widget.html?w=${t.kind}&size=${t.size}${project ? `&p=${encodeURIComponent(project.id)}` : ''}`;
-        return { opened: true, appWindow: openAppWindow(url, TILE_WINDOW[t.size]) };
+        return { opened: true, ...(await app.showWindow(`tile:${t.kind}:${t.size}${project ? `:${project.id}` : ''}`, url, { size: TILE_WINDOW[t.size] })) };
       }
       const hash = typeof body?.hash === 'string' && /^#\/[A-Za-z0-9_/-]{0,120}$/.test(body.hash) ? body.hash : project ? `#/projects/${encodeURIComponent(project.id)}/workflow` : '';
-      const url = kind === 'widget' ? `${base()}/widget.html${project ? `?p=${encodeURIComponent(project.id)}` : ''}` : `${base()}/${hash}`;
-      const edge = openAppWindow(url, kind === 'widget' ? (project ? WIDGET_SIZE : BOARD_SIZE) : {});
-      return { opened: true, appWindow: edge };
+      if (kind === 'widget') {
+        const url = `${base()}/widget.html${project ? `?p=${encodeURIComponent(project.id)}` : ''}`;
+        return { opened: true, ...(await app.showWindow(project ? `widget:${project.id}` : 'board', url, { size: project ? WIDGET_SIZE : BOARD_SIZE, settle })) };
+      }
+      return { opened: true, ...(await app.showWindow('app', `${base()}/${hash}`, { hash, settle })) };
     },
 
     // Everything a project's widget shows, in one answer: what runs, what waits for the human, the workflow's stages,

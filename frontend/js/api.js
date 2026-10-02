@@ -72,6 +72,9 @@ export const api = {
   catalogDescribe: () => request('POST', '/api/catalog/describe', {}),
   catalogIndex: (url) => request('POST', '/api/catalog/index', { url }),
   connections: (projectId = '') => request('GET', `/api/connections?projectId=${enc(projectId)}`),
+  manageConnections: () => request('GET', '/api/connections/manage'),
+  planConnection: (action, projectId) => request('POST', '/api/connections/plan', { action, projectId }),
+  applyConnection: (id) => request('POST', '/api/connections/apply', { id }),
   testConnection: (body) => request('POST', '/api/connections/test', body),
   fixConnection: (body) => request('POST', '/api/connections/fix', body),
   checkConnection: (body) => request('POST', '/api/connections/check', body),
@@ -113,15 +116,18 @@ export const api = {
   restoreWorkflow: (id, version) => request('POST', `/api/projects/${enc(id)}/workflow/restore`, { version }),
   suggestWorkflow: (id, body) => request('POST', `/api/projects/${enc(id)}/workflow/suggest`, body),
 
-  /** App-wide event stream (requests, runs, usage). Calls onEvent(name, data); returns { close() }. Reconnects itself. */
-  events(onEvent) {
+  /**
+   * App-wide event stream (requests, runs, usage). Calls onEvent(name, data); returns { close() }. Reconnects itself.
+   * `windowKey` says what this window shows ('app', 'board', 'widget:<id>', ...), so it is reused instead of opened twice.
+   */
+  events(onEvent, windowKey = '') {
     let stop = false;
     let ctl = null;
     const loop = async () => {
       while (!stop) {
         ctl = new AbortController();
         try {
-          const res = await fetch('/api/events', { method: 'GET', signal: ctl.signal });
+          const res = await fetch(`/api/events?window=${enc(windowKey)}`, { method: 'GET', signal: ctl.signal });
           if (!String(res.headers.get('content-type')).startsWith('text/event-stream')) throw new Error('not a stream');
           const reader = res.body.getReader();
           const dec = new TextDecoder();

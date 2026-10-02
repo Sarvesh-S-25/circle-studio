@@ -121,6 +121,19 @@ function opMcpEnvRef(ws, op) {
   patchJson(ws, '.mcp.json', ['mcpServers', op.server, op.field, op.key], `${prefix}\${${op.ref}}`);
 }
 
+/** Set one variable or header of a server in .mcp.json: a ${NAME} reference, or the key itself when the human chose so. */
+function opMcpEnvSet(ws, op) {
+  if (typeof op.server !== 'string' || !op.server || op.server.length > 80) throw badRequest('Say which server.');
+  if (!['env', 'headers'].includes(op.field)) throw badRequest('field must be env or headers.');
+  if (typeof op.key !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/.test(op.key)) throw badRequest('Say which variable or header.');
+  if (typeof op.value !== 'string' || !op.value.trim() || op.value.length > 8000 || /[\r\n\0]/.test(op.value)) throw badRequest('The value must be one line.');
+  if (/sk-ant-/i.test(op.value)) throw badRequest('That is an Anthropic key: it is never written anywhere.');
+  const config = readJson(ws, '.mcp.json', '.mcp.json');
+  if (!config.mcpServers?.[op.server]) throw notFound(`.mcp.json has no server ${op.server}.`);
+  if (!config.mcpServers[op.server][op.field]) patchJson(ws, '.mcp.json', ['mcpServers', op.server, op.field], {});
+  patchJson(ws, '.mcp.json', ['mcpServers', op.server, op.field, op.key], op.value);
+}
+
 /** Correct the command and arguments of one server in .mcp.json (a fix proposed on Connections). */
 function opMcpServerSet(ws, op) {
   if (typeof op.server !== 'string' || !op.server || op.server.length > 80) throw badRequest('Say which server.');
@@ -593,6 +606,7 @@ export const OPS = {
   'alert-answer': opAlertAnswer,
   'mcp-env-ref': opMcpEnvRef,
   'mcp-server-set': opMcpServerSet,
+  'mcp-env-set': opMcpEnvSet,
   'freeze-set': opFreezeSet,
 };
 

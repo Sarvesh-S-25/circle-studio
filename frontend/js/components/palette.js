@@ -28,7 +28,8 @@ function commands() {
     { label: 'Switch light / dark', icon: 'contrast', run: () => toggleTheme() },
     { label: 'Keyboard shortcuts', icon: 'keyboard', kbd: '?', run: () => openShortcuts() },
     { label: "What's new", icon: 'sparkle', run: () => import('./whatsnew.js').then((m) => m.openWhatsNew()) },
-    { label: 'Open the widget board', icon: 'pin', run: () => api.openWindow('widget') },
+    { label: 'Go to Widgets (choose desktop widgets)', icon: 'widgets', run: () => { location.hash = '#/widgets'; } },
+    { label: 'Open the widget board in its own window', icon: 'pin', run: () => api.openWindow('widget') },
     { label: 'Ask Circle: what to do next, how do I...', icon: 'sparkle', kbd: 'Ctrl J', run: () => import('./guide.js').then((m) => m.openGuide()) },
   ];
   for (const p of state.projects.filter((x) => x.exists)) {

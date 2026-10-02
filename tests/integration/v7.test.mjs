@@ -51,7 +51,7 @@ test('connections: test for real, diagnose, Claude fixes the config through the 
     assert.ok(!JSON.stringify(t).includes('k-123'));
   } finally {
     await s.close();
-    for (let i = 0; i < 20; i++) { try { rmDir(root); break; } catch { await new Promise((r) => setTimeout(r, 250)); } } // the probed server may still be closing
+    rmDir(root);
   }
 });
 

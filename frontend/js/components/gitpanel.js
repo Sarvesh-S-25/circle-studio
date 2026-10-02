@@ -103,7 +103,7 @@ export async function widgetMenu(anchor, project) {
         toast(`${project.name} is on your desktop. Drag the tiles where you like; right-click one for options.`, { kind: 'ok' });
       } catch (e) { toast(e.message, { kind: 'danger' }); }
     } },
-    { label: 'Choose desktop widgets...', icon: 'edit', onSelect: () => api.openWindow('widget').catch((e) => toast(e.message, { kind: 'danger' })) },
+    { label: 'Choose desktop widgets...', icon: 'edit', onSelect: () => { location.hash = '#/widgets'; } },
     { group: 'Windows' },
     { label: 'Open its widget window', icon: 'external', onSelect: () => api.openWindow('widget', project.id).catch((e) => toast(e.message, { kind: 'danger' })) },
     ...(sc ? [pin('desktop', 'a Desktop shortcut'), pin('startmenu', 'the Start menu')] : []),

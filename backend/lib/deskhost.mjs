@@ -11,7 +11,9 @@ export function hostScript(appRoot) { return path.join(appRoot, 'scripts', 'widg
 
 /** wscript.exe and its arguments (no shell). */
 export function hostCommand({ appRoot, port, dataDir }) {
-  return { file: path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'wscript.exe'), args: [path.join(appRoot, 'scripts', 'widgets', 'start-widgets.vbs'), String(port), dataDir] };
+  // never a folder literally named "undefined" next to the code: no data folder means the app's own
+  const data = typeof dataDir === 'string' && dataDir ? dataDir : path.join(appRoot, 'data');
+  return { file: path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'wscript.exe'), args: [path.join(appRoot, 'scripts', 'widgets', 'start-widgets.vbs'), String(port), data] };
 }
 
 function alive(pid) {
