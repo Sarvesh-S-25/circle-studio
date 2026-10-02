@@ -140,9 +140,10 @@ export async function mount(el, ctx) {
 
   const tabs = h('div', { class: 'cs-partitions', role: 'group', 'aria-label': 'Skill partitions' });
   search.addEventListener('input', draw);
-  el.append(h('div', { class: 'cs-stack' },
-    h('div', { class: 'cs-row cs-row--wrap cs-row--between' }, h('h1', { class: 'cs-h1', id: 'main-title' }, 'Library'),
-      h('div', { class: 'cs-row cs-row--wrap' }, search, h('button', { class: 'cs-btn', type: 'button', onclick: () => openGithubImport(draw) }, icon('github', 's'), 'Import from GitHub'), h('a', { class: 'cs-btn cs-btn--primary', href: '#/library/new' }, icon('plus', 's'), 'New skill'))),
+  el.append(h('div', { class: 'cs-stack cs-page' },
+    h('header', { class: 'cs-stack cs-stack--tight' }, h('h1', { class: 'cs-h1', id: 'main-title' }, 'Library'),
+      h('p', { class: 'cs-soft' }, 'Skills are how-to cards your agents read when a task needs them, like "test a React component". Not sure which you need? In a project\'s Workflow, open the Workflow helper and press "Find skills".')),
+    h('div', { class: 'cs-row cs-row--wrap' }, h('a', { class: 'cs-btn cs-btn--primary', href: '#/library/new' }, icon('plus', 's'), 'New skill'), h('button', { class: 'cs-btn', type: 'button', onclick: () => openGithubImport(draw) }, icon('github', 's'), 'Import from GitHub'), h('span', { class: 'cs-grow' }), search),
     tabs, grid, catalogSection()));
   draw();
   if (ctx.params.importOpen) setTimeout(() => openGithubImport(draw), 0);

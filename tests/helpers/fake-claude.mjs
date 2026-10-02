@@ -50,6 +50,21 @@ if (args.includes('--json-schema')) {
       process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, structured_output: out, result: JSON.stringify(out), modelUsage: { 'fake-model': {} }, total_cost_usd: 0.0005, duration_ms: 5 }));
       return;
     }
+    if (input.startsWith('CIRCLE-SKILL-NEEDS')) {
+      // finding skills, step 1: one need for the first agent, searched as "react testing"
+      const first = /^- ([a-z0-9-]+): /m.exec(input)?.[1];
+      const out = { needs: [{ need: 'Testing React components', search: 'react testing', agents: first ? [first, 'not-an-agent'] : [] }] };
+      process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, structured_output: out, result: JSON.stringify(out), modelUsage: { 'fake-haiku': {} }, total_cost_usd: 0.0002, duration_ms: 5 }));
+      return;
+    }
+    if (input.startsWith('CIRCLE-SKILL-PICK')) {
+      // step 2: picks every candidate whose name mentions "test", plus one id that does not exist
+      const first = /^- ([a-z0-9-]+): /m.exec(input)?.[1];
+      const ids = [...input.matchAll(/^(c\d+) \| [^|]+ \| ([^:]+):/gm)].filter((m) => /test/.test(m[2])).map((m) => m[1]);
+      const out = { note: 'Found a testing skill.', picks: [...ids.map((id) => ({ id, plain: 'Helps an agent write tests.', why: 'The team writes React code.', agents: first ? [first] : [] })), { id: 'c999', plain: 'x', why: 'y' }] };
+      process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, structured_output: out, result: JSON.stringify(out), modelUsage: { 'fake-haiku': {} }, total_cost_usd: 0.0003, duration_ms: 5 }));
+      return;
+    }
     if (input.startsWith('CIRCLE-WORKFLOW-HELPER')) {
       // the workflow helper: "lighter" drops optional agents, "review" puts a Codex check after the first stage
       const wf = JSON.parse(/<workflow>\n(.*)\n<\/workflow>/.exec(input)[1]);

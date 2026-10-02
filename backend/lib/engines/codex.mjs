@@ -1,12 +1,14 @@
 // Codex as an engine, over `codex app-server` (JSON-RPC lines on stdio). Built from the generated schema and the
 // documentation only: this PC has no Codex login, so nothing here is live-tested (capabilities.liveVerified: false).
-import { startChild, killTree, runCommand, versionOf } from './proc.mjs';
+import { startChild, killTree, runCommand, versionOf, resolveCli } from './proc.mjs';
 import { RpcPeer } from './rpc.mjs';
 import { redact } from '../secrets.mjs';
 
 const CAPABILITIES = { chat: true, shell: 'approvals', approvals: 'relay', questions: 'relay', resume: true, skillsDirs: ['.agents/skills'], instructionsFile: 'AGENTS.md', liveVerified: false };
 
-export function createCodexAdapter({ bin = 'codex', prefixArgs = [] } = {}) {
+export function createCodexAdapter({ bin, prefixArgs = [] } = {}) {
+  // the real program each time (an .exe, or the script behind an npm launcher), unless a test gives one
+  const cli = () => (bin !== undefined ? { bin, prefix: prefixArgs } : resolveCli('codex') || { bin: 'codex', prefix: [] });
   return {
     id: 'codex',
     label: 'Codex',
@@ -15,9 +17,9 @@ export function createCodexAdapter({ bin = 'codex', prefixArgs = [] } = {}) {
     notes: ['Not live-tested: there is no Codex sign-in on this PC. Built from its documented protocol.', 'Runs in the workspace-write sandbox and asks before acting.'],
 
     async detect() {
-      const v = await versionOf(bin, [...prefixArgs, '--version']);
+      const v = await versionOf(cli().bin, [...cli().prefix, '--version']);
       if (!v.installed) return { installed: false, version: null, loggedIn: false, loginHint: 'Install Codex, then run `codex login`.' };
-      const r = await runCommand(bin, [...prefixArgs, 'login', 'status'], { timeoutMs: 10_000 });
+      const r = await runCommand(cli().bin, [...cli().prefix, 'login', 'status'], { timeoutMs: 10_000 });
       const out = `${r.stdout}\n${r.stderr}`;
       const loggedIn = /not logged in/i.test(out) ? false : r.code === 0 ? true : null;
       return { installed: true, version: v.version, loggedIn, loginHint: 'Run `codex login` in a terminal.' };
@@ -25,7 +27,7 @@ export function createCodexAdapter({ bin = 'codex', prefixArgs = [] } = {}) {
 
     async runTurn({ cwd, prompt, model, systemPrompt, sessionId, signal, emit, onRequest, runId = '', extraEnv }) {
       let child;
-      try { child = startChild(bin, [...prefixArgs, 'app-server'], { cwd, extraEnv }); } catch (e) {
+      try { child = startChild(cli().bin, [...cli().prefix, 'app-server'], { cwd, extraEnv }); } catch (e) {
         emit('error', { code: 'not_ready', message: `Could not start Codex (${e.code || e.message}).` });
         return { status: 'error', sessionId };
       }

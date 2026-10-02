@@ -70,7 +70,11 @@ export async function mount(el) {
         h('span', { class: 'cs-grow cs-soft cs-small cs-runrow__what' }, r.agent ? `${r.agent}: ${r.what}` : ''), h('span', { class: 'cs-soft cs-small' }, timeAgo(r.startedAt))));
     }
     const c = state.health?.claude;
-    claudeEl.replaceChildren(c && (!c.installed || !c.loggedIn) ? h('div', { class: 'cs-banner cs-banner--warn' }, icon('warning', 's'), h('span', {}, !c.installed ? 'Claude Code is not installed: chat with Claude is off. Other engines still work (Settings).' : 'Claude is not signed in. Run `claude auth login` in a terminal.')) : '');
+    // no AI tool ready, or Claude missing: say what that means and where to set one up (Let's begin)
+    const ready = state.engines.filter((e) => e.usable);
+    const note = state.engines.length && !ready.length ? 'No AI tool is ready yet, so agents cannot run.'
+      : c && (!c.installed || !c.loggedIn) ? `${!c.installed ? 'Claude Code is not installed' : 'Claude Code is not signed in'}: the workflow helper and Find skills use it.${ready.length ? ` Agents still run on ${ready.map((e) => e.label).join(', ')}.` : ''}` : '';
+    claudeEl.replaceChildren(note ? h('div', { class: 'cs-banner cs-banner--warn' }, icon('warning', 's'), h('span', { class: 'cs-grow' }, note), h('a', { class: 'cs-btn cs-btn--small cs-btn--primary', href: '#/start' }, "Let's set it up")) : '');
   }
 
   function statusOf(p) {

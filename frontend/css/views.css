@@ -205,6 +205,24 @@ a.cs-tile:hover { border-color: var(--c-accent); }
 .cs-cx__add { display: grid; gap: var(--sp-2); grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) max-content; }
 @media (max-width: 48rem) { .cs-cx__add { grid-template-columns: minmax(0, 1fr); } }
 
+/* a list page (Inbox, Library, Keys): one centred column, so wide screens do not pull it apart */
+.cs-page { inline-size: 100%; max-inline-size: calc(var(--w-xl) * 1.25); margin-inline: auto; }
+.cs-grid > .cs-empty { grid-column: 1 / -1; }
+.cs-keys__form { display: grid; gap: var(--sp-3); grid-template-columns: repeat(auto-fit, minmax(var(--w-s), 1fr)); }
+.cs-cx__sec > summary { cursor: pointer; }
+
+/* Let's begin */
+.cs-start__grid { display: grid; gap: var(--sp-3); grid-template-columns: repeat(auto-fill, minmax(calc(var(--w-m) * 0.9), 1fr)); align-items: start; }
+.cs-start__card { display: flex; flex-direction: column; gap: var(--sp-2); }
+.cs-start__card--on { border-color: var(--c-accent); }
+.cs-start__card p { margin: 0; }
+.cs-start__pick { cursor: pointer; }
+.cs-start__steps { margin: 0; padding-inline-start: var(--sp-4); display: grid; gap: var(--sp-2); font-size: var(--fs-s); }
+.cs-start__cmd { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); margin-block-start: var(--sp-1); }
+.cs-start__cmd code { padding: var(--sp-1) var(--sp-2); border-radius: var(--r-s); background: var(--c-sunken); overflow-wrap: anywhere; }
+.cs-rail__engines { color: inherit; text-decoration: none; }
+.cs-rail__engines:hover { text-decoration: underline; }
+
 /* ---- catalog (Library) --------------------------------------------------------------------------- */
 .cs-cat__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); max-block-size: 60dvh; overflow-y: auto; }
 .cs-cat__row { display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-2) var(--sp-3); border: var(--bw) solid var(--c-line); border-radius: var(--r-m); }

@@ -6,11 +6,12 @@ import { confirmDialog, toast } from '../components/overlay.js';
 import { askPermissions, permissionSummary } from '../components/permissions.js';
 import { gitChip, widgetMenu } from '../components/gitpanel.js';
 
-const TABS = [['workflow', 'Workflow', 'plan'], ['team', 'Team', 'team'], ['skills', 'Skills', 'skill'], ['health', 'Health', 'health'], ['cost', 'Cost', 'cost'], ['chat', 'Chat', 'chat']];
+const TABS = [['workflow', 'Workflow', 'plan'], ['team', 'Team', 'team'], ['skills', 'Skills', 'skill'], ['connections', 'Connections', 'link'], ['health', 'Health', 'health'], ['cost', 'Cost', 'cost'], ['chat', 'Chat', 'chat']];
 const MODULES = {
   workflow: () => import('./workflow.js'),
   team: () => import('./team.js'),
   skills: () => import('./pskills.js'),
+  connections: () => import('./connections.js'),
   health: () => import('./health.js'),
   cost: () => import('./cost.js'),
   chat: () => import('./chat.js'),

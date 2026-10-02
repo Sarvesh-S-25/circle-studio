@@ -9,9 +9,27 @@ Single user, this PC, `127.0.0.1` only. No account, no telemetry, **no API key**
 
 ## Install
 
-You need **Windows 10 or 11**, **Node.js 24 or newer** ([nodejs.org](https://nodejs.org), the LTS button) and at least
-one engine signed in from a terminal, for example Claude Code: `npm install -g @anthropic-ai/claude-code`, then
-`claude auth login`. Git is recommended (for project status and updates).
+You need **Windows 10 or 11**, **Node.js 24 or newer** ([nodejs.org](https://nodejs.org), the LTS button) and an
+account for at least one of the AI tools below. Git is recommended (for project status and updates).
+
+Circle Studio has no AI of its own: it runs the AI tools you already use, with your own sign-in (no API key). The first
+time it opens, **Let's begin** asks which you use, shows which are ready, and runs the steps for you if you like:
+
+| Tool | Account | Install | Sign in |
+|---|---|---|---|
+| Claude Code (Anthropic) | Claude Pro or Max, or an Anthropic Console account | `npm install -g @anthropic-ai/claude-code` | `claude auth login` |
+| Codex (OpenAI) | ChatGPT Plus, Pro or Team, or an OpenAI account | `npm install -g @openai/codex` | `codex login` |
+| Gemini (Google) | a Google account | Antigravity, from [antigravity.google](https://antigravity.google) | run `agy` once |
+| GitHub Copilot | a GitHub account with a Copilot plan | `npm install -g @github/copilot` | `copilot login` |
+
+Claude Code does the most here (the workflow helper, Find skills and the Advisor use it); agents and chats run on any of
+them. OpenClaw, Cursor and Aider cannot be driven: here every agent asks you before it runs a command or changes a
+file, and those tools have no way to ask first.
+
+**GitHub (optional).** Sign in through the GitHub CLI for private repositories, Actions and pull requests, and more
+searches when finding skills: `winget install --id GitHub.cli -e --source winget`, then
+`gh auth login --hostname github.com --web --git-protocol https` (Let's begin can run both). The CLI keeps the sign-in;
+Circle Studio never sees your token.
 
 **With git (recommended: it can then update itself).** In PowerShell or a terminal:
 
@@ -86,11 +104,13 @@ Everyone who cloned sees **Update ready** within a day. Change `RELEASE` and `CH
 | Chat | A real agent session in the project folder. Every command, edit and question asks you first. **Earlier conversations** lists your Claude Code conversations from the terminal in that folder: read them or continue them here |
 | Cost | Claude use for 30 days (by model, day and agent, at API prices), what loads before you type, each agent's model and price, and ways to spend less (apply a cheaper model, or let AI rearrange the workflow), all through a reviewed diff |
 | Health | What needs you now, in plain words; details underneath |
-| Widgets | Its own page in the menu, below Connections. Real widgets on your desktop: rounded tiles for agent rings (working, waiting, done, idle), spending by provider, a workflow, what waits for you. Drag them anywhere, click to open, right-click for options. Choose them on the widget board |
-| Connections | Every MCP server each engine uses. The Manager groups them across projects and fixes what is broken, duplicated, stale or keeping a plain-text key in one click (previewed, backed up, undone on failure, tested after). Paste a key and it is saved in your Windows environment; Test explains any failure; Claude can propose a config fix and advice for the code. A security check and an encrypted key vault |
+| Let's begin | First run (and any time from the AI tools line in the menu): which AI tools you use, which are ready, the install and sign-in steps with a button that runs them |
+| Connections (in a project) | The tools (MCP servers) its agents can use: its own, every project's, and what your Claude Code plugins bring. Whether each works and has its key; Key gives it a saved key, Add a tool adds one (warning first when the project already has it), Remove, Test, and Claude's fix when it is broken |
+| Widgets | Its own page in the menu. Real widgets on your desktop: rounded tiles for agent rings (working, waiting, done, idle), spending by provider, a workflow, what waits for you. Drag them anywhere, click to open, right-click for options. Choose them on the widget board |
+| Keys | Paste an API key once (encrypted for your Windows account, never shown again). "Everything on this PC": every connection of every engine, the manager that fixes what is broken, duplicated, stale, already brought by a plugin or keeping a plain-text key (previewed, backed up, undone on failure, tested after), and the security check |
 | Inbox | Every approval and question, and team questions from `docs/tasks/ALERTS.md` |
 | Ask Circle | Ctrl+J: next steps, built-in help (no AI needed), or ask any engine you are signed in to |
-| Library | Skills for every engine, and the Catalog: every building block you have, described in one line, searchable the way the workflow helper searches it; index a link to make its text searchable |
+| Library | Skills (how-to cards agents read) for every engine. In the Workflow helper, Find skills searches GitHub for what your agents lack and explains each one; paste a GitHub link to see what is in it. And the Catalog: every building block you have, described in one line, searchable the way the workflow helper searches it; index a link to make its text searchable |
 | Advisor | A second opinion on one document (plan, brief, spec): what to keep, what to build, what is wrong; pin items to a stage |
 | Settings | Engines, desktop alerts, start at sign-in, the widget board, updates |
 

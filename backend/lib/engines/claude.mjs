@@ -25,7 +25,9 @@ export function turnArgs({ model, resume, fork = false, systemPrompt, guarded })
 
 const usageOf = (u = {}) => (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0);
 
-export function createClaudeAdapter({ service, bin = 'claude', prefixArgs = [] }) {
+export function createClaudeAdapter({ service, bin, prefixArgs }) {
+  // the service finds the real program each time (see ClaudeService); a test may give its own
+  const cli = () => (bin !== undefined ? { bin, prefix: prefixArgs || [] } : { bin: service.bin, prefix: service.prefix });
   return {
     id: 'claude',
     label: 'Claude Code',
@@ -50,7 +52,7 @@ export function createClaudeAdapter({ service, bin = 'claude', prefixArgs = [] }
           attempt++;
           let child;
           try {
-            child = startChild(bin, [...prefixArgs, ...turnArgs({ model, resume, fork: fork && Boolean(resume), systemPrompt, guarded: risk.length > 0 })], { cwd, extraEnv });
+            child = startChild(cli().bin, [...cli().prefix, ...turnArgs({ model, resume, fork: fork && Boolean(resume), systemPrompt, guarded: risk.length > 0 })], { cwd, extraEnv });
           } catch (e) {
             emit('error', { code: 'not_ready', message: e.code === 'ENOENT' ? 'Claude CLI not found.' : `Could not start Claude (${e.code || e.message}).` });
             resolve({ status: 'error', sessionId: resume });

@@ -8,7 +8,7 @@ export const ENGINE_IDS = ['claude', 'codex', 'gemini', 'copilot'];
 const TTL_MS = 60_000;
 
 export function defaultAdapters({ claudeService }) {
-  return [createClaudeAdapter({ service: claudeService, bin: claudeService.bin, prefixArgs: claudeService.prefix }), createCodexAdapter(), createAgyAdapter(), createCopilotAdapter()];
+  return [createClaudeAdapter({ service: claudeService }), createCodexAdapter(), createAgyAdapter(), createCopilotAdapter()];
 }
 
 export class Engines {

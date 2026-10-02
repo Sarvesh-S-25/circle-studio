@@ -99,6 +99,7 @@ export const api = {
   /* ---- engines, approvals and questions (the Inbox) ---- */
   engines: () => request('GET', '/api/engines'),
   checkEngines: () => request('POST', '/api/engines/check', {}),
+  engineTerminal: (engine, step) => request('POST', '/api/engines/terminal', { engine, step }),
   requests: (status = 'pending', projectId = '') => request('GET', `/api/requests?status=${enc(status)}${projectId ? '&projectId=' + enc(projectId) : ''}`),
   respond: (id, body) => request('POST', `/api/requests/${enc(id)}/respond`, body),
   alerts: (status = 'open') => request('GET', `/api/alerts?status=${enc(status)}`),
@@ -115,6 +116,7 @@ export const api = {
   saveWorkflow: (id, body) => request('PUT', `/api/projects/${enc(id)}/workflow`, body),
   restoreWorkflow: (id, version) => request('POST', `/api/projects/${enc(id)}/workflow/restore`, { version }),
   suggestWorkflow: (id, body) => request('POST', `/api/projects/${enc(id)}/workflow/suggest`, body),
+  discoverSkills: (id, body) => request('POST', `/api/projects/${enc(id)}/skills/discover`, body),
 
   /**
    * App-wide event stream (requests, runs, usage). Calls onEvent(name, data); returns { close() }. Reconnects itself.

@@ -13,6 +13,10 @@ import { newProjectFolder, writeNewProject } from './lib/projects.mjs';
 import { str } from './lib/route-helpers.mjs';
 import { projectDigest } from './lib/digest.mjs';
 import { ensureCatalog } from './routes.catalog.mjs';
+import fs from 'node:fs';
+import path from 'node:path';
+import { createSkillFinder, githubLinks } from './lib/skillfind.mjs';
+import { claudePlugins } from './lib/connections.mjs';
 
 const ALL = { write: true, run: true, claude: true };
 const opt = (v, max) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : undefined);
@@ -110,6 +114,22 @@ export function buildWorkflowHandlers(app) {
       const r = await app.claude.advise({ key: `helper:${project.id}`, prompt, model, root: project.root, schema: HELPER_SCHEMA, kind: 'helper', projectId: project.id });
       const usable = new Set(engineList.filter((e) => e.usable).map((e) => e.id));
       return { ...helperResult(current, r.data, { skills, usable: engineList.length ? usable : undefined }), models: r.models, costUsd: r.costUsd, ms: r.ms, read: { digest: digest.length > 0, blocks: blocks.map((b) => `${b.type}: ${b.name}`), passages: passages.map((p) => p.title) } };
+    },
+    // Skills from GitHub for this workflow: Claude names what the team lacks, GitHub is searched (or the links the
+    // human gave are read), Claude picks the few that fit and explains each. Imports nothing.
+    'skills.discover': async ({ params, body }) => {
+      const project = projects.resolve(params.id, { need: 'claude' });
+      const record = workflows.get(projects.get(params.id));
+      const workflow = body?.workflow !== undefined ? normalizeWorkflow(body.workflow) : record.workflow;
+      const message = typeof body?.message === 'string' ? body.message.slice(0, 2000) : '';
+      const links = Array.isArray(body?.links) ? body.links.filter((l) => typeof l === 'string').slice(0, 5) : githubLinks(message);
+      const inProject = (() => { try { return fs.readdirSync(path.join(project.root, '.claude', 'skills'), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name); } catch { return []; } })();
+      const fromPlugins = claudePlugins(config.userHome).flatMap((p) => p.skills);
+      const have = [...new Set([...library.list().map((s) => s.name), ...inProject, ...fromPlugins])];
+      await app.claude.requireReady();
+      app.skillFinder ||= createSkillFinder({ github: app.github, advise: (prompt, schema, key, model) => app.claude.advise({ key, prompt, model, root: project.root, schema, kind: 'helper', projectId: project.id }) });
+      const r = await app.skillFinder.find({ workflow, digest: projectDigest(project.root), have, links, message: links.length ? '' : message, key: `skills:${project.id}` });
+      return { ...r, fromPlugins: [...new Set(fromPlugins)] };
     },
     'workflow.restore': async ({ params, body }) => {
       const project = projects.get(params.id);

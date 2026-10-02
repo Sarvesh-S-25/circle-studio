@@ -20,8 +20,10 @@ export function acpTool(toolCall = {}) {
   }
 }
 
-export function createCopilotAdapter({ loader = copilotLoader(), nodeBin = process.execPath, prefixArgs = [] } = {}) {
-  const start = (args, cwd, extraEnv) => startChild(nodeBin, [loader, ...prefixArgs, ...args], { cwd, extraEnv });
+export function createCopilotAdapter({ loader: given, nodeBin = process.execPath, prefixArgs = [] } = {}) {
+  // looked up each time, so Copilot installed while Circle Studio runs is found (a test gives its own)
+  const loaderNow = () => (given !== undefined ? given : copilotLoader());
+  const start = (args, cwd, extraEnv) => startChild(nodeBin, [loaderNow(), ...prefixArgs, ...args], { cwd, extraEnv });
   return {
     id: 'copilot',
     label: 'GitHub Copilot',
@@ -30,6 +32,7 @@ export function createCopilotAdapter({ loader = copilotLoader(), nodeBin = proce
     notes: ['Questions the agent asks are not proven to reach the app yet.', 'Every turn costs a premium request.'],
 
     async detect() {
+      const loader = loaderNow();
       if (!loader) return { installed: false, version: null, loggedIn: false, loginHint: 'Install it with `npm i -g @github/copilot`, then run `copilot login`.' };
       const v = await versionOf(nodeBin, [loader, ...prefixArgs, '--version']);
       let loggedIn = null;

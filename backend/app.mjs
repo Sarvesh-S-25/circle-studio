@@ -9,6 +9,7 @@ import { createDesktopServices } from './services.desktop.mjs';
 import { Vault } from './lib/vault.mjs';
 import { Catalog } from './lib/catalog.mjs';
 import { createGithub } from './lib/github.mjs';
+import { ghAwareFetch } from './lib/ghcli.mjs';
 import { ChangeManager } from './lib/changes.mjs';
 import { pickFolder } from './lib/pickfolder.mjs';
 import { codeFingerprint } from './lib/codeversion.mjs';
@@ -19,8 +20,10 @@ export function createApp(config, overrides = {}) {
   const library = new Library({ store });
   const plans = new Plans(store);
   const chats = new Chats(store);
+  // signed in to the GitHub CLI: GitHub API requests go through it (its token never reaches this process)
+  const githubFetch = overrides.fetch || (config.githubToken || process.env.NODE_TEST_CONTEXT ? globalThis.fetch : ghAwareFetch(globalThis.fetch));
   const github = createGithub({
-    fetchImpl: overrides.fetch || globalThis.fetch,
+    fetchImpl: githubFetch,
     token: config.githubToken,
     libraryDirLength: library.dir.length,
     exists: (key) => library.has(key),

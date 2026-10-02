@@ -148,6 +148,10 @@
 .cs-helper__msg--you { align-self: flex-end; background: var(--c-accent-soft); border-color: transparent; white-space: pre-wrap; overflow-wrap: anywhere; }
 .cs-helper__proposal { display: grid; gap: var(--sp-2); padding: var(--sp-2); border: var(--bw) dashed var(--c-accent); border-radius: var(--r-m); }
 .cs-helper__changes { margin: 0; padding-inline-start: var(--sp-4); display: grid; gap: var(--sp-1); font-size: var(--fs-s); list-style: disc; }
+.cs-helper__skill { display: flex; align-items: flex-start; gap: var(--sp-2); padding: var(--sp-2); border: var(--bw) solid var(--c-line); border-radius: var(--r-m); background: var(--c-surface); font-size: var(--fs-s); cursor: pointer; }
+.cs-helper__skill:hover { border-color: var(--c-accent); }
+.cs-helper__skill input { margin-block-start: var(--sp-1); flex: none; }
+.cs-helper__skill a { color: inherit; text-decoration: underline; }
 .cs-wfstart { display: grid; gap: var(--sp-2); border-color: var(--c-accent); border-style: dashed; }
 
 /* linking: a dot on the right edge of every card; drag it to another card */

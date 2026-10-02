@@ -1,11 +1,13 @@
 // Google Antigravity (`agy`, the "gemini" engine) as an engine. Headless mode cannot relay approvals: it auto-denies
 // commands and edits, so this engine is chat only (docs/research/engines.md). The human is told when it denied something.
-import { startChild, killTree, lineReader, parseLine, runCommand, versionOf } from './proc.mjs';
+import { startChild, killTree, lineReader, parseLine, runCommand, versionOf, resolveCli } from './proc.mjs';
 import { redact } from '../secrets.mjs';
 
 const CAPABILITIES = { chat: true, shell: 'none', approvals: 'none', questions: 'none', resume: true, skillsDirs: [], instructionsFile: '', liveVerified: true };
 
-export function createAgyAdapter({ bin = 'agy', prefixArgs = [] } = {}) {
+export function createAgyAdapter({ bin, prefixArgs = [] } = {}) {
+  // the real program each time (an .exe, or the script behind an npm launcher), unless a test gives one
+  const cli = () => (bin !== undefined ? { bin, prefix: prefixArgs } : resolveCli('agy') || { bin: 'agy', prefix: [] });
   return {
     id: 'gemini',
     label: 'Gemini (agy)',
@@ -14,9 +16,9 @@ export function createAgyAdapter({ bin = 'agy', prefixArgs = [] } = {}) {
     notes: ['Headless agy cannot ask you: commands and edits are refused, so it answers and reads only.', 'Skill and instruction folders are not known for agy.'],
 
     async detect() {
-      const v = await versionOf(bin, [...prefixArgs, '--version']);
+      const v = await versionOf(cli().bin, [...cli().prefix, '--version']);
       if (!v.installed) return { installed: false, version: null, loggedIn: false, loginHint: 'Install the Antigravity CLI, then run `agy`.' };
-      const r = await runCommand(bin, [...prefixArgs, 'models'], { timeoutMs: 15_000 });
+      const r = await runCommand(cli().bin, [...cli().prefix, 'models'], { timeoutMs: 15_000 });
       return { installed: true, version: v.version, loggedIn: r.code === 0 ? true : null, loginHint: 'Run `agy` once in a terminal and sign in with Google.' };
     },
 
@@ -24,7 +26,7 @@ export function createAgyAdapter({ bin = 'agy', prefixArgs = [] } = {}) {
       return new Promise((resolve) => {
         let child;
         try {
-          child = startChild(bin, [...prefixArgs, '--input-format', 'stream-json', '--output-format', 'stream-json', '--print-timeout', '10m', ...(model ? ['--model', model] : []), ...(sessionId ? ['--conversation', sessionId] : [])], { cwd, extraEnv });
+          child = startChild(cli().bin, [...cli().prefix, '--input-format', 'stream-json', '--output-format', 'stream-json', '--print-timeout', '10m', ...(model ? ['--model', model] : []), ...(sessionId ? ['--conversation', sessionId] : [])], { cwd, extraEnv });
         } catch (e) {
           emit('error', { code: 'not_ready', message: `Could not start agy (${e.code || e.message}).` });
           resolve({ status: 'error', sessionId });

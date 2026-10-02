@@ -207,6 +207,12 @@
       "doc": "Re-detect every engine now (bypasses the short cache)."
     },
     {
+      "id": "engines.terminal",
+      "method": "POST",
+      "path": "/api/engines/terminal",
+      "doc": "Open a visible terminal that runs one engine's fixed install or sign-in command ({engine, step: install|login}). Nothing typed by the person is run."
+    },
+    {
       "id": "requests.list",
       "method": "GET",
       "path": "/api/requests",
@@ -295,6 +301,12 @@
       "method": "POST",
       "path": "/api/projects/:id/workflow/suggest",
       "doc": "Ask the workflow helper (Claude, no tools) to answer or propose a better workflow. Writes nothing."
+    },
+    {
+      "id": "skills.discover",
+      "method": "POST",
+      "path": "/api/projects/:id/skills/discover",
+      "doc": "Find skills on GitHub for this workflow (or at the links given): Claude names the gaps, GitHub is searched, Claude picks and explains a few. Imports nothing."
     },
     {
       "id": "settings.get",

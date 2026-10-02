@@ -1,9 +1,9 @@
 // Boot, shell and hash router.
 import { h, icon } from './dom.js';
-import { applyTheme, refreshEngines, refreshProjects, refreshShell, refreshSkills, state } from './state.js';
+import { applyTheme, refreshEngines, refreshProjects, refreshShell, refreshSkills, state, pref, setPref } from './state.js';
 import { initRequests } from './components/requests.js';
 import { initAlerts } from './components/alerts.js';
-import { checkForNews } from './components/whatsnew.js';
+import { checkForNews, RELEASE } from './components/whatsnew.js';
 import { loadUpdateState } from './components/updates.js';
 import { toggleGuide } from './components/guide.js';
 import { initPanelSize } from './components/panelsize.js';
@@ -20,11 +20,12 @@ const VIEWS = {
   advisor: () => import('./views/advisor.js'),
   settings: () => import('./views/settings.js'),
   inbox: () => import('./views/inbox.js'),
-  connections: () => import('./views/connections.js'),
+  keys: () => import('./views/keys.js'),
+  start: () => import('./views/start.js'),
   widgets: () => import('./views/widgets.js'),
 };
 
-const TABS = ['workflow', 'team', 'skills', 'health', 'cost', 'chat'];
+const TABS = ['workflow', 'team', 'skills', 'connections', 'health', 'cost', 'chat'];
 
 function parseRoute(hash) {
   const parts = (hash || '#/').replace(/^#\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
@@ -36,7 +37,11 @@ function parseRoute(hash) {
   if (parts[0] === 'advisor') return { view: 'advisor', params: {} };
   if (parts[0] === 'settings') return { view: 'settings', params: {} };
   if (parts[0] === 'inbox') return { view: 'inbox', params: {} };
-  if (parts[0] === 'connections') return { view: 'connections', params: { projectId: parts[1] || '' } };
+  // Keys in the menu; a project's connections live in its own tab (old links still land in the right place)
+  if (parts[0] === 'keys') return { view: 'keys', params: {} };
+  if (parts[0] === 'start') return { view: 'start', params: {} };
+  if (parts[0] === 'connections' && parts[1]) return { view: 'project', params: { id: parts[1], tab: 'connections' } };
+  if (parts[0] === 'connections') return { view: 'keys', params: { advanced: true } };
   if (parts[0] === 'widgets') return { view: 'widgets', params: {} };
   return { view: 'home', params: {} };
 }
@@ -94,7 +99,7 @@ document.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') { e.preventDefault(); toggleRail(); return; }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'j') { e.preventDefault(); toggleGuide(); return; }
   if (modalOpen()) return;
-  if (e.altKey && /^[1-6]$/.test(e.key)) {
+  if (e.altKey && /^[1-7]$/.test(e.key)) {
     const id = /^#\/projects\/([^/]+)/.exec(location.hash)?.[1] || state.recent[0]?.id;
     if (id) { e.preventDefault(); location.hash = `#/projects/${id}/${TABS[Number(e.key) - 1]}`; }
     return;
@@ -122,10 +127,13 @@ initPanelSize();
   } catch (e) {
     toast(e.message, { kind: 'danger', ms: 0 });
   }
+  // the very first time (no project yet, never started): Let's begin, not "What's new"
+  const firstRun = pref('started', '') !== '1' && !state.projects.length;
+  if (firstRun) { setPref('seen-release', RELEASE); if (!location.hash || location.hash === '#/') location.hash = '#/start'; }
   route();
   initRequests('app'); // also: opening Circle Studio again brings this window forward instead of a second one
   initAlerts();
-  checkForNews();
+  if (!firstRun) checkForNews();
   loadUpdateState();
   refreshEngines().catch(() => {}); // slow (each engine is asked): never hold the page up for it
 })();

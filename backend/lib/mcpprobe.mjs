@@ -136,7 +136,7 @@ export function diagnose({ server, raw, probe, launch, missing = [], root, twins
   const add = (cause, fix, extra = {}) => out.push({ cause, fix, ...extra });
   const cmd = String(raw?.command || '');
   const removeCmd = server.engine === 'claude' && server.scope !== 'project' ? `claude mcp remove ${server.name} -s ${server.scope === 'user' ? 'user' : 'local'}` : null;
-  for (const m of missing) add(`${m} is not set.`, `Add ${m} to the Key vault (Connections, Key vault) and allow it for this project, or set it in your environment.`, { vault: m });
+  for (const m of missing) add(`${m} is not set.`, `Save ${m} on the Keys page and allow it for this project, then give it to this tool (Key), or set it in your environment.`, { vault: m });
   const twin = twins[0];
   if ((launch?.error === 'empty' || launch?.error === 'not-found') && twin) {
     add(`The same "${server.name}" server is set up correctly ${twin.where}.`, `Repeat that setup here. Run these in PowerShell${server.folder ? ' (the first one goes to the project folder)' : ''}; the keys come from your environment or vault, never typed into the command.`, { cmds: twin.cmds, twin: twin.where });

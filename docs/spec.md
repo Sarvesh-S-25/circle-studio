@@ -321,6 +321,29 @@ Report what was verified by running it and what was not.
 * **Widgets page** `#/widgets` (menu, below Connections): on/off for the desktop, "Own window", and the board embedded
   (`mountBoard(.., {embedded: true})`, which returns `destroy()`). Project tiles with no project at all say so instead
   of "Loading...".
-* **Status (v9)**: `tests/integration/windows.test.mjs`; live on a private port: launched twice (the minimised window
+* **Status (v9) (see v10 below for the menu: Connections became Keys)**: `tests/integration/windows.test.mjs`; live on a private port: launched twice (the minimised window
   came back to the front, no second window), the board twice (one window), a forced restart (the open window was
   reused); the page looked at in light and dark at 1280 and 700 px.
+
+## Keys, per-project tools, Find skills, Let's begin (v10)
+
+* **Routes**: `#/keys` (menu; `#/connections` opens it with "Everything on this PC" open), `#/projects/<id>/connections`
+  (tab; `#/connections/<id>` lands there), `#/start` (Let's begin; shown on first run when there is no project).
+* **Connections** (`lib/connections.mjs`): `claudePlugins(home)` reads enabled plugins (installPath must be under
+  `~/.claude/plugins`; `.mcp.json` flat or `mcpServers`, else `plugin.json` mcpServers; `skills/*/SKILL.md`); scope
+  `plugin: <name>`; Gemini extensions as `extension: <name>`. `isBundled(s)` servers are never changed.
+* **Manager** (`lib/mcpmanage.mjs`): findings `covered` and `redundant` (both remove the extra copies); action `add`
+  `{name, setup:{command,args}|{url}, scope: local|project, key?:{name, value?, slot, field}, force?}`; refused with
+  `detail.duplicates` when `alreadyAvailable` finds the same name or command; `key` accepts `fromVault`. Step kind
+  `env-from-vault` (vault value to the Windows user environment). Ops `mcp-server-add`, `mcp-server-remove`.
+* **Find skills**: `POST /api/projects/:id/skills/discover {workflow?, message?, links?}` (`lib/skillfind.mjs`):
+  `{needs, suggestions:[{id,key,dir,ref,repo:{url,fullName,stars,official},description,plain,why,agents}], searched,
+  skipped, alreadyHave, fromPlugins, note, models, costUsd, rate}`. Imports nothing: the helper card calls
+  `skills.fetch` per collection and adds the skills to the agents on the graph.
+* **Let's begin**: `engines.list`/`engines.check` carry `setup {label, maker, account, does, install, login, link}`
+  (`lib/engines/setup.mjs`); `POST /api/engines/terminal {engine, step: install|login}` opens a visible PowerShell with
+  that fixed command through `scripts/open-terminal.vbs` (base64 `-EncodedCommand` only).
+* **Status (v10)**: `tests/integration/tools.test.mjs` (plugins, duplicates, add with a saved key and a real start,
+  .mcp.json ops, skills on a stubbed GitHub, Let's begin). Live: plugin `playwright` seen on this PC and an add of the
+  same command refused; two real Find skills runs (Haiku, $0.05 and $0.03); a visible terminal opened and closed with
+  a harmless command; pages looked at in light and dark at 1440 and 700 px.

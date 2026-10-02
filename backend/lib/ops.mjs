@@ -149,6 +149,42 @@ function opMcpServerSet(ws, op) {
   }
 }
 
+/** Add a server to the project's .mcp.json (created when missing). Keys only as ${NAME}: never a literal secret. */
+function opMcpServerAdd(ws, op) {
+  if (typeof op.server !== 'string' || !/^[A-Za-z0-9_.-]{1,60}$/.test(op.server)) throw badRequest('Name the server with letters, digits, - _ or . (at most 60).');
+  const c = op.config;
+  if (!c || typeof c !== 'object') throw badRequest('Say how to start the server.');
+  const strs = (a) => Array.isArray(a) && a.length <= 30 && a.every((x) => typeof x === 'string' && x.length <= 300 && !/[\r\n\0]/.test(x));
+  const map = (m) => m === undefined || (m && typeof m === 'object' && !Array.isArray(m) && Object.entries(m).length <= 20 && Object.entries(m).every(([k, v]) => /^[A-Za-z0-9_-]{1,80}$/.test(k) && typeof v === 'string' && v.length <= 300 && !/[\r\n\0]/.test(v)));
+  let entry;
+  if (typeof c.url === 'string') {
+    let u;
+    try { u = new URL(c.url); } catch { throw badRequest('The address is not a valid URL.'); }
+    if (!['https:', 'http:'].includes(u.protocol) || u.username || u.password) throw badRequest('Use an http(s) address without a user name or password.');
+    if (!map(c.headers)) throw badRequest('Headers must be short name: value pairs.');
+    entry = { type: c.type === 'sse' ? 'sse' : 'http', url: c.url, ...(c.headers && Object.keys(c.headers).length ? { headers: c.headers } : {}) };
+  } else {
+    if (typeof c.command !== 'string' || !c.command.trim() || c.command.length > 300 || /[\r\n\0&|<>^]/.test(c.command)) throw badRequest('The command must be one program, without shell symbols.');
+    if (c.args !== undefined && !strs(c.args)) throw badRequest('args must be a list of at most 30 short strings.');
+    if (!map(c.env)) throw badRequest('Variables must be short NAME: value pairs.');
+    entry = { command: c.command.trim(), args: c.args || [], ...(c.env && Object.keys(c.env).length ? { env: c.env } : {}) };
+  }
+  const values = [...Object.values(entry.env || {}), ...Object.values(entry.headers || {}), ...(entry.args || []), entry.url || ''];
+  if (values.some((v) => scanSecrets(String(v).replace(/^Bearer\s+/i, '')).length && !/\$\{[A-Za-z_][A-Za-z0-9_]*\}/.test(v))) throw badRequest('A key would be written into .mcp.json in plain text. Give it from your saved keys instead (it is written as ${NAME}).');
+  const text = ws.read('.mcp.json');
+  if (text == null) { ws.write('.mcp.json', `${JSON.stringify({ mcpServers: { [op.server]: entry } }, null, 2)}\n`); return; }
+  const cfg = readJson(ws, '.mcp.json', '.mcp.json');
+  if (cfg.mcpServers?.[op.server]) throw conflict(`.mcp.json already has a server called ${op.server}.`);
+  patchJson(ws, '.mcp.json', ['mcpServers', op.server], entry);
+}
+
+function opMcpServerRemove(ws, op) {
+  if (typeof op.server !== 'string' || !op.server || op.server.length > 80) throw badRequest('Say which server.');
+  const config = readJson(ws, '.mcp.json', '.mcp.json');
+  if (!config.mcpServers?.[op.server]) throw notFound(`.mcp.json has no server ${op.server}.`);
+  unpatchJson(ws, '.mcp.json', ['mcpServers', op.server]);
+}
+
 function opEngines(ws, op, env) {
   assertName(op.role, 'role');
   const config = readJson(ws, P.consult, 'consult.config.json');
@@ -607,6 +643,8 @@ export const OPS = {
   'mcp-env-ref': opMcpEnvRef,
   'mcp-server-set': opMcpServerSet,
   'mcp-env-set': opMcpEnvSet,
+  'mcp-server-add': opMcpServerAdd,
+  'mcp-server-remove': opMcpServerRemove,
   'freeze-set': opFreezeSet,
 };
 

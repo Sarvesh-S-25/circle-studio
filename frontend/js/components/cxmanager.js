@@ -29,7 +29,7 @@ export async function runAction(action, { projectId = null, title } = {}) {
       if (r.ok && r.ops) {
         c.close(null);
         const done = await reviewChanges({ projectId: r.projectId, ops: r.ops, title: 'The change to .mcp.json', applyLabel: 'Write it' });
-        if (done) for (const id of r.retest) { try { const t = await api.testConnection({ id, projectId: r.projectId }); toast(t.result.ok ? `Works now: ${plural(t.result.tools.length, 'tool')}.` : 'Saved, but it still does not start. Open it on Connections to see why.', { kind: t.result.ok ? 'ok' : 'warn', ms: 8000 }); } catch { /* shown on the page */ } }
+        if (done) for (const id of r.retest) { try { const t = await api.testConnection({ id, projectId: r.projectId }); toast(t.result.ok ? `Works now: ${plural(t.result.tools.length, 'tool')}.` : 'Saved, but it still does not start. Press Test on it to see why.', { kind: t.result.ok ? 'ok' : 'warn', ms: 8000 }); } catch { /* shown on the page */ } }
         resolve(true);
         return;
       }
@@ -44,26 +44,43 @@ export async function runAction(action, { projectId = null, title } = {}) {
   });
 }
 
-/** Paste a key for one server: into the Windows environment (recommended) or straight into its config. */
-export function keyForm(server, { projectId = null, onDone } = {}) {
+/**
+ * Give one server its key: one of your saved keys (Keys page), or paste a new one into the Windows environment
+ * (recommended) or straight into its config. `saved` = the saved key names.
+ */
+export function keyForm(server, { projectId = null, onDone, saved = [] } = {}) {
   const fields = [...server.envNames.map((n) => ['env', n]), ...server.headerNames.map((n) => ['headers', n])];
   const pick = h('select', { class: 'cs-select cs-select--small', 'aria-label': 'Which setting the key is for' },
     fields.length ? fields.map(([f, n]) => h('option', { value: `${f}:${n}` }, f === 'env' ? `Variable ${n}` : `Header ${n}`)) : h('option', { value: 'env:API_KEY' }, 'Variable API_KEY'));
   const value = h('input', { class: 'cs-input', type: 'password', placeholder: 'Paste the key', autocomplete: 'off', 'aria-label': 'The key' });
+  const source = h('select', { class: 'cs-select cs-select--small', 'aria-label': 'Which key', onchange: () => sync() },
+    saved.map((n) => h('option', { value: n }, `Saved key ${n}`)), h('option', { value: '' }, 'Paste a new key'));
+  // pick the saved key whose name matches the setting, when there is one
+  const want = fields.map(([, n]) => n.toUpperCase());
+  const match = saved.find((n) => want.includes(n)) || saved.find((n) => want.some((w) => n.includes(w) || w.includes(n)));
+  if (match) source.value = match; else source.value = '';
   const target = (v, label, hint, checked) => h('label', { class: 'cs-radio' }, h('input', { type: 'radio', name: `kt-${server.id}`, value: v, checked: checked || undefined }), h('span', {}, h('strong', {}, label), h('span', { class: 'cs-soft' }, ` ${hint}`)));
+  const pasteBits = h('div', { class: 'cs-stack cs-stack--tight' }, value,
+    target('env', 'Save it in my Windows environment (recommended)', 'The config only names it, so it is never in a file you might share; every terminal and app sees it.', true),
+    target('config', 'Write it into the config file', 'Simplest, but the key sits in plain text in that file.'));
+  function sync() { pasteBits.hidden = Boolean(source.value); }
   const box = h('div', { class: 'cs-cxm__key' },
     h('strong', { class: 'cs-small' }, 'Give it its key'),
-    h('div', { class: 'cs-row cs-row--wrap' }, pick, value),
-    target('env', 'Save it in my Windows environment (recommended)', 'The config only names it, so it is never in a file you might share; every terminal and app sees it.', true),
-    target('config', 'Write it into the config file', 'Simplest, but the key sits in plain text in that file.'),
+    h('div', { class: 'cs-row cs-row--wrap' }, pick, saved.length ? source : null),
+    pasteBits,
     h('div', {}, h('button', { class: 'cs-btn cs-btn--primary cs-btn--small', type: 'button', onclick: async () => {
       const [field, key] = pick.value.split(':');
-      const t = box.querySelector(`input[name="kt-${server.id}"]:checked`).value;
-      if (!value.value.trim()) { toast('Paste the key first.', { kind: 'warn' }); return; }
-      const ok = await runAction({ kind: 'key', id: server.id, field, key, value: value.value, target: t }, { projectId });
+      let action;
+      if (source.value) action = { kind: 'key', id: server.id, field, key, fromVault: source.value };
+      else {
+        if (!value.value.trim()) { toast('Paste the key first.', { kind: 'warn' }); return; }
+        action = { kind: 'key', id: server.id, field, key, value: value.value, target: box.querySelector(`input[name="kt-${server.id}"]:checked`).value };
+      }
+      const ok = await runAction(action, { projectId });
       value.value = '';
       if (ok) onDone?.();
-    } }, icon('key', 's'), 'Save the key and test')));
+    } }, icon('key', 's'), 'Give it the key and test')));
+  sync();
   return box;
 }
 
@@ -81,7 +98,7 @@ export function managerCard({ onChanged } = {}) {
           ...g.copies.map((c) => h('span', { class: `cs-pill cs-pill--${c.stale ? 'warn' : c.broken ? 'danger' : 'quiet'}`, title: c.setup }, c.where, c.broken ? ' (broken)' : c.stale ? ' (folder gone)' : ''))),
         g.findings.length ? h('ul', { class: 'cs-cxm__findings' }, g.findings.map((f) => h('li', { class: `cs-cxm__finding cs-cxm__finding--${TONE[f.severity]}` },
           h('div', { class: 'cs-grow' }, h('strong', {}, f.title), f.detail ? h('div', { class: 'cs-soft cs-small' }, f.detail) : null),
-          f.action ? h('button', { class: `cs-btn cs-btn--small ${f.severity === 'danger' ? 'cs-btn--primary' : ''}`, type: 'button', onclick: async () => { if (await runAction(f.action)) { load(); onChanged?.(); } } }, icon(f.kind === 'broken' ? 'sparkle' : f.kind === 'plain' ? 'key' : f.kind === 'stale' ? 'trash' : 'link', 's'), f.action.label) : null)))
+          f.action ? h('button', { class: `cs-btn cs-btn--small ${f.severity === 'danger' ? 'cs-btn--primary' : ''}`, type: 'button', onclick: async () => { if (await runAction(f.action)) { load(); onChanged?.(); } } }, icon(f.kind === 'broken' ? 'sparkle' : f.kind === 'plain' ? 'key' : f.kind === 'stale' || f.kind === 'covered' ? 'trash' : 'link', 's'), f.action.label) : null)))
           : h('p', { class: 'cs-soft cs-small' }, 'Fine.'))));
   }
   load();

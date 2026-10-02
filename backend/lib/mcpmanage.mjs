@@ -11,13 +11,24 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { SECRET_NAME, whichCommand } from './connections.mjs';
+import { SECRET_NAME, whichCommand, isBundled } from './connections.mjs';
 import { scanSecrets } from './secrets.mjs';
 
 const isRef = (v) => typeof v === 'string' && /^(Bearer\s+)?\$\{[A-Za-z_][A-Za-z0-9_]*\}$/.test(v.trim());
 const envNameOf = (header) => header.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '').toUpperCase();
 const setupOf = (s) => (s.transport === 'stdio' ? `${s.command} ${s.argsText || ''}`.trim() : s.url || '');
-const where = (s) => (s.folder ? path.basename(s.folder) : s.scope === 'user' ? 'every project' : s.file);
+const where = (s) => (s.folder ? path.basename(s.folder) : s.scope === 'user' ? 'every project' : isBundled(s) ? `the ${s.scope.replace(': ', ' "')}"` : s.file);
+// "npx -y @playwright/mcp@latest" and "npx @playwright/mcp" are the same server: compare without flags and versions
+const sameServer = (a, b) => {
+  const norm = (s) => (s.transport === 'stdio' ? `${s.command} ${s.argsText || ''}`.replace(/\s-y\b|\s--yes\b/g, '').replace(/@(latest|\^?[\d.]+)(?=\s|$)/g, '') : s.url || '').trim().toLowerCase();
+  return a.engine === b.engine && norm(a) === norm(b);
+};
+
+/** What already gives `engine` a server like this (by name or by the same command) in the project at `root`, if any. */
+export function alreadyAvailable(servers, { engine, name, setup }) {
+  const probe = { engine, transport: setup?.url ? 'http' : 'stdio', command: setup?.command || '', argsText: (setup?.args || []).join(' '), url: setup?.url ? (() => { try { const u = new URL(setup.url); return `${u.protocol}//${u.host}`; } catch { return setup.url; } })() : null };
+  return servers.filter((s) => s.engine === engine && !s.disabled && (s.name.toLowerCase() === String(name || '').toLowerCase() || (setup && sameServer(s, probe))));
+}
 
 /** The secret entries of one raw config: [{ field: 'env'|'headers', key, name (the variable to use), literal, bearer }]. */
 export function secretsOf(raw) {
@@ -55,9 +66,18 @@ export function withRefs(raw, names = {}) {
 export function analyze(servers, { health = {}, exists = (p) => fs.existsSync(p) } = {}) {
   const groups = new Map();
   for (const s of servers) { if (!groups.has(s.name)) groups.set(s.name, []); groups.get(s.name).push(s); }
+  const bundled = servers.filter(isBundled);
   const out = [];
   for (const [name, copies] of groups) {
     const findings = [];
+    // set up by hand although a plugin already brings the same server to every project
+    const covered = copies.filter((s) => !isBundled(s) && s.engine === 'claude' && !(s.folder && !exists(s.folder)))
+      .map((s) => ({ s, by: bundled.find((b) => b.engine === s.engine && (b.name === s.name || sameServer(b, s))) })).filter((x) => x.by);
+    if (covered.length) {
+      const by = covered[0].by;
+      const removable = covered.filter((x) => x.s.scope !== 'project').map((x) => x.s);
+      findings.push({ kind: 'covered', severity: 'warn', title: `Already comes with ${where(by)}`, detail: `Claude Code gets "${by.name}" from the plugin in every project, so ${covered.map((x) => where(x.s)).join(', ')} ${covered.length === 1 ? 'does' : 'do'} not need ${covered.length === 1 ? 'its own copy' : 'their own copies'}. Two copies of one server start it twice and can confuse the agent.`, action: removable.length ? { kind: 'remove', ids: removable.map((s) => s.id), label: `Remove the extra ${removable.length === 1 ? 'copy' : 'copies'}` } : null });
+    }
     const isBroken = (s) => health[s.id] === 'broken' || (s.transport === 'stdio' && !whichCommand(s.command || ''));
     const stale = copies.filter((s) => s.folder && !exists(s.folder));
     const live = copies.filter((s) => !stale.includes(s));
@@ -69,8 +89,13 @@ export function analyze(servers, { health = {}, exists = (p) => fs.existsSync(p)
     if (stale.length) findings.push({ kind: 'stale', severity: 'warn', title: `${stale.length === 1 ? 'A copy is' : `${stale.length} copies are`} set up for ${stale.length === 1 ? 'a folder' : 'folders'} that no longer exist${stale.length === 1 ? 's' : ''}`, detail: stale.map((s) => s.folder).join(', '), action: { kind: 'remove', ids: stale.map((s) => s.id), label: 'Clean them up' } });
     for (const b of broken) {
       const twin = working.find((w) => w.engine === b.engine) || working[0];
-      findings.push({ kind: 'broken', severity: 'danger', title: `Broken in ${where(b)}`, detail: twin ? `It starts fine in ${where(twin)}: copy that setup.` : 'No working copy to learn from: Test it to see why.', action: twin && b.engine === 'claude' ? { kind: 'repair', id: b.id, from: twin.id, label: 'Fix it for me' } : null, serverId: b.id });
+      findings.push({ kind: 'broken', severity: 'danger', title: `Broken in ${where(b)}`, detail: isBundled(b) ? 'It comes with a plugin: update or reinstall the plugin in Claude Code (/plugin).' : twin ? `It starts fine in ${where(twin)}: copy that setup.` : 'No working copy to learn from: Test it to see why.', action: twin && b.engine === 'claude' && !isBundled(b) ? { kind: 'repair', id: b.id, from: twin.id, label: 'Fix it for me' } : null, serverId: b.id });
     }
+    // a project's own copy that is the same as the one every project already gets (same command and the same key names)
+    const shared = live.filter((s) => s.engine === 'claude' && s.scope === 'user' && !isBroken(s));
+    const sameKeys = (a, b) => [...a.envNames, ...a.headerNames].sort().join() === [...b.envNames, ...b.headerNames].sort().join();
+    const extra = claudeLocal.filter((s) => shared.some((u) => sameServer(u, s) && sameKeys(u, s)) && !covered.some((x) => x.s === s));
+    if (extra.length) findings.push({ kind: 'redundant', severity: 'info', title: `${extra.length === 1 ? 'A project keeps its own copy' : `${extra.length} projects keep their own copy`} of the shared server`, detail: `${extra.map(where).join(', ')} ${extra.length === 1 ? 'has' : 'have'} the same "${name}" that every project already gets. Removing ${extra.length === 1 ? 'it' : 'them'} changes nothing for those projects, and you have one setup less to keep working.`, action: { kind: 'remove', ids: extra.map((s) => s.id), label: `Remove the extra ${extra.length === 1 ? 'copy' : 'copies'}` } });
     const biggest = [...setups.values()].sort((a, c) => c.length - a.length)[0] || [];
     const sameLocal = biggest.filter((s) => claudeLocal.includes(s));
     if (sameLocal.length >= 2 && !live.some((s) => s.engine === 'claude' && s.scope === 'user')) {
@@ -78,7 +103,8 @@ export function analyze(servers, { health = {}, exists = (p) => fs.existsSync(p)
     }
     if (setups.size > 1) findings.push({ kind: 'conflict', severity: 'info', title: `${setups.size} different setups share the name "${name}"`, detail: [...setups].map(([k, ss]) => `${k} (${ss.map(where).join(', ')})`).join('; ') });
     const plain = live.filter((s) => s.plainSecrets.length);
-    if (plain.length) findings.push({ kind: 'plain', severity: 'danger', title: `${plain.length === 1 ? 'A key is' : `Keys are`} written in plain text in ${plain.length === 1 ? 'one copy' : `${plain.length} copies`}`, detail: plain.map((s) => `${where(s)}: ${s.plainSecrets.join(', ')}`).join('; '), action: plain.every((s) => s.engine === 'claude') ? { kind: 'secure', ids: plain.map((s) => s.id), label: 'Move the keys to my Windows environment' } : null });
+    const securable = plain.filter((s) => s.engine === 'claude' && !isBundled(s) && s.scope !== 'project');
+    if (plain.length) findings.push({ kind: 'plain', severity: 'danger', title: `${plain.length === 1 ? 'A key is' : `Keys are`} written in plain text in ${plain.length === 1 ? 'one copy' : `${plain.length} copies`}`, detail: plain.map((s) => `${where(s)}: ${s.plainSecrets.join(', ')}`).join('; '), action: securable.length ? { kind: 'secure', ids: securable.map((s) => s.id), label: 'Move the keys to my Windows environment' } : null });
     out.push({ name, copies: copies.map((s) => ({ id: s.id, engine: s.engine, scope: s.scope, where: where(s), setup: setupOf(s), transport: s.transport, broken: isBroken(s), stale: stale.includes(s), plainSecrets: s.plainSecrets, envNames: s.envNames, headerNames: s.headerNames })), findings });
   }
   return out.sort((a, b) => b.findings.length - a.findings.length || a.name.localeCompare(b.name));
@@ -115,7 +141,10 @@ export function makePlan(action, ctx) {
       steps.push({ text: `Save the key${from ? ` already used in ${from}` : ''} as ${sec.name} in your Windows user environment and in the vault (it is not shown).`, run: { kind: 'key', name: sec.name, projects } });
     }
   };
-  const needClaude = (s) => { if (s.engine !== 'claude' || s.scope === 'project') throw new Error(`Only Claude Code's own config is changed this way; ${s.file} is not.`); };
+  const needClaude = (s) => {
+    if (isBundled(s)) throw new Error(`"${s.name}" comes with ${where(s)}: change or turn off the plugin in Claude Code instead.`);
+    if (s.engine !== 'claude' || s.scope === 'project') throw new Error(`Only Claude Code's own config is changed this way; ${s.file} is not.`);
+  };
 
   if (action.kind === 'remove') {
     for (const id of action.ids) { const s = byId.get(id); if (s) { needClaude(s); remove(s); } }
@@ -166,16 +195,25 @@ export function makePlan(action, ctx) {
     const field = action.field === 'headers' ? 'headers' : 'env';
     const key = String(action.key || '');
     if (!/^[A-Za-z0-9_-]{1,80}$/.test(key)) throw new Error('Say which variable or header the key is for.');
-    const name = String(action.name || (field === 'env' ? key : envNameOf(key))).toUpperCase();
+    // a key already saved on the Keys page: only its name goes into the config
+    const fromVault = typeof action.fromVault === 'string' && action.fromVault ? action.fromVault.toUpperCase() : null;
+    const name = String(fromVault || action.name || (field === 'env' ? key : envNameOf(key))).toUpperCase();
     if (!/^[A-Z_][A-Z0-9_]{1,63}$/.test(name)) throw new Error('Use a name like STITCH_API_KEY: capitals, digits and _.');
-    if (typeof action.value !== 'string' || !action.value.trim() || /[\r\n\0]/.test(action.value)) throw new Error('Paste the key: one line.');
-    if (/sk-ant-/i.test(action.value) || /^ANTHROPIC_/i.test(name)) throw new Error('That is an Anthropic key: Circle Studio never stores one. Claude runs through your own sign-in.');
+    if (/^ANTHROPIC_/i.test(name)) throw new Error('Circle Studio never stores an Anthropic key: Claude runs through your own sign-in.');
     const bearer = field === 'headers' && (/^Bearer\s/i.test(String(raw.headers?.[key] || '')) || /^authorization$/i.test(key));
-    const value = action.value.trim().replace(/^Bearer\s+/i, '');
-    const toConfig = action.target === 'config';
-    if (!toConfig) {
-      secrets.set(name, value);
-      steps.push({ text: `Save the key as ${name} in your Windows user environment and in the vault (it is not shown).`, run: { kind: 'key', name, projects: s.folder && ctx.projectIdFor(s.folder) ? [ctx.projectIdFor(s.folder)] : ctx.projectId ? [ctx.projectId] : 'all' } });
+    const toConfig = !fromVault && action.target === 'config';
+    let value = '';
+    if (fromVault) {
+      if (!ctx.vaultHas?.(fromVault)) throw new Error(`There is no saved key called ${fromVault}.`);
+      steps.push({ text: `Make your saved key ${name} readable by Claude Code in any terminal (your Windows user environment; it is not shown).`, run: { kind: 'env-from-vault', name } });
+    } else {
+      if (typeof action.value !== 'string' || !action.value.trim() || /[\r\n\0]/.test(action.value)) throw new Error('Paste the key: one line.');
+      if (/sk-ant-/i.test(action.value)) throw new Error('That is an Anthropic key: Circle Studio never stores one. Claude runs through your own sign-in.');
+      value = action.value.trim().replace(/^Bearer\s+/i, '');
+      if (!toConfig) {
+        secrets.set(name, value);
+        steps.push({ text: `Save the key as ${name} in your Windows user environment and in your saved keys (it is not shown).`, run: { kind: 'key', name, projects: s.folder && ctx.projectIdFor(s.folder) ? [ctx.projectIdFor(s.folder)] : ctx.projectId ? [ctx.projectId] : 'all' } });
+      }
     }
     const literal = `${bearer ? 'Bearer ' : ''}${value}`;
     const ref = `${bearer ? 'Bearer ' : ''}\${${name}}`;
@@ -193,7 +231,69 @@ export function makePlan(action, ctx) {
     retest.push(s.id);
     return { title: `Give "${s.name}" its key`, steps, secrets, retest };
   }
+  if (action.kind === 'add') return planAdd(action, ctx, { steps, secrets, retest, shown });
   throw new Error('Unknown action.');
+}
+
+/**
+ * Add a server to one project for Claude Code: "local" (only this folder, kept in Claude Code's own settings) or
+ * "project" (the project's .mcp.json, shared with whoever uses the folder; reviewed as a diff). A key comes from the
+ * saved keys or is pasted, and the config only names it (${NAME}). Refused when the project already gets a server
+ * like it (same name or same command, from every-project settings, a plugin or this project) unless `force`.
+ */
+function planAdd(action, ctx, { steps, secrets, retest, shown }) {
+  const name = String(action.name || '').trim();
+  if (!/^[A-Za-z0-9_.-]{1,60}$/.test(name)) throw new Error('Name it with letters, digits, - _ or . (for example stitch).');
+  const s = action.setup || {};
+  const url = typeof s.url === 'string' && s.url.trim() ? s.url.trim() : null;
+  const command = typeof s.command === 'string' ? s.command.trim() : '';
+  const args = Array.isArray(s.args) ? s.args.map(String).filter((a) => a.length) : String(s.args || '').trim().split(/\s+/).filter(Boolean);
+  if (!url && !command) throw new Error('Give the command that starts it (for example npx -y some-mcp-server) or its web address.');
+  if (url && !/^https?:\/\//i.test(url)) throw new Error('The address must start with https://.');
+  if (command && /[\r\n\0&|<>^]/.test(command)) throw new Error('The command must be one program, without shell symbols.');
+  const setup = url ? { url } : { command, args };
+  const dupes = alreadyAvailable(ctx.servers, { engine: 'claude', name, setup });
+  if (dupes.length && !action.force) {
+    const e = new Error(`This project already has it: ${dupes.map((d) => `"${d.name}" from ${where(d)}`).join(', ')}. Adding it again would start the same server twice.`);
+    e.duplicates = dupes.map((d) => ({ id: d.id, name: d.name, where: where(d) }));
+    throw e;
+  }
+  const scope = action.scope === 'project' ? 'project' : 'local';
+  const k = action.key && typeof action.key === 'object' ? action.key : null;
+  let ref = null;
+  let field = null;
+  let keyName = null;
+  if (k) {
+    field = k.field === 'headers' || (url && k.field !== 'env') ? 'headers' : 'env';
+    keyName = String(k.name || '').toUpperCase();
+    if (!/^[A-Z_][A-Z0-9_]{1,63}$/.test(keyName)) throw new Error('Name the key like STITCH_API_KEY: capitals, digits and _.');
+    if (/^ANTHROPIC_/.test(keyName)) throw new Error('Circle Studio never stores an Anthropic key: Claude runs through your own sign-in.');
+    const slot = String(k.slot || (field === 'headers' ? 'Authorization' : keyName));
+    if (!/^[A-Za-z0-9_-]{1,80}$/.test(slot)) throw new Error('Say which variable or header the server reads the key from.');
+    const bearer = field === 'headers' && /^authorization$/i.test(slot);
+    ref = { slot, value: `${bearer ? 'Bearer ' : ''}\${${keyName}}` };
+    if (typeof k.value === 'string' && k.value.trim()) {
+      if (/[\r\n\0]/.test(k.value)) throw new Error('Paste the key: one line.');
+      if (/sk-ant-/i.test(k.value)) throw new Error('That is an Anthropic key: Circle Studio never stores one. Claude runs through your own sign-in.');
+      secrets.set(keyName, k.value.trim().replace(/^Bearer\s+/i, ''));
+      steps.push({ text: `Save the key as ${keyName} in your Windows user environment and in your saved keys (it is not shown).`, run: { kind: 'key', name: keyName, projects: ctx.projectId ? [ctx.projectId] : 'all' } });
+    } else {
+      if (!ctx.vaultHas?.(keyName)) throw new Error(`There is no saved key called ${keyName}. Add it on the Keys page, or paste it here.`);
+      steps.push({ text: `Make your saved key ${keyName} readable by Claude Code in any terminal (your Windows user environment; it is not shown).`, run: { kind: 'env-from-vault', name: keyName } });
+    }
+  }
+  const cfg = url
+    ? { type: /\/sse\b/.test(url) ? 'sse' : 'http', url, ...(ref ? { headers: { [ref.slot]: ref.value } } : {}) }
+    : { type: 'stdio', command, args, ...(ref ? { env: { [ref.slot]: ref.value } } : {}) };
+  if (scope === 'project') {
+    const { type, ...entry } = cfg;
+    return { title: `Add "${name}" to this project's .mcp.json`, note: 'Everyone who opens this folder with Claude Code gets it. Only the key\'s name is written; each person keeps the key in their own environment.', steps, secrets, retest: [`claude:project:${name}`], ops: [{ op: 'mcp-server-add', server: name, config: url ? { ...entry, type } : entry }], projectId: ctx.projectId };
+  }
+  if (!ctx.root) throw new Error('Pick a project first.');
+  const cmdArgs = ['mcp', 'add-json', name, JSON.stringify(cfg), '-s', 'local'];
+  steps.push({ text: `Add "${name}" to Claude Code for this project only${ref ? `, reading ${keyName} from the environment` : ''}.`, cmd: shown(cmdArgs), run: { kind: 'claude', args: cmdArgs, cwd: ctx.root } });
+  retest.push(`claude:local:${name}`);
+  return { title: `Add "${name}" to this project`, steps, secrets, retest, projectId: ctx.projectId };
 }
 
 /** Plans live here for a few minutes between the preview and the click (with their secrets, never sent out). */
@@ -229,9 +329,23 @@ export function setUserEnv(name, value) {
  * ~/.claude.json is backed up before the first change and put back if a step fails, so a server is never left half
  * removed. Returns [{ text, ok, detail }] (no key values).
  */
+/**
+ * Backups of ~/.claude.json are copies of a file that may hold keys: keep them only as long as they are useful
+ * (the newest few, for a day at most).
+ */
+export function pruneBackups(dir, { keep = 3, maxAgeMs = 24 * 60 * 60 * 1000, now = Date.now() } = {}) {
+  let files;
+  try { files = fs.readdirSync(dir).filter((f) => /^claude\.json\..+\.bak$/.test(f)).map((f) => ({ f, t: fs.statSync(path.join(dir, f)).mtimeMs })); } catch { return 0; }
+  files.sort((a, b) => b.t - a.t);
+  let removed = 0;
+  files.forEach((x, i) => { if (i >= keep || now - x.t > maxAgeMs) { try { fs.rmSync(path.join(dir, x.f)); removed++; } catch { /* in use */ } } });
+  return removed;
+}
+
 export async function runPlan(plan, deps) {
   const results = [];
   let backup = null;
+  pruneBackups(deps.backupDir);
   const touchesClaude = plan.steps.some((s) => s.run.kind === 'claude' || s.run.kind === 'drop-local');
   if (touchesClaude && fs.existsSync(deps.claudeJson)) {
     fs.mkdirSync(deps.backupDir, { recursive: true });
@@ -253,6 +367,12 @@ export async function runPlan(plan, deps) {
         deps.setUserEnv(r.name, value);
         await deps.vault.set(r.name, { value, projects: r.projects, note: 'Saved by the connection manager' });
         results.push({ text: step.text, ok: true, detail: `${r.name} saved. Open a new terminal (or restart Claude Code) so it sees it.` });
+      } else if (r.kind === 'env-from-vault') {
+        const value = deps.vault.value(r.name);
+        if (!value) throw new Error(`Could not read the saved key ${r.name}.`);
+        plan.secrets.set(r.name, value); // so it is masked in any output below
+        deps.setUserEnv(r.name, value);
+        results.push({ text: step.text, ok: true, detail: `${r.name} is set. Open a new terminal (or restart Claude Code) so it sees it.` });
       } else if (r.kind === 'drop-local') {
         dropLocal(deps.claudeJson, r.folder, r.name);
         results.push({ text: step.text, ok: true, detail: '' });
@@ -262,6 +382,10 @@ export async function runPlan(plan, deps) {
       if (backup) { fs.copyFileSync(backup, deps.claudeJson); results.push({ text: 'Put ~/.claude.json back as it was before.', ok: true, detail: path.basename(backup) }); }
       return { ok: false, results, backup };
     }
+  }
+  // the fix moved or used keys: its backup is the one place left with them in plain text, so it goes now
+  if (backup && plan.secrets.size) {
+    try { fs.rmSync(backup); results.push({ text: 'Deleted the backup of ~/.claude.json: it held keys in plain text, and the fix worked.', ok: true, detail: '' }); backup = null; } catch { /* kept: pruned within a day */ }
   }
   return { ok: true, results, backup };
 }

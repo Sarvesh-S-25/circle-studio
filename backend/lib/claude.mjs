@@ -10,6 +10,7 @@ import { busy, notReady, upstream } from './errors.mjs';
 import { cleanEnv, killTree, runCommand } from './run.mjs';
 import { StreamRedactor, redact } from './secrets.mjs';
 import { parseJson } from './team.mjs';
+import { resolveCli } from './engines/proc.mjs';
 
 const SAFETY = ['--settings', '{"disableAllHooks":true}', '--strict-mcp-config', '--disable-slash-commands'];
 export const NO_SECRET_READS = ['Read(.env)', 'Read(.env.*)', 'Read(**/*.pem)', 'Read(**/*.key)', 'Read(**/id_rsa*)', 'Read(**/.npmrc)', 'Read(**/credentials*)'];
@@ -216,11 +217,17 @@ export class StreamParser {
 
 export class ClaudeService {
   constructor({ bin = 'claude', prefixArgs = [] } = {}) {
-    this.bin = bin;
-    this.prefix = prefixArgs; // test seam: run `node fake-claude.mjs ...` instead of the real binary
+    this.givenBin = bin;
+    this.givenPrefix = prefixArgs; // test seam: run `node fake-claude.mjs ...` instead of the real binary
     this.runs = new Map();
     this.authCache = null;
   }
+
+  // Plain "claude" is looked up each time like a terminal would (claude.exe, or the script behind npm's claude.cmd),
+  // so a Claude Code installed while Circle Studio runs is found; CIRCLE_CLAUDE_BIN or a test gives an exact program.
+  #found() { return this.givenBin === 'claude' && !this.givenPrefix.length ? resolveCli('claude') : null; }
+  get bin() { return this.#found()?.bin || this.givenBin; }
+  get prefix() { return this.#found()?.prefix || this.givenPrefix; }
 
   /** `claude auth status`: login state only. E-mail and org fields are dropped here and never leave this function. */
   async authStatus({ force = false } = {}) {

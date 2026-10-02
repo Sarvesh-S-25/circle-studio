@@ -41,6 +41,7 @@ export async function refreshProjects() {
 export async function refreshEngines(force = false) {
   const r = force ? await api.checkEngines() : await api.engines();
   state.engines = r.engines;
+  state.github = r.github || null;
   notify();
   window.dispatchEvent(new CustomEvent('circle:engines'));
   return r.engines;

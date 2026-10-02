@@ -79,7 +79,8 @@ test('manager: repair from a twin, share copies, paste a key, and roll back a fa
     const after = JSON.parse(fs.readFileSync(claudeJson, 'utf8'));
     assert.equal(after.projects[key(a)].mcpServers.tools.env.FAKE_MCP_KEY, '${FAKE_MCP_KEY}', 'the config reads it by name');
     assert.equal(done.tests[0].result.ok, true, 'and the repaired server starts and answers');
-    assert.ok(fs.readdirSync(path.join(s.dataDir, 'backups')).some((f) => f.startsWith('claude.json.')), 'backed up first');
+    assert.ok(done.results.some((r) => /Deleted the backup/.test(r.text)), 'backed up first, and the backup (keys in plain text) deleted once it worked');
+    assert.ok(!fs.readdirSync(path.join(s.dataDir, 'backups')).some((f) => f.startsWith('claude.json.')));
     assert.equal((await s.call('POST', '/api/connections/apply', { id: plan.id })).status, 404, 'a plan runs once');
 
     // a failed step puts the file back

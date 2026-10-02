@@ -81,6 +81,49 @@ function describe(name, raw, { engine, scope, file, folder = null }) {
 }
 
 const sameDir = (a, b) => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
+const inside = (child, parent) => { const r = path.relative(path.resolve(parent), path.resolve(child)); return r && !r.startsWith('..') && !path.isAbsolute(r); };
+const skillDirs = (dir) => { try { return fs.readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory() && fs.existsSync(path.join(dir, d.name, 'SKILL.md'))).map((d) => d.name); } catch { return []; } };
+
+/**
+ * Claude Code plugins that are installed and turned on. A plugin can bring its own MCP servers (its .mcp.json, or
+ * mcpServers in .claude-plugin/plugin.json) and skills; these come with the plugin in every project, so nobody needs
+ * to add them by hand. Only folders under ~/.claude/plugins are read.
+ */
+export function claudePlugins(home = os.homedir()) {
+  const dir = path.join(home, '.claude', 'plugins');
+  const installed = readJson(path.join(dir, 'installed_plugins.json'))?.plugins || {};
+  const enabled = readJson(path.join(home, '.claude', 'settings.json'))?.enabledPlugins || {};
+  const out = [];
+  for (const [key, entries] of Object.entries(installed)) {
+    if (enabled[key] === false) continue;
+    const e = (Array.isArray(entries) ? entries : [entries]).find((x) => typeof x?.installPath === 'string');
+    if (!e || !inside(e.installPath, dir)) continue;
+    const root = path.resolve(e.installPath);
+    const manifest = readJson(path.join(root, '.claude-plugin', 'plugin.json')) || {};
+    const mcp = readJson(path.join(root, '.mcp.json'));
+    let servers = null;
+    let file = null;
+    if (mcp && typeof mcp === 'object') { servers = mcp.mcpServers && typeof mcp.mcpServers === 'object' ? mcp.mcpServers : mcp; file = tilde(path.join(root, '.mcp.json')); }
+    else if (manifest.mcpServers && typeof manifest.mcpServers === 'object') { servers = manifest.mcpServers; file = tilde(path.join(root, '.claude-plugin', 'plugin.json')); }
+    out.push({ key, name: String(manifest.name || key.split('@')[0]), description: String(manifest.description || '').slice(0, 300), servers, file, skills: skillDirs(path.join(root, 'skills')) });
+  }
+  return out;
+}
+
+/** Gemini CLI extensions (~/.gemini/extensions/<name>/gemini-extension.json), which can bring MCP servers too. */
+function geminiExtensions(home) {
+  const dir = path.join(home, '.gemini', 'extensions');
+  let names = [];
+  try { names = fs.readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name); } catch { return []; }
+  return names.map((n) => {
+    const f = path.join(dir, n, 'gemini-extension.json');
+    const j = readJson(f);
+    return j ? { name: String(j.name || n), servers: j.mcpServers, file: tilde(f) } : null;
+  }).filter(Boolean);
+}
+
+/** Servers that come with a plugin or an extension: shown, used for duplicate checks, never changed here. */
+export const isBundled = (s) => /^(plugin|extension): /.test(s.scope || '');
 
 /** Every configured server, for one project (its own and the user-level ones) or for the whole PC (root null). */
 /** Every configured server with its raw config (kept inside this module: raw values never leave it). */
@@ -96,11 +139,13 @@ function collect({ root = null, home = os.homedir(), codexHome = path.join(os.ho
       if (root ? sameDir(p, root) : true) add(v?.mcpServers, { engine: 'claude', scope: root ? 'local' : `local: ${path.basename(p)}`, file: '~/.claude.json', folder: p });
     }
   }
+  for (const p of claudePlugins(home)) add(p.servers, { engine: 'claude', scope: `plugin: ${p.name}`, file: p.file });
   // Codex
   try { add(parseCodexToml(fs.readFileSync(path.join(codexHome, 'config.toml'), 'utf8')).mcp_servers, { engine: 'codex', scope: 'user', file: tilde(path.join(codexHome, 'config.toml')) }); } catch { /* no Codex */ }
   // Gemini
   add(readJson(path.join(home, '.gemini', 'settings.json'))?.mcpServers, { engine: 'gemini', scope: 'user', file: '~/.gemini/settings.json' });
   if (root) add(readJson(path.join(root, '.gemini', 'settings.json'))?.mcpServers, { engine: 'gemini', scope: 'project', file: '.gemini/settings.json' });
+  for (const x of geminiExtensions(home)) add(x.servers, { engine: 'gemini', scope: `extension: ${x.name}`, file: x.file });
   // Copilot
   add(readJson(path.join(home, '.copilot', 'mcp-config.json'))?.mcpServers, { engine: 'copilot', scope: 'user', file: '~/.copilot/mcp-config.json' });
   // VS Code (Copilot in the editor)

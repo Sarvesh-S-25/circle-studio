@@ -86,6 +86,7 @@ export function createGithub({ fetchImpl = globalThis.fetch, token = '', library
       if (rate.remaining === 0 || res.status === 429) throw upstream('GitHub rate limit reached.', { resetAt: rate.resetAt });
       throw upstream('GitHub refused the request (403).', { resetAt: rate.resetAt });
     }
+    if (res.status === 409) throw upstream('The repository is empty.');
     if (res.status >= 500 && retry) return request(url, { api, retry: false, binary });
     if (!res.ok) throw upstream(`GitHub answered ${res.status}.`);
     return binary ? Buffer.from(await res.arrayBuffer()) : res;
@@ -172,12 +173,21 @@ export function createGithub({ fetchImpl = globalThis.fetch, token = '', library
   return {
     rate,
 
+    /** Public repositories matching a search (one API call; GitHub allows about 10 searches a minute without a login). */
+    async searchRepos(q, { perPage = 5 } = {}) {
+      if (typeof q !== 'string' || !q.trim() || q.length > 200) throw badRequest('Nothing to search for.');
+      const j = await apiJson(`/search/repositories?q=${encodeURIComponent(q)}&sort=stars&order=desc&per_page=${Math.min(10, Math.max(1, perPage))}`);
+      return (Array.isArray(j.items) ? j.items : []).filter((r) => r && typeof r.full_name === 'string' && /^https:\/\/github\.com\//.test(r.html_url || ''))
+        .map((r) => ({ fullName: r.full_name, url: r.html_url, stars: Number(r.stargazers_count) || 0, pushedAt: r.pushed_at || null, description: String(r.description || '').slice(0, 300), archived: r.archived === true, fork: r.fork === true }));
+    },
+
     /** List the skills a repo URL offers (2 API calls + one raw read per SKILL.md, at most 150). */
-    async scan(url) {
+    // `describeOnly(key, dir)` limits which SKILL.md files are read (finding skills reads only promising ones)
+    async scan(url, { describeOnly = null, maxDescribed = MAX_DESCRIBED } = {}) {
       const parsed = parseGithubUrl(url);
       const { meta, tree, ref, sub } = await loadTree(parsed);
       const { skills, skipped } = findSkills(tree, sub, parsed.repo);
-      const described = skills.filter((s) => !s.skipped).slice(0, MAX_DESCRIBED);
+      const described = skills.filter((s) => !s.skipped && (!describeOnly || describeOnly(s.key, s.dir))).slice(0, Math.min(maxDescribed, MAX_DESCRIBED));
       await pool(described, 4, async (s) => {
         const skillPath = s.files.find((f) => path.posix.basename(f.rel).toLowerCase() === 'skill.md' && path.posix.dirname(f.rel) === '.')?.path;
         if (!skillPath) return;

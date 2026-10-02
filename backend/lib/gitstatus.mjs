@@ -4,6 +4,8 @@
 // set, for private repositories). Never runs a git command that writes.
 import { spawnSync } from 'node:child_process';
 import { redact } from './secrets.mjs';
+import { ghStatus } from './ghcli.mjs';
+import { resolveCli } from './engines/proc.mjs';
 
 const GIT_ENV = { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' };
 
@@ -54,11 +56,6 @@ export function repoState(root) {
   };
 }
 
-let ghChecked = null;
-function ghInstalled() {
-  if (ghChecked === null) ghChecked = spawnSync('gh', ['--version'], { windowsHide: true, timeout: 5000 }).status === 0;
-  return ghChecked;
-}
 
 const RUN_FIELDS = (r) => ({
   name: redact(String(r.name || r.workflowName || '')).slice(0, 80),
@@ -73,9 +70,11 @@ const RUN_FIELDS = (r) => ({
 
 /** GitHub Actions runs and open pull requests for owner/repo. */
 export async function githubState({ owner, repo }, { fetchImpl = globalThis.fetch, token = '', useGh = true } = {}) {
-  if (useGh && ghInstalled()) {
+  // the GitHub CLI when it is installed and signed in (found even when installed after Circle Studio started)
+  const gh = useGh && (await ghStatus()).signedIn ? resolveCli('gh') : null;
+  if (gh) {
     const ghJson = (args) => {
-      const r = spawnSync('gh', args, { encoding: 'utf8', windowsHide: true, timeout: 15000 });
+      const r = spawnSync(gh.bin, [...gh.prefix, ...args], { encoding: 'utf8', windowsHide: true, timeout: 15000 });
       if (r.status !== 0) throw new Error((r.stderr || 'gh failed').trim().split('\n')[0].slice(0, 200));
       return JSON.parse(r.stdout || '[]');
     };
@@ -88,7 +87,7 @@ export async function githubState({ owner, repo }, { fetchImpl = globalThis.fetc
   const headers = { Accept: 'application/vnd.github+json', 'User-Agent': 'circle-studio', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
   const get = async (p) => {
     const res = await fetchImpl(`https://api.github.com/repos/${owner}/${repo}${p}`, { headers, signal: AbortSignal.timeout(10_000) });
-    if (res.status === 404) throw Object.assign(new Error(token ? 'GitHub does not show this repository to your token.' : 'Not visible without signing in: a private repository needs the gh CLI (gh auth login) or GITHUB_TOKEN.'), { code: 'private' });
+    if (res.status === 404) throw Object.assign(new Error(token ? 'GitHub does not show this repository to your token.' : 'Not visible without signing in: for a private repository, sign in to GitHub on Let\'s begin (the AI tools line in the menu), or set GITHUB_TOKEN.'), { code: 'private' });
     if (res.status === 403 || res.status === 429) throw Object.assign(new Error('GitHub rate limit reached for now. Try again in a while, or install the gh CLI.'), { code: 'rate' });
     if (!res.ok) throw new Error(`GitHub answered ${res.status}.`);
     return res.json();

@@ -84,8 +84,8 @@ export function buildConnectionHandlers(app) {
       if (!action || typeof action !== 'object') throw badRequest('Say what to do.');
       let plan;
       try {
-        plan = makePlan(action, { servers: listServers({ root, ...homeOpts() }), rawOf: (id) => rawServer(id, { root, ...homeOpts() }), projectIdFor, projectId });
-      } catch (e) { throw badRequest(e.message); }
+        plan = makePlan(action, { servers: listServers({ root, ...homeOpts() }), rawOf: (id) => rawServer(id, { root, ...homeOpts() }), projectIdFor, projectId, root, vaultHas: (n) => vault.list().some((k) => k.name === n) });
+      } catch (e) { throw badRequest(e.message, e.duplicates ? { duplicates: e.duplicates } : undefined); }
       return plans.view(plans.put(plan), plan);
     },
     // Run it, then start each server it touched once to prove it works. Project .mcp.json changes come back as ops

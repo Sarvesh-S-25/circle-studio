@@ -63,7 +63,7 @@ export function scanProject(root) {
 
 /** What Circle Studio itself does with GitHub, said plainly (shown with the findings). */
 export const GITHUB_PRACTICE = [
-  'GitHub is only read: skill imports you start by pasting a URL, and Actions and pull requests for a project you turn GitHub on for.',
-  'A token is never stored: GITHUB_TOKEN is read from the environment for the length of a request, or the gh CLI uses its own sign-in.',
+  'GitHub is only read (GET requests): skill imports and Find skills you start, and Actions and pull requests for a project you turn GitHub on for.',
+  'A token is never stored or seen: signed in to GitHub (the gh CLI, in Windows\' credential store), requests go through gh itself; otherwise GITHUB_TOKEN is read from the environment for the length of a request, or GitHub is asked anonymously.',
   'Git is never written in your projects: the app runs only read-only git commands there (status, log, remote, ls-files).',
 ];

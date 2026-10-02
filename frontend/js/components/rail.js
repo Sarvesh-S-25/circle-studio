@@ -6,7 +6,7 @@ import { toggleTheme, openShortcuts } from './palette.js';
 import { AGENT_TYPE, SKILL_TYPE, addKeyboardPath, dragSource, dropTarget, installAgent, installSkill } from './dnd.js';
 import { currentTheme } from '../state.js';
 
-const NAV = [['#/', 'Home', 'home'], ['#/inbox', 'Inbox', 'board'], ['#/library', 'Library', 'library'], ['#/connections', 'Connections', 'link'], ['#/widgets', 'Widgets', 'widgets'],['#/advisor', 'Advisor', 'advisor'], ['#/settings', 'Settings', 'settings']];
+const NAV = [['#/', 'Home', 'home'], ['#/inbox', 'Inbox', 'board'], ['#/library', 'Library', 'library'], ['#/keys', 'Keys', 'key'], ['#/widgets', 'Widgets', 'widgets'], ['#/advisor', 'Advisor', 'advisor'], ['#/settings', 'Settings', 'settings']];
 
 export function buildRail() {
   const root = h('nav', { class: 'cs-rail', 'aria-label': 'Taskbar' });
@@ -56,8 +56,8 @@ export function buildRail() {
     const ready = state.engines.filter((e) => e.usable);
     status.replaceChildren(
       state.update?.available ? h('a', { class: 'cs-rail__update', href: '#/settings', title: 'A newer Circle Studio is ready: see Settings, Updates' }, icon('download', 's'), 'Update ready') : '',h('span', { class: `cs-dot cs-dot--${!state.engines.length ? '' : ready.length ? 'ok' : 'warn'}` }),
-      h('span', { class: 'cs-small cs-soft', title: state.engines.map((e) => `${e.label}: ${e.usable ? 'ready' : e.installed ? 'not signed in' : 'not installed'}`).join('\n') },
-        !state.engines.length ? 'Checking engines...' : `${ready.length} of ${state.engines.length} engines ready`));
+      h('a', { class: 'cs-small cs-soft cs-rail__engines', href: '#/start', title: `${state.engines.map((e) => `${e.label}: ${e.usable ? 'ready' : e.installed ? 'not signed in' : 'not installed'}`).join('\n')}\nSet up AI tools: Let's begin` },
+        !state.engines.length ? 'Checking engines...' : ready.length ? `${ready.length} of ${state.engines.length} AI tools ready` : 'No AI tool ready: set one up'));
     const dark = currentTheme() === 'dark';
     themeBtn.replaceChildren(icon(dark ? 'sun' : 'moon', 'm'));
     themeBtn.setAttribute('aria-label', dark ? 'Switch to the light theme' : 'Switch to the dark theme');

@@ -35,7 +35,7 @@ export async function mount(el) {
   const drafts = new Map(); // what was typed into each alert's answer box, kept across redraws
   const filters = { status: 'all', project: '', kind: '', q: '' };
   const list = h('div', { class: 'cs-stack cs-stack--tight', role: 'list' });
-  const count = h('p', { class: 'cs-soft cs-small', role: 'status' });
+  const count = h('span', { role: 'status' });
 
   const sel = (label, key, options) => h('label', { class: 'cs-field' }, h('span', { class: 'cs-field__label' }, label),
     h('select', { class: 'cs-select', onchange: (e) => { filters[key] = e.target.value; draw(); } }, options.map(([v, l]) => h('option', { value: v, selected: filters[key] === v || undefined }, l))));
@@ -119,8 +119,8 @@ export async function mount(el) {
   window.addEventListener('circle:requests', onChange);
   window.addEventListener('circle:alerts', onChange);
 
-  el.append(h('div', { class: 'cs-stack cs-stack--loose' },
-    h('div', { class: 'cs-row cs-row--wrap cs-row--between' }, h('div', {}, h('h1', { class: 'cs-h1', id: 'main-title' }, 'Inbox'), h('p', { class: 'cs-soft' }, 'Everything the agents asked you, and what you decided.')), count),
+  el.append(h('div', { class: 'cs-stack cs-stack--loose cs-page' },
+    h('header', { class: 'cs-stack cs-stack--tight' }, h('h1', { class: 'cs-h1', id: 'main-title' }, 'Inbox'), h('p', { class: 'cs-soft' }, 'Everything the agents asked you, and what you decided. ', count)),
     h('div', { class: 'cs-row cs-row--wrap' },
       sel('Show', 'status', [['all', 'Everything'], ['pending', 'Waiting for me'], ['done', 'Already decided']]),
       sel('Project', 'project', [['', 'All projects'], ...state.projects.map((p) => [p.id, p.name])]),

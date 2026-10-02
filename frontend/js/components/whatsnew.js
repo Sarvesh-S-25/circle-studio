@@ -6,9 +6,15 @@ import { pref, setPref, state, subscribe } from '../state.js';
 import { openModal, toast } from './overlay.js';
 
 /** Change this id when there is something new to tell. */
-export const RELEASE = '2026-10-02-one-window';
+export const RELEASE = '2026-10-02-keys-tools-skills';
 
 const CHANGES = [
+  ['sparkle', "Let's begin, for people new to it",
+    "The first time, Circle Studio asks which AI tools you use (Claude Code, Codex, Gemini, Copilot), shows which are ready, and gives the exact install and sign-in steps, with a button that runs them in a terminal. Sign in to GitHub there too (optional; Circle Studio never sees your token). Open it any time from the AI tools line at the bottom of the menu."],
+  ['key', 'Keys in the menu, tools in each project',
+    'Keys (where Connections was): paste an API key once. Each project has a Connections tab: the tools its agents can use, including what your Claude Code plugins bring, whether each works, and buttons to give a key, add a tool or remove one. Adding something the project already has (for example from a plugin) is flagged before anything changes.'],
+  ['skill', 'Skills found for you',
+    'In the Workflow helper, "Find skills" works out what your agents lack, searches GitHub, and suggests a few skills with what each does and which agent it is for. Tick the ones you want: they go to your library and to their agents. Paste a GitHub link and it shows what is in it.'],
   ['widgets', 'One window, and Widgets in the menu',
     'Opening Circle Studio while it is already open brings that window to the front instead of opening another one; the same goes for the widget board and each project\'s widget, and for clicks on the desktop widgets. Widgets now has its own page in the menu, below Connections: choose and arrange your tiles there, and put them on the desktop or take them off.'],
   ['link', 'Connections fix themselves',
@@ -17,12 +23,6 @@ const CHANGES = [
     'Settings, Desktop, "Show widgets on the desktop": rounded tiles that live on the desktop itself (not windows, not shortcuts): agent rings, spending, a workflow, what waits for you. Drag them anywhere; click to open Circle Studio there; right-click to keep them above windows or close them. In a project, Widget, "Put its agents and workflow on the desktop".'],
   ['link', 'Broken connections get fixed',
     'On Connections, Test starts a server the way an engine would and says why it fails in plain words, with commands to copy. When the same server works in another project, it gives you the exact commands to repeat that setup. "Ask Claude to fix it" reads the error and the code and proposes a config fix (applied through the usual review) and advice for the code.'],
-  ['pin', 'Desktop widgets you choose',
-    'Settings, Desktop, Widget board (or Ctrl+K "Open the widget board"): rings for every agent (green working, amber waiting for you, blue done, grey idle), spending by provider, a workflow tile you can switch between projects, what waits for you. Press Edit to add, resize or reorder; each tile can open in its own small window.'],
-  ['link', 'Connections and a key vault',
-    'The new Connections page lists every MCP server each engine uses, checks that it works, and flags keys written in plain text, unpinned downloads, risky agent settings and passwords in git remotes. The key vault keeps connector keys encrypted for your Windows account and gives them only to the projects you allow.'],
-  ['sparkle', 'The workflow helper reads your project',
-    'It now reads the folder (stack, size, docs, tests, existing agents), the building blocks you already have (Library, Catalog) and the pages you indexed, and recommends from those. Describe with Haiku writes one-line descriptions for the catalog.'],
 ];
 
 export function openWhatsNew() {

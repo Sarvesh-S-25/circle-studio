@@ -16,7 +16,7 @@ import { loadConfig } from '../backend/config.mjs';
 import { writeIcon } from '../backend/lib/icon.mjs';
 import { shortcutPath, specialFolder, writeShortcut, removeShortcut } from '../backend/lib/desktop.mjs';
 import { checkUpdate, applyUpdate, appVersion } from '../backend/lib/updater.mjs';
-import { copilotLoader } from '../backend/lib/engines/proc.mjs';
+import { copilotLoader, resolveCli } from '../backend/lib/engines/proc.mjs';
 
 const config = loadConfig();
 const argv = process.argv.slice(2);
@@ -44,7 +44,10 @@ function launcher(...args) {
 }
 
 function version(bin, args = ['--version']) {
-  const r = spawnSync(bin, args, { encoding: 'utf8', windowsHide: true, timeout: 15_000, shell: false });
+  // found like a terminal would (an .exe, or the script behind an npm .cmd launcher), never through a shell
+  const cli = /^[a-z][a-z0-9-]*$/.test(bin) ? resolveCli(bin) : { bin, prefix: [] };
+  if (!cli) return null;
+  const r = spawnSync(cli.bin, [...cli.prefix, ...args], { encoding: 'utf8', windowsHide: true, timeout: 15_000, shell: false });
   if (r.error || r.status !== 0) return null;
   return (r.stdout || r.stderr).trim().split('\n')[0].slice(0, 80);
 }

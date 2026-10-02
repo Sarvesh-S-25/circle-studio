@@ -68,6 +68,13 @@ export class Vault {
     });
   }
 
+  /** One key's value, for the connection manager to put where Claude Code reads it. Never sent to the browser. */
+  value(name) {
+    const e = this.#read().entries[name];
+    if (!e) return null;
+    try { return this.codec.unprotectMany([e.blob])[0] || null; } catch { return null; }
+  }
+
   /** The variables for an engine run in `projectId` (decrypted here, handed to the child only). */
   envFor(projectId) {
     const pick = Object.entries(this.#read().entries).filter(([, e]) => e.projects === 'all' || (Array.isArray(e.projects) && e.projects.includes(projectId)));

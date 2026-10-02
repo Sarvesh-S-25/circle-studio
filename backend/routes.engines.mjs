@@ -11,6 +11,10 @@ import { ENGINE_IDS } from './lib/engines/index.mjs';
 import { str, readTextFile, SECRET_DIRS } from './lib/route-helpers.mjs';
 import { searchHelp, guidePrompt, guideFolder, askEngine } from './lib/guide.mjs';
 import { quickAttention } from './lib/health.mjs';
+import { SETUP, openSetupTerminal } from './lib/engines/setup.mjs';
+import { ghStatus } from './lib/ghcli.mjs';
+
+const withSetup = (e) => ({ ...e, setup: SETUP[e.id] || null });
 
 function assignIds(list, prefix, sanitize) {
   return (Array.isArray(list) ? list : []).slice(0, 12).map((it, n) => ({
@@ -26,8 +30,11 @@ export function buildEngineHandlers(app) {
   const { projects, claude, engines, inbox, sessions } = app;
   const STATUS = new Set(['pending', 'all', 'allowed', 'denied', 'answered', 'expired', 'auto-denied']);
   return {
-    'engines.list': async () => ({ engines: await engines.list() }),
-    'engines.check': async () => ({ engines: await engines.list({ force: true }) }),
+    // each engine also says how a person gets it going (what account, the install and sign-in commands)
+    'engines.list': async () => ({ engines: (await engines.list()).map(withSetup), github: { ...(await ghStatus()), setup: SETUP.github } }),
+    'engines.check': async () => ({ engines: (await engines.list({ force: true })).map(withSetup), github: { ...(await ghStatus({ force: true })), setup: SETUP.github } }),
+    // "Do it for me" on Let's begin: a visible terminal runs the fixed install or sign-in command for that engine
+    'engines.terminal': ({ body }) => openSetupTerminal(str(body?.engine, 'engine', 20), body?.step, { spawnImpl: app.overrides?.spawnTerminal || (process.env.NODE_TEST_CONTEXT ? () => ({}) : undefined) }), // tests never open a window
 
     'requests.list': ({ query }) => {
       const status = query.get('status') || 'pending';

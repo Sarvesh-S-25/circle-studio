@@ -112,7 +112,7 @@ export async function mount(el) {
     h('section', { class: 'cs-card cs-stack', 'aria-labelledby': 's-desk' }, h('h2', { class: 'cs-h2', id: 's-desk' }, 'Desktop'), desk),
     h('section', { class: 'cs-card cs-stack', 'aria-labelledby': 's-upd' }, h('h2', { class: 'cs-h2', id: 's-upd' }, 'Updates'), updateSection()),
     h('section', { class: 'cs-stack', 'aria-labelledby': 's-eng' }, h('div', { class: 'cs-row cs-row--between' }, h('h2', { class: 'cs-h2', id: 's-eng' }, 'Engines'), h('button', { class: 'cs-btn', type: 'button', onclick: recheck }, icon('refresh', 's'), 'Check all again')),
-      h('p', { class: 'cs-soft' }, 'The AI tools Circle Studio can drive, each through your own sign-in in a terminal. No API key is used or stored.'), engines),
+      h('p', { class: 'cs-soft' }, 'The AI tools Circle Studio can drive, each through your own sign-in in a terminal. No API key is used or stored. ', h('a', { href: '#/start' }, "Set one up (Let's begin)")), engines),
     h('section', { class: 'cs-card cs-stack', 'aria-labelledby': 's-where' }, h('h2', { class: 'cs-h2', id: 's-where' }, 'Where things live'),
       h('table', { class: 'cs-table' }, h('tbody', {},
         row('Address', h('code', {}, `http://127.0.0.1:${hl.port}`)),
@@ -120,7 +120,7 @@ export async function mount(el) {
         row('New projects go in', h('code', {}, hl.projectsRoot)),
         row('GitHub', hl.github.token ? 'Using GITHUB_TOKEN from the environment (never stored)' : 'Unauthenticated: 60 requests per hour')))),
     h('section', { class: 'cs-card cs-stack', 'aria-labelledby': 's-priv' }, h('h2', { class: 'cs-h2', id: 's-priv' }, 'What leaves this PC'),
-      h('ul', { class: 'cs-prose' }, h('li', {}, 'What you send in a chat, the Advisor or a node chat, through the engine you picked (its own CLI, its own sign-in).'), h('li', {}, 'Whatever that engine itself does with your project files, which you approve step by step.'), h('li', {}, 'Reads from github.com when you paste a repository URL, and the Actions and pull requests of a project you turn GitHub on for.'), h('li', {}, 'A page you index in the Catalog (fetched once), and a connection test to a remote MCP server when you press Check on Connections.'), h('li', {}, 'Never: your connector keys. They stay in the vault on this PC, encrypted for your Windows account.')),
+      h('ul', { class: 'cs-prose' }, h('li', {}, 'What you send in a chat, the Advisor or a node chat, through the engine you picked (its own CLI, its own sign-in).'), h('li', {}, 'Whatever that engine itself does with your project files, which you approve step by step.'), h('li', {}, 'Reads from github.com when you paste a repository URL, and the Actions and pull requests of a project you turn GitHub on for.'), h('li', {}, 'A page you index in the Catalog (fetched once), and a connection test to a remote MCP server when you press Check or Test on it.'), h('li', {}, 'Never: your keys. They stay on this PC (Keys), encrypted for your Windows account.')),
       h('button', { class: 'cs-btn', type: 'button', onclick: openShortcuts }, icon('keyboard', 's'), 'Keyboard shortcuts'),
       h('button', { class: 'cs-btn', type: 'button', onclick: openWhatsNew }, icon('sparkle', 's'), "What's new"))));
   return {};

@@ -85,7 +85,7 @@ export function createDesktopServices({ config, store, projects, sessions, overr
     const before = new Set(settings.get().connectionsBroken || []);
     const fresh = broken.filter((b) => !before.has(b.id));
     await settings.set({ connectionsBroken: broken.map((b) => b.id) });
-    for (const b of fresh) if (settings.get().desktopAlerts !== false) toast({ title: `Connection "${b.name}" stopped working`, body: `${b.title}.${b.canFix ? ' Circle Studio can fix it for you.' : ' Open Connections to see why.'}`, url: `${base()}/#/connections` });
+    for (const b of fresh) if (settings.get().desktopAlerts !== false) toast({ title: `Connection "${b.name}" stopped working`, body: `${b.title}.${b.canFix ? ' Circle Studio can fix it for you.' : ' Open Keys, Everything on this PC, to see why.'}`, url: `${base()}/#/connections` });
     return fresh;
   }
   const cxTimer = process.env.NODE_TEST_CONTEXT ? null : setInterval(() => watchConnections().catch(() => {}), 6 * 60 * 60 * 1000);
