@@ -55,8 +55,9 @@ export function probeStdio({ file, args, cwd, env, timeoutMs = 45_000 }) {
       if (done) return;
       done = true;
       clearTimeout(timer);
-      try { killTree(child); } catch { /* gone */ }
-      resolve({ stage, serverInfo, ms: Date.now() - t0, stderr: redact(stderr.slice(-4000)), ...r });
+      const answer = { stage, serverInfo, ms: Date.now() - t0, stderr: redact(stderr.slice(-4000)), ...r };
+      // answer only once the server and anything it started are gone: a test never leaves a process behind
+      Promise.resolve().then(() => killTree(child)).catch(() => {}).finally(() => resolve(answer));
     };
     const send = (o) => { try { child.stdin.write(`${JSON.stringify(o)}\n`); } catch { /* closed */ } };
     const timer = setTimeout(() => finish({ ok: false, error: 'timeout' }), timeoutMs);

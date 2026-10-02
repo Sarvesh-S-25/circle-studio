@@ -152,7 +152,7 @@ async function load(fresh = false) {
   draw();
   try { state.projects = (await api.projects()).projects; notify(); } catch { /* the pulse says it */ }
   await load(true);
-  initRequests(); // popups for approvals and questions, here in the widget
+  initRequests(`widget:${id}`); // popups for approvals and questions, here in the widget
   initAlerts();
   let t = 0;
   const soon = () => { clearTimeout(t); t = setTimeout(() => load(), 300); };

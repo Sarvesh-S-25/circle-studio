@@ -96,7 +96,9 @@ if (process.argv.includes('--stop')) {
 const running = await circleHealth();
 // CIRCLE_TEST_CODE stands in for "the code on disk changed" in tests
 const onDisk = process.env.CIRCLE_TEST_CODE || codeFingerprint(config.appRoot);
-if (running && running.code !== onDisk) {
+// after a restart the windows that were open reconnect within seconds: the server waits for them before opening one
+const restarted = Boolean(running && running.code !== onDisk);
+if (restarted) {
   log(`restarting: the running server is older than the code on disk (${running.code || 'no fingerprint'} -> ${onDisk})`);
   if (!(await stopServer())) fail('Circle Studio was updated but the old server could not be stopped. Close node.exe from Task Manager and open the app again.');
   console.log('Circle Studio was updated: restarted the server.');
@@ -105,13 +107,31 @@ if (running && running.code !== onDisk) {
   await startServer();
 }
 
+/** Ask the server to show a window: it brings the one already open to the front, or opens one. False when it cannot. */
+function showThroughServer(body) {
+  return new Promise((resolve) => {
+    const data = JSON.stringify(body);
+    const req = http.request(`${base}/api/desktop/open`, { method: 'POST', agent: false, timeout: 20_000, headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data), 'X-Circle': '1' } }, (res) => {
+      res.resume();
+      res.on('end', () => resolve(res.statusCode === 200));
+    });
+    req.on('timeout', () => req.destroy());
+    req.on('error', () => resolve(false));
+    req.end(data);
+  });
+}
+
 const widget = process.argv.indexOf('--widget');
 const widgetId = widget > 0 ? process.argv[widget + 1] : null;
 if (process.argv.includes('--widgets') && process.env.CIRCLE_NO_OPEN !== '1') desktopWidgets(config).start();
 // CIRCLE_NO_OPEN=1: start the server only (used by tests). --background: the start-at-login shortcut.
+// One window per thing: opening Circle Studio while it is open brings that window forward instead of a second one.
 if (process.env.CIRCLE_NO_OPEN !== '1' && !process.argv.includes('--background')) {
-  if (process.argv.includes('--overview')) openAppWindow(`${base}/widget.html`, BOARD_SIZE);
-  else if (widgetId && /^[a-z0-9_-]{1,60}$/i.test(widgetId)) openAppWindow(`${base}/widget.html?p=${encodeURIComponent(widgetId)}`, WIDGET_SIZE);
-  else openAppWindow(base);
+  const settle = restarted;
+  if (process.argv.includes('--overview')) {
+    if (!(await showThroughServer({ kind: 'widget', settle }))) openAppWindow(`${base}/widget.html`, BOARD_SIZE);
+  } else if (widgetId && /^[a-z0-9_-]{1,60}$/i.test(widgetId)) {
+    if (!(await showThroughServer({ kind: 'widget', projectId: widgetId, settle }))) openAppWindow(`${base}/widget.html?p=${encodeURIComponent(widgetId)}`, WIDGET_SIZE);
+  } else if (!(await showThroughServer({ kind: 'app', settle }))) openAppWindow(base);
 }
 process.exit(0);

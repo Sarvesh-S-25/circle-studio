@@ -299,3 +299,28 @@ Report what was verified by running it and what was not.
   (command `\`) was diagnosed with the spark2 setup as its twin; one real Haiku fix call ($0.03). Not checked: Win+D
   with the widgets (it would minimise the human's windows), a drag (positions are saved on mouse up), a real MCP
   server's start (the human's servers were not started).
+* **Manager (v8)**: `connections.manage` (`analyze`), `connections.plan` ({action: repair|share|remove|secure|key}) and
+  `connections.apply` (`runPlan`: backup, `claude mcp` via `app.claude.bin`, user env via PowerShell
+  `SetEnvironmentVariable(.., 'User')` with the value in an environment variable, vault; restore on failure; then
+  `testServer` on what changed). Plans live ten minutes and run once; their key values never leave the server.
+  Tested with a simulated `claude mcp` on a fake home (repair, a failed step restored, a pasted key) and live as a preview
+  on the human's real config (nothing applied).
+
+## One window per thing, and the Widgets page (v9)
+
+* **Window keys**: every window opens `/api/events?window=<key>`: `app`, `board`, `widget:<project>`,
+  `tile:<kind>:<size>[:<project>]`. `app.showWindow(key, url, {size, hash, settle})` (services.desktop) sends the newest
+  window of that key a `show` event `{hash, mark}`; the window navigates, adds `mark` (13 zero-width characters) to its
+  title for 8 s, and `focusWindowMarked` (lib/desktop.mjs, PowerShell + user32: EnumWindows, restore if minimised,
+  AttachThreadInput, SetForegroundWindow) raises exactly that window. Not found within 5 s (a background tab): a new
+  window. No window: one is opened, and another request within 15 s answers `starting` instead of opening a second.
+* **Everything opens through `desktop.open`**: the launcher (`--overview`, `--widget`, plain), the desktop widgets
+  (asynchronous WebClient POST, opening Edge directly only when the server does not answer) and the in-app buttons.
+  After the launcher restarts an older server, it passes `settle`: the server waits up to 6 s from its start for the open
+  windows to reconnect before deciding a new one is needed.
+* **Widgets page** `#/widgets` (menu, below Connections): on/off for the desktop, "Own window", and the board embedded
+  (`mountBoard(.., {embedded: true})`, which returns `destroy()`). Project tiles with no project at all say so instead
+  of "Loading...".
+* **Status (v9)**: `tests/integration/windows.test.mjs`; live on a private port: launched twice (the minimised window
+  came back to the front, no second window), the board twice (one window), a forced restart (the open window was
+  reused); the page looked at in light and dark at 1280 and 700 px.

@@ -42,10 +42,13 @@ function projectPicker(tile, ctx) {
 
 const head = (title, ic, extra) => h('div', { class: 'cs-tile__head' }, ic ? icon(ic, 's') : null, h('span', { class: 'cs-tile__title' }, title), h('span', { class: 'cs-grow' }), extra || null);
 
+/** A project tile with nothing to show yet: still loading, or no project at all (never a made-up one). */
+const notYet = (tile, ctx) => h('p', { class: 'cs-tile__quiet' }, tile.projectId || ctx.defaultProject() ? 'Loading...' : 'No project yet. Add a folder on Home.');
+
 /* ---- agents: status rings ---------------------------------------------------------------------- */
 function statusTile(tile, ctx) {
   const pu = ctx.pulse(tile.projectId);
-  if (!pu) return [head('Agents', 'agent'), h('p', { class: 'cs-tile__quiet' }, 'Loading...')];
+  if (!pu) return [head('Agents', 'agent'), notYet(tile, ctx)];
   const agents = pu.agents || [];
   const order = { waiting: 0, working: 1, done: 2, idle: 3 };
   const top = agents.slice().sort((a, b) => order[a.state] - order[b.state]);
@@ -89,7 +92,7 @@ function spendTile(tile, ctx) {
 /* ---- workflow ---------------------------------------------------------------------------------- */
 function workflowTile(tile, ctx) {
   const pu = ctx.pulse(tile.projectId);
-  if (!pu) return [head('Workflow', 'plan'), h('p', { class: 'cs-tile__quiet' }, 'Loading...')];
+  if (!pu) return [head('Workflow', 'plan'), notYet(tile, ctx)];
   const wf = pu.workflow;
   const pick = projectPicker(tile, ctx);
   const top = head(pick ? 'Workflow' : pu.project.name, 'plan', pick);
@@ -126,7 +129,7 @@ function inboxTile(tile, ctx) {
 /* ---- one project ------------------------------------------------------------------------------- */
 function projectTile(tile, ctx) {
   const pu = ctx.pulse(tile.projectId);
-  if (!pu) return [head('Project', 'project'), h('p', { class: 'cs-tile__quiet' }, 'Loading...')];
+  if (!pu) return [head('Project', 'project'), notYet(tile, ctx)];
   const agents = pu.agents || [];
   const counts = ['working', 'waiting', 'done'].map((s) => [s, agents.filter((a) => a.state === s).length]);
   const st = counts.find(([s, n]) => s === 'waiting' && n) ? 'waiting' : counts.find(([s, n]) => s === 'working' && n) ? 'working' : 'idle';

@@ -38,13 +38,17 @@ export function buildEngineHandlers(app) {
     },
     'requests.respond': ({ params, body }) => ({ request: sessions.respond(params.id, body) }),
 
-    'events.stream': async ({ sse, signal }) => {
+    'events.stream': async ({ query, sse, signal }) => {
       const stream = sse();
       app.viewers.count++; // an open window: it shows its own popups, so the server does not notify Windows
+      // what the window shows, so opening it again brings this one forward instead of a second window
+      const key = query.get('window');
+      const forget = key && /^[a-z]+(:[A-Za-z0-9_-]{0,60}){0,3}$/.test(key) ? app.addWindow(key, (name, data) => stream.send(name, data)) : () => {};
       for (const r of inbox.list({ status: 'pending' }).reverse()) stream.send('request', r);
       const off = sessions.subscribe((name, data) => stream.send(name, data));
       await new Promise((resolve) => { if (signal.aborted) resolve(); else signal.addEventListener('abort', resolve, { once: true }); });
       off();
+      forget();
       app.viewers.count = Math.max(0, app.viewers.count - 1);
       stream.end();
     },

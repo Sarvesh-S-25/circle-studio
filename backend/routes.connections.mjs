@@ -11,6 +11,8 @@ import { str } from './lib/route-helpers.mjs';
 import { expand, resolveLaunch, probeStdio, probeHttp, diagnose, workingTwins, recreateCommands } from './lib/mcpprobe.mjs';
 import { projectDigest } from './lib/digest.mjs';
 import { redact } from './lib/secrets.mjs';
+import { analyze, makePlan, runPlan, Plans, setUserEnv } from './lib/mcpmanage.mjs';
+import { runCommand, cleanEnv } from './lib/run.mjs';
 
 const FIX_SCHEMA = {
   type: 'object', additionalProperties: false, required: ['summary', 'steps', 'commands', 'codebase'],
@@ -65,7 +67,37 @@ export function buildConnectionHandlers(app) {
     return root;
   }
 
+  /* ---- the manager: grouped view, plans, running them ------------------------------------------------------- */
+  const plans = new Plans();
+  const projectIdFor = (folder) => (folder ? projects.list().find((p) => p.exists && path.resolve(p.path).toLowerCase() === path.resolve(folder).toLowerCase())?.id || null : null);
+  const runClaude = (args, cwd) => (app.overrides?.runClaude || ((a, c) => runCommand(app.claude.bin, [...(app.claude.prefix || []), ...a], { cwd: c, timeoutMs: 90_000, env: cleanEnv() })))(args, cwd);
+  const planDeps = () => ({ runClaude, setUserEnv: app.overrides?.setUserEnv || setUserEnv, vault, claudeJson: path.join(config.userHome, '.claude.json'), backupDir: path.join(config.dataDir, 'backups') });
+
   return {
+    // Every server grouped by name across projects and engines, with what is redundant or broken and a fix for each.
+    'connections.manage': () => ({ groups: analyze(listServers({ root: null, ...homeOpts() })) }),
+    // Preview a fix: plain steps and the exact commands (names only, never a key).
+    'connections.plan': ({ body }) => {
+      const projectId = body?.projectId || null;
+      const root = rootOf(projectId);
+      const action = body?.action;
+      if (!action || typeof action !== 'object') throw badRequest('Say what to do.');
+      let plan;
+      try {
+        plan = makePlan(action, { servers: listServers({ root, ...homeOpts() }), rawOf: (id) => rawServer(id, { root, ...homeOpts() }), projectIdFor, projectId });
+      } catch (e) { throw badRequest(e.message); }
+      return plans.view(plans.put(plan), plan);
+    },
+    // Run it, then start each server it touched once to prove it works. Project .mcp.json changes come back as ops
+    // for the usual review.
+    'connections.apply': async ({ body }) => {
+      const plan = plans.take(str(body?.id, 'id', 40));
+      if (!plan) throw notFound('That plan expired. Preview it again.');
+      const run = await runPlan(plan, planDeps());
+      const tests = [];
+      if (run.ok && !plan.ops) for (const id of plan.retest) { try { tests.push(await testServer(id, plan.projectId || null)); } catch (e) { tests.push({ id, result: { ok: false, error: e.message }, diagnosis: [] }); } }
+      return { ok: run.ok, results: run.results, tests, ops: run.ok ? plan.ops || null : null, projectId: plan.projectId || null, retest: plan.retest };
+    },
     // Start it for real and do the MCP handshake (only when the human presses Test).
     'connections.test': async ({ body }) => testServer(str(body?.id, 'id', 200), body?.projectId || null),
     // Claude reads the failure, the server's config (names only) and the code around it, and says how to fix it.

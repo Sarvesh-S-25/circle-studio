@@ -5,6 +5,7 @@ import { h, icon, timeAgo, plural } from '../dom.js';
 import { state } from '../state.js';
 import { reviewChanges } from '../components/diffreview.js';
 import { confirmDialog, openModal, toast } from '../components/overlay.js';
+import { managerCard, keyForm, runAction } from '../components/cxmanager.js';
 
 const ENGINE = { claude: 'Claude Code', codex: 'Codex', gemini: 'Gemini', copilot: 'Copilot', vscode: 'VS Code' };
 const HEALTH = { ok: ['ok', 'Healthy'], broken: ['danger', 'Broken'], unknown: ['info', 'Not checked'], off: ['quiet', 'Off'] };
@@ -15,6 +16,7 @@ export async function mount(el, ctx) {
   let data = null;
   let keys = [];
   const health = new Map();
+  const manager = managerCard({ onChanged: () => load() });
   const list = h('div', { class: 'cs-stack cs-stack--loose' });
 
   const picker = h('select', { class: 'cs-select cs-select--small', 'aria-label': 'Show connections for', onchange: (e) => { projectId = e.target.value; location.hash = projectId ? `#/connections/${projectId}` : '#/connections'; } },
@@ -130,6 +132,11 @@ export async function mount(el, ctx) {
     }
     if (t.output) parts.push(h('details', { class: 'cs-details' }, h('summary', {}, 'Its output'), h('pre', { class: 'cs-cx__out' }, t.output)));
     if (!t.result.ok) {
+      // the one-click ways out: repeat a working twin, or paste the key
+      const twin = t.twins?.[0];
+      if (twin && s.engine === 'claude' && s.scope !== 'project') parts.push(h('div', { class: 'cs-row cs-row--wrap' }, h('button', { class: 'cs-btn cs-btn--primary cs-btn--small', type: 'button', onclick: async () => { if (await runAction({ kind: 'repair', id: s.id, from: twin.id }, { projectId: projectId || null })) { repairs.delete(s.id); load(); } } }, icon('sparkle', 's'), `Fix it for me (use the setup from ${twin.where.replace(/^in /, '')})`)));
+      const keyTrouble = t.diagnosis.some((d) => d.vault || /key|refused|not set|unauthori/i.test(d.cause));
+      if ((keyTrouble || s.envNames.length || s.headerNames.length) && s.engine === 'claude') parts.push(keyForm(s, { projectId: projectId || null, onDone: () => { repairs.delete(s.id); load(); } }));
       if (r.fixing) parts.push(h('div', { class: 'cs-loading' }, icon('spinner', 's'), 'Claude is reading the error and the code...'));
       else if (r.fix) parts.push(fixView(s, r.fix));
       else parts.push(h('div', { class: 'cs-row cs-row--wrap' }, h('button', { class: 'cs-btn cs-btn--small cs-btn--primary', type: 'button', onclick: () => askFix(s) }, icon('sparkle', 's'), 'Ask Claude to fix it'), r.fixError ? h('span', { class: 'cs-small cs-soft' }, r.fixError) : null));
@@ -196,7 +203,8 @@ export async function mount(el, ctx) {
 
   function draw() {
     if (!data) return;
-    list.replaceChildren(findingsCard(), serversCard(), vaultCard());
+    if (!projectId) list.replaceChildren(manager.el, findingsCard(), serversCard(), vaultCard());
+    else list.replaceChildren(findingsCard(), serversCard(), vaultCard());
   }
 
   el.append(h('div', { class: 'cs-stack cs-stack--loose cs-cx' },

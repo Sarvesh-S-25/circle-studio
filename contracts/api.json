@@ -463,6 +463,24 @@
       "method": "POST",
       "path": "/api/connections/fix",
       "doc": "Claude reads the failed test, the server config (names only) and its code, and answers: cause, steps, safe commands, a config fix (as an mcp-server-set op for a project .mcp.json) and advice for the codebase."
+    },
+    {
+      "id": "connections.manage",
+      "method": "GET",
+      "path": "/api/connections/manage",
+      "doc": "Every MCP server grouped by name across projects and engines, with what is redundant (copies, conflicting setups, folders that are gone), broken or holding a plain-text key, and a one-click fix for each."
+    },
+    {
+      "id": "connections.plan",
+      "method": "POST",
+      "path": "/api/connections/plan",
+      "doc": "Preview a fix: {action: {kind: repair|share|remove|secure|key, ...}, projectId?} -> plain steps and commands, never a key value."
+    },
+    {
+      "id": "connections.apply",
+      "method": "POST",
+      "path": "/api/connections/apply",
+      "doc": "Run a previewed fix (~/.claude.json backed up first and put back on failure), then test the servers it touched. Project .mcp.json changes come back as ops to review."
     }
   ]
 }

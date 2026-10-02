@@ -21,6 +21,7 @@ const VIEWS = {
   settings: () => import('./views/settings.js'),
   inbox: () => import('./views/inbox.js'),
   connections: () => import('./views/connections.js'),
+  widgets: () => import('./views/widgets.js'),
 };
 
 const TABS = ['workflow', 'team', 'skills', 'health', 'cost', 'chat'];
@@ -36,6 +37,7 @@ function parseRoute(hash) {
   if (parts[0] === 'settings') return { view: 'settings', params: {} };
   if (parts[0] === 'inbox') return { view: 'inbox', params: {} };
   if (parts[0] === 'connections') return { view: 'connections', params: { projectId: parts[1] || '' } };
+  if (parts[0] === 'widgets') return { view: 'widgets', params: {} };
   return { view: 'home', params: {} };
 }
 
@@ -121,7 +123,7 @@ initPanelSize();
     toast(e.message, { kind: 'danger', ms: 0 });
   }
   route();
-  initRequests();
+  initRequests('app'); // also: opening Circle Studio again brings this window forward instead of a second one
   initAlerts();
   checkForNews();
   loadUpdateState();

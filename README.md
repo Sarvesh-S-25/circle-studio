@@ -13,13 +13,25 @@ You need **Windows 10 or 11**, **Node.js 24 or newer** ([nodejs.org](https://nod
 one engine signed in from a terminal, for example Claude Code: `npm install -g @anthropic-ai/claude-code`, then
 `claude auth login`. Git is recommended (for project status and updates).
 
-1. Get the code: `git clone <this repository>` (recommended: it can then update itself), or download the ZIP and
-   unpack it somewhere permanent, such as `Documents\Circle Studio`.
-2. Double-click **`Install Circle Studio.cmd`**. It checks Node, lists which engines it found, puts **Circle Studio** on
-   the Desktop and in the Start menu, asks whether to start at sign-in, and opens the app. No administrator rights,
-   nothing downloaded.
+**With git (recommended: it can then update itself).** In PowerShell or a terminal:
 
-Your data (projects list, templates, chats, Inbox, settings) lives in the `data` folder next to the code.
+```
+cd $HOME\Documents
+git clone https://github.com/Sarvesh-S-25/circle-studio.git
+cd circle-studio
+.\"Install Circle Studio.cmd"
+```
+
+**Without git.** Download the ZIP
+([github.com/Sarvesh-S-25/circle-studio/archive/refs/heads/main.zip](https://github.com/Sarvesh-S-25/circle-studio/archive/refs/heads/main.zip)),
+unpack it somewhere permanent such as `Documents\circle-studio`, and double-click **`Install Circle Studio.cmd`**.
+
+The installer checks Node, lists which engines it found, puts **Circle Studio** on the Desktop and in the Start menu,
+asks whether to start at sign-in, and opens the app. No administrator rights, nothing downloaded. Afterwards open it
+from the Desktop or Start menu; opening it again while it is open brings the same window forward.
+
+Your data (projects list, templates, chats, Inbox, settings, the key vault) lives in the `data` folder next to the code.
+It is never uploaded and never part of git.
 
 ## Commands
 
@@ -38,10 +50,32 @@ npm test             unit, contract and integration tests (fake CLIs, temp folde
 
 ## Updates
 
-The app checks its git remote once a day (read only). When a newer version is there, the taskbar shows **Update
-ready** and Settings, Updates has **Update and restart**: it fast-forwards (never merges, and refuses if you changed
-files in the app folder), restarts, and shows **What's new**. A ZIP copy cannot update itself: download the new one and
-run the installer again (copy your `data` folder across to keep everything).
+The app checks GitHub once a day (read only). When a newer version is there, the taskbar shows **Update ready** and
+Settings, Updates has **Update and restart**: it fast-forwards (never merges, and refuses if you changed files in the
+app folder), restarts, and shows **What's new**. The same from a terminal, in the app's folder:
+
+```
+npm run update       (or: git pull --ff-only, then open Circle Studio again: it restarts on the new code by itself)
+npm run doctor       shows whether an update is waiting
+```
+
+A ZIP copy cannot update itself: download the new ZIP, unpack it over a new folder, copy your old `data` folder into
+it, and run the installer again.
+
+### Publishing a new version (for the maintainer)
+
+People update from the `main` branch. From the app's folder:
+
+```
+npm test                       everything passes (3 tests skip when an optional reference folder is missing)
+git status                     check that only the files you mean to publish are listed (data/ is never included)
+git add -A
+git commit -m "What changed, in a few words"
+git push origin main
+```
+
+Everyone who cloned sees **Update ready** within a day. Change `RELEASE` and `CHANGES` in
+`frontend/js/components/whatsnew.js` when there is something new to tell, and the `version` in `package.json`.
 
 ## What is in it
 
@@ -52,8 +86,8 @@ run the installer again (copy your `data` folder across to keep everything).
 | Chat | A real agent session in the project folder. Every command, edit and question asks you first. **Earlier conversations** lists your Claude Code conversations from the terminal in that folder: read them or continue them here |
 | Cost | Claude use for 30 days (by model, day and agent, at API prices), what loads before you type, each agent's model and price, and ways to spend less (apply a cheaper model, or let AI rearrange the workflow), all through a reviewed diff |
 | Health | What needs you now, in plain words; details underneath |
-| Widgets | Real widgets on your desktop (Settings, Desktop): rounded tiles for agent rings (working, waiting, done, idle), spending by provider, a workflow, what waits for you. Drag them anywhere, click to open, right-click for options. Choose them on the widget board |
-| Connections | Every MCP server each engine uses; Test starts one for real and explains a failure with commands to copy (or the exact setup that works in another project); Claude can propose a config fix (reviewed) and advice for the code. A local security check and a key vault encrypted for your Windows account |
+| Widgets | Its own page in the menu, below Connections. Real widgets on your desktop: rounded tiles for agent rings (working, waiting, done, idle), spending by provider, a workflow, what waits for you. Drag them anywhere, click to open, right-click for options. Choose them on the widget board |
+| Connections | Every MCP server each engine uses. The Manager groups them across projects and fixes what is broken, duplicated, stale or keeping a plain-text key in one click (previewed, backed up, undone on failure, tested after). Paste a key and it is saved in your Windows environment; Test explains any failure; Claude can propose a config fix and advice for the code. A security check and an encrypted key vault |
 | Inbox | Every approval and question, and team questions from `docs/tasks/ALERTS.md` |
 | Ask Circle | Ctrl+J: next steps, built-in help (no AI needed), or ask any engine you are signed in to |
 | Library | Skills for every engine, and the Catalog: every building block you have, described in one line, searchable the way the workflow helper searches it; index a link to make its text searchable |

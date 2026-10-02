@@ -31,7 +31,22 @@ export function desktopAlert({ title, body, tag, onClick }) {
   } catch { return false; }
 }
 
+let mark = '';
+
 /** "(2) Circle Studio": how many things wait, in the taskbar button. */
 export function setWaitingCount(n) {
-  document.title = n > 0 ? `(${n}) ${BASE_TITLE}` : BASE_TITLE;
+  document.title = (n > 0 ? `(${n}) ${BASE_TITLE}` : BASE_TITLE) + mark;
+}
+
+/**
+ * Opening Circle Studio again while this window is open: the server asks this window to come forward. The title gets
+ * an invisible mark for a few seconds so the server finds exactly this window on screen and raises it.
+ */
+export function comeForward(m) {
+  if (typeof m === 'string' && /^[\u200b-\u200d]{1,40}$/.test(m)) {
+    mark = m;
+    document.title += m;
+    setTimeout(() => { if (mark === m) { mark = ''; document.title = document.title.replace(m, ''); } }, 8000);
+  }
+  window.focus();
 }

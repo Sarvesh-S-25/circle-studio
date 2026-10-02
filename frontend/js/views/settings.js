@@ -98,7 +98,7 @@ export async function mount(el) {
         h('div', { class: 'cs-row cs-row--wrap' },
           st.running ? h('span', { class: 'cs-pill cs-pill--ok' }, icon('check', 's'), 'On the desktop') : null,
           h('button', { class: `cs-btn cs-btn--small ${st.running ? '' : 'cs-btn--primary'}`, type: 'button', onclick: () => toggle(!st.running) }, icon(st.running ? 'close' : 'pin', 's'), st.running ? 'Take them off the desktop' : 'Show widgets on the desktop'),
-          h('button', { class: 'cs-btn cs-btn--small', type: 'button', onclick: () => api.openWindow('widget').catch((e) => toast(e.message, { kind: 'danger' })) }, icon('edit', 's'), 'Choose widgets')));
+          h('a', { class: 'cs-btn cs-btn--small', href: '#/widgets' }, icon('edit', 's'), 'Choose widgets')));
     }).catch(() => row.replaceChildren(h('strong', {}, 'Desktop widgets'), h('span', { class: 'cs-soft cs-small' }, 'Not available here.')));
     return row;
   }

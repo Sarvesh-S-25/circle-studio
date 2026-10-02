@@ -83,6 +83,61 @@ export function openAppWindow(url, { width, height } = {}) {
   return Boolean(edge);
 }
 
+// Finds the visible window whose title contains CS_MARK (the open Circle Studio window adds it to its title for a
+// moment), restores it when minimized and brings it to the front. Windows lets a background process do that only with
+// the foreground thread's input attached, so it attaches for the call.
+const FOCUS_SCRIPT = `Add-Type @'
+using System; using System.Text; using System.Runtime.InteropServices;
+public static class CsFocus {
+  delegate bool EnumProc(IntPtr h, IntPtr l);
+  [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc f, IntPtr l);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+  [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
+  [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int c);
+  [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
+  [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h);
+  [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, IntPtr p);
+  [DllImport("user32.dll")] static extern bool AttachThreadInput(uint a, uint b, bool on);
+  [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+  public static bool Focus(string mark) {
+    IntPtr found = IntPtr.Zero;
+    EnumWindows((h, l) => {
+      if (!IsWindowVisible(h)) return true;
+      var sb = new StringBuilder(1024);
+      GetWindowText(h, sb, 1024);
+      if (sb.ToString().Contains(mark)) { found = h; return false; }
+      return true;
+    }, IntPtr.Zero);
+    if (found == IntPtr.Zero) return false;
+    if (IsIconic(found)) ShowWindow(found, 9);
+    uint fg = GetWindowThreadProcessId(GetForegroundWindow(), IntPtr.Zero);
+    uint me = GetCurrentThreadId();
+    bool attached = fg != 0 && fg != me && AttachThreadInput(me, fg, true);
+    BringWindowToTop(found);
+    SetForegroundWindow(found);
+    if (attached) AttachThreadInput(me, fg, false);
+    return true;
+  }
+}
+'@
+for ($i = 0; $i -lt 25; $i++) { if ([CsFocus]::Focus($env:CS_MARK)) { 'focused'; exit 0 }; Start-Sleep -Milliseconds 200 }
+'not found'; exit 1`;
+
+/** Bring the window whose title contains `mark` to the front. Resolves true when it was found (within about 5 s). */
+export function focusWindowMarked(mark) {
+  if (process.platform !== 'win32' || !mark) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', FOCUS_SCRIPT], { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true, env: { ...process.env, CS_MARK: mark } });
+    let out = '';
+    child.stdout.on('data', (c) => { out += c; });
+    const timer = setTimeout(() => child.kill(), 15_000);
+    child.on('error', () => { clearTimeout(timer); resolve(false); });
+    child.on('close', () => { clearTimeout(timer); resolve(out.includes('focused')); });
+  });
+}
+
 /** A Windows notification (toast). Clicking it opens `url` in the browser. Fire and forget. */
 export function windowsToast({ title, body, url }) {
   if (process.platform !== 'win32') return false;

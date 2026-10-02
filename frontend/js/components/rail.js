@@ -6,7 +6,7 @@ import { toggleTheme, openShortcuts } from './palette.js';
 import { AGENT_TYPE, SKILL_TYPE, addKeyboardPath, dragSource, dropTarget, installAgent, installSkill } from './dnd.js';
 import { currentTheme } from '../state.js';
 
-const NAV = [['#/', 'Home', 'home'], ['#/inbox', 'Inbox', 'board'], ['#/library', 'Library', 'library'], ['#/connections', 'Connections', 'link'], ['#/advisor', 'Advisor', 'advisor'], ['#/settings', 'Settings', 'settings']];
+const NAV = [['#/', 'Home', 'home'], ['#/inbox', 'Inbox', 'board'], ['#/library', 'Library', 'library'], ['#/connections', 'Connections', 'link'], ['#/widgets', 'Widgets', 'widgets'],['#/advisor', 'Advisor', 'advisor'], ['#/settings', 'Settings', 'settings']];
 
 export function buildRail() {
   const root = h('nav', { class: 'cs-rail', 'aria-label': 'Taskbar' });

@@ -30,7 +30,7 @@ public static class CsDesk {
 '@
 
 $appRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-if (-not $DataDir) { $DataDir = Join-Path $appRoot 'data' }
+if (-not $DataDir -or $DataDir -eq 'undefined' -or -not [IO.Path]::IsPathRooted($DataDir)) { $DataDir = Join-Path $appRoot 'data' }
 New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
 Set-Content -Path (Join-Path $DataDir 'desktop-widgets.pid') -Value $PID -Encoding ASCII
 $stateFile = Join-Path $DataDir 'desktop-widgets.json'
@@ -197,6 +197,16 @@ $CELL = 168; $GAP = 12; $PAD = 14
 $windows = @{}
 
 function Open-App([string]$hash) {
+  # Circle Studio brings its open window forward (on that page) instead of opening a second one
+  # (asynchronous, so the tiles never freeze while it does; it opens the window itself only when the server cannot)
+  $body = $(if ($hash -eq 'widget.html') { @{ kind = 'widget' } } else { @{ kind = 'app'; hash = $hash } }) | ConvertTo-Json -Compress
+  $wc = New-Object System.Net.WebClient
+  $wc.Headers.Add('X-Circle', '1'); $wc.Headers.Add('Content-Type', 'application/json')
+  $wc.Add_UploadStringCompleted({ param($s, $e) if ($e.Error) { Open-Directly ([string]$e.UserState) }; $s.Dispose() })
+  $wc.UploadStringAsync([Uri]"$base/api/desktop/open", 'POST', $body, $hash)
+}
+
+function Open-Directly([string]$hash) {
   $url = "$base/$hash"
   $edge = @("${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe", "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
   if ($edge) { Start-Process -FilePath $edge -ArgumentList "--app=$url" } else { Start-Process $url }
@@ -236,7 +246,7 @@ function New-Menu($win) {
   $m = New-Object System.Windows.Controls.ContextMenu
   $add = { param($label, $action) $mi = New-Object System.Windows.Controls.MenuItem; $mi.Header = $label; $mi.Add_Click($action); [void]$m.Items.Add($mi); return $mi }
   [void](& $add 'Open Circle Studio' { Open-App '#/' })
-  [void](& $add 'Edit widgets...' { Open-App 'widget.html' })
+  [void](& $add 'Edit widgets...' { Open-App '#/widgets' })
   [void](& $add 'Refresh now' { Refresh })
   $top = & $add 'Keep on top of windows' { $saved.onTop = -not $saved.onTop; Save-State; Apply-Layer }
   $top.IsCheckable = $true; $top.IsChecked = $saved.onTop

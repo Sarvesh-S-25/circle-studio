@@ -84,6 +84,7 @@ export const icons = {
   'chevron-up': `<path d="m4.5 12.5 5.5-5.5 5.5 5.5"/>`,
   'arrow-up': `<path d="M10 16.5V4M5 9l5-5 5 5"/>`,
   'arrow-down': `<path d="M10 3.5V16M5 11l5 5 5-5"/>`,
+  widgets: `<rect x="3" y="3" width="6" height="6" rx="1.8"/><rect x="11" y="3" width="6" height="6" rx="1.8"/><rect x="3" y="11" width="14" height="6" rx="1.8"/>`,
   pin: `<path d="M6.8 3.2h6.4M8 3.2v4.6l-2.4 3.4h8.8L12 7.8V3.2M10 11.2v5.6"/>`,
   'pin-filled': `<path d="M8 3.2h4v4.6l2.4 3.4H5.6L8 7.8Z" fill="currentColor"/><path d="M6.8 3.2h6.4M10 11.2v5.6"/>`,
   send: `<path d="M17.2 2.8 8.6 11.4"/><path d="M17.2 2.8 12 17.2l-3.4-5.8-5.8-3.4 14.4-5.2Z"/>`,

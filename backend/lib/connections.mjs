@@ -14,7 +14,7 @@ import { scanSecrets } from './secrets.mjs';
 
 const readJson = (p) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; } };
 const tilde = (p) => { const home = os.homedir(); return p.toLowerCase().startsWith(home.toLowerCase()) ? `~${p.slice(home.length).split(path.sep).join('/')}` : p; };
-const SECRET_NAME = /(key|token|secret|password|passwd|auth|bearer|credential|cookie)/i;
+export const SECRET_NAME = /(key|token|secret|password|passwd|auth|bearer|credential|cookie)/i;
 const isRef = (v) => typeof v === 'string' && /^\$\{?[A-Za-z_][A-Za-z0-9_]*\}?$/.test(v.trim());
 
 /** A tiny reader for the part of TOML Codex uses for MCP servers: [tables], strings, arrays, inline tables. */

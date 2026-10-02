@@ -106,4 +106,5 @@
 .cs-gallery { display: grid; gap: var(--sp-3); grid-template-columns: repeat(auto-fill, minmax(var(--w-s), 1fr)); }
 .cs-gallery__item { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); border: var(--bw) solid var(--c-line); border-radius: var(--r-l); }
 .cs-gallery__item p { margin: 0; }
+.cs-board--start { justify-content: start; }
 .cs-tile__ctl--on { background: var(--c-accent); border-color: var(--c-accent); color: var(--c-on-accent); }

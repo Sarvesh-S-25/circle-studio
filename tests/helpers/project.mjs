@@ -21,7 +21,8 @@ export function copyReference() {
 }
 
 export function rmDir(dir) {
-  fs.rmSync(dir, { recursive: true, force: true });
+  // a process a test started there (a probed MCP server) may still be closing on Windows: retry for a few seconds
+  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
 }
 
 const MODELS = `{

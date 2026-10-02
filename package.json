@@ -1,6 +1,6 @@
 {
   "name": "circle-studio",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "A local control room for AI agent teams (Claude Code, Codex, Gemini, Copilot). Single user, this PC, nothing hosted.",
   "type": "module",
