@@ -27,9 +27,11 @@ function listen(redraw, windowKey) {
 /** One tile alone in its window. */
 export async function mountSingleTile(root, { kind, size, projectId, openApp }) {
   if (!KINDS[kind]) { root.replaceChildren(h('p', { class: 'cs-tile__quiet' }, 'Unknown widget.')); return; }
-  const tile = { kind, size: KINDS[kind].sizes.includes(size) ? size : KINDS[kind].sizes[0], projectId: projectId || null };
+  const n = new URLSearchParams(location.search).get('n');
+  const tile = { kind, size: KINDS[kind].sizes.includes(size) ? size : KINDS[kind].sizes[0], projectId: projectId || null, ...(n ? { nodeId: n } : {}) };
   const ctx = createTileData({ openApp });
-  ctx.setProject = (t, id) => { t.projectId = id; const u = new URL(location.href); u.searchParams.set('p', id); history.replaceState(null, '', u); refresh(); };
+  ctx.setProject = (t, id) => { t.projectId = id; delete t.nodeId; const u = new URL(location.href); u.searchParams.set('p', id); u.searchParams.delete('n'); history.replaceState(null, '', u); refresh(); };
+  ctx.setNode = (t, id) => { t.nodeId = id; const u = new URL(location.href); u.searchParams.set('n', id); history.replaceState(null, '', u); refresh(); };
   const draw = () => root.replaceChildren(h('div', { class: 'cs-solo' }, renderTile(tile, ctx)));
   async function refresh(usage = false) { await ctx.refresh([tile], { usage, skipUsage: !usage && !ctx.usage && kind !== 'spend' }); draw(); }
   document.title = `${KINDS[kind].title} · Circle Studio`;
@@ -53,7 +55,10 @@ export async function mountBoard(root, { openApp, embedded = false }) {
   const offs = [];
   const ctx = createTileData({ openApp });
   const save = async () => { try { await api.saveSettings({ widgets: tiles }); } catch (e) { toast(e.message, { kind: 'danger' }); } };
-  ctx.setProject = (t, id) => { t.projectId = id; save(); refresh(); };
+  // switching a tile's project or chat saves just that tile (the desktop widgets follow on their next refresh)
+  const pick = (t, patch) => api.pickWidget(tiles.indexOf(t), patch).catch((e) => toast(e.message, { kind: 'danger' }));
+  ctx.setProject = (t, id) => { t.projectId = id; if (t.kind === 'chat') delete t.nodeId; pick(t, { projectId: id }); refresh(); };
+  ctx.setNode = (t, id) => { t.nodeId = id; pick(t, { nodeId: id }); refresh(); };
 
   function controls(t, i) {
     const k = KINDS[t.kind];

@@ -98,12 +98,81 @@ function Row($left, $right) {
   return $dp
 }
 
+# ---- switching what a tile shows (its project, or the Chat tile's chat) ----------------------------------------
+# Saved through Circle Studio (POST /api/widgets/pick), asynchronously, then the tiles are drawn again.
+function Pick-Widget([int]$index, $patch) {
+  $body = (@{ index = $index } + $patch) | ConvertTo-Json -Compress
+  $wc = New-Object System.Net.WebClient
+  $wc.Headers.Add('X-Circle', '1'); $wc.Headers.Add('Content-Type', 'application/json')
+  $wc.Add_UploadStringCompleted({ param($s, $e) $s.Dispose(); Safe-Refresh })
+  $wc.UploadStringAsync([Uri]"$base/api/widgets/pick", 'POST', $body)
+}
+
+# Lock or unlock every tile in place (kept by Circle Studio, so the Widgets page shows the same).
+$script:locked = $false
+function Set-Locked([bool]$on) {
+  $script:locked = $on
+  $wc = New-Object System.Net.WebClient
+  $wc.Headers.Add('X-Circle', '1'); $wc.Headers.Add('Content-Type', 'application/json')
+  $wc.Add_UploadStringCompleted({ param($s, $e) $s.Dispose(); Safe-Refresh })
+  $wc.UploadStringAsync([Uri]"$base/api/settings", 'PUT', (@{ widgetsLocked = $on } | ConvertTo-Json -Compress))
+}
+
+# The projects to choose from, as menu items (the one shown is ticked).
+function Add-ProjectItems($menu, $t) {
+  foreach ($p in $script:projects) {
+    $mi = New-Object System.Windows.Controls.MenuItem
+    $mi.Header = $p.name; $mi.IsCheckable = $true; $mi.IsChecked = ($p.id -eq $t.projectId)
+    $mi.Tag = @{ index = [int]$t.index; projectId = [string]$p.id }
+    $mi.Add_Click({ param($s, $e) Pick-Widget $s.Tag.index @{ projectId = $s.Tag.projectId } })
+    [void]$menu.Items.Add($mi)
+  }
+}
+
 # ---- one tile's content -----------------------------------------------------------------------------------------
 function Build-Tile($t) {
   $sp = New-Object System.Windows.Controls.StackPanel
   $title = Text $t.title 12 $script:pal.soft 'SemiBold'
+  if ($t.canPick) {
+    # the project name is a switch: click it to show another project here
+    $title.Text = "$($t.title)  " + [string][char]0x25BE
+    $title.Cursor = 'Hand'; $title.ToolTip = 'Show another project'
+    $title.Tag = $t
+    $title.Add_MouseLeftButtonDown({ param($s, $e) $e.Handled = $true; $cm = New-Object System.Windows.Controls.ContextMenu; Add-ProjectItems $cm $s.Tag; $cm.PlacementTarget = $s; $cm.IsOpen = $true })
+  }
   $title.Margin = '0,0,0,8'
   if ($t.big -and $t.kind -eq 'spend' -and $t.size -ne 's') { [void]$sp.Children.Add((Row $title (Text $t.big 15 '' 'SemiBold'))) } else { [void]$sp.Children.Add($title) }
+  if ($t.chat -and $t.chat.threads -and $t.chat.threads.Count) {
+    # the chats to switch between: the main chat first, then the agents'
+    $wp = New-Object System.Windows.Controls.WrapPanel; $wp.Margin = '0,0,0,6'; $wp.MaxHeight = 52
+    foreach ($th in $t.chat.threads) {
+      $chip = New-Object System.Windows.Controls.Border
+      $chip.CornerRadius = 10; $chip.Padding = '8,2,8,2'; $chip.Margin = '0,0,4,4'; $chip.BorderThickness = 1; $chip.Cursor = 'Hand'
+      $chip.BorderBrush = Brush $(if ($th.on) { $script:pal.accent } else { $script:pal.line })
+      $chip.Background = $(if ($th.on) { Brush $script:pal.accent } else { [System.Windows.Media.Brushes]::Transparent })
+      $chip.Child = Text $th.label 10 $(if ($th.on) { $script:pal.onAccent } else { $script:pal.soft }) 'SemiBold'
+      $chip.ToolTip = $(if ($th.id -eq 'main') { 'The main chat' } else { "$($th.label)'s chat" })
+      $chip.Tag = @{ index = [int]$t.index; nodeId = [string]$th.id; on = [bool]$th.on }
+      $chip.Add_MouseLeftButtonDown({ param($s, $e) $e.Handled = $true; if (-not $s.Tag.on) { Pick-Widget $s.Tag.index @{ nodeId = $s.Tag.nodeId } } })
+      [void]$wp.Children.Add($chip)
+    }
+    [void]$sp.Children.Add($wp)
+    # medium: the last two, one line each (they fit whole); large: the last few, wrapped
+    $shown = $(if ($t.size -eq 'l') { @($t.chat.messages) } else { @($t.chat.messages | Select-Object -Last 2) })
+    foreach ($m in $shown) {
+      $b = New-Object System.Windows.Controls.Border
+      $b.CornerRadius = 10; $b.Padding = '8,4,8,4'; $b.Margin = '0,0,0,4'; $b.MaxWidth = 280
+      $b.HorizontalAlignment = $(if ($m.mine) { 'Right' } else { 'Left' })
+      $b.Background = $(if ($m.mine) { Brush $script:pal.accent '33' } else { Brush $script:pal.sunken })
+      $col = New-Object System.Windows.Controls.StackPanel
+      [void]$col.Children.Add((Text $m.who 10 $script:pal.soft 'SemiBold'))
+      $said = Text $m.text 11
+      if ($t.size -eq 'l') { $said.TextWrapping = 'Wrap'; $said.MaxHeight = 46 } else { $said.TextWrapping = 'NoWrap'; $said.ToolTip = $m.text }
+      [void]$col.Children.Add($said)
+      $b.Child = $col
+      [void]$sp.Children.Add($b)
+    }
+  }
   if ($t.empty) { $e = Text $t.empty 13 $script:pal.soft; $e.Margin = '0,24,0,0'; $e.TextWrapping = 'Wrap'; [void]$sp.Children.Add($e) }
 
   if ($t.rings) {
@@ -241,13 +310,22 @@ function Default-Place([int]$i, [string]$size) {
   return @($area.Left + 40, $area.Top + 40)
 }
 
-$menuTemplate = $null
-function New-Menu($win) {
+function New-Menu($t) {
   $m = New-Object System.Windows.Controls.ContextMenu
   $add = { param($label, $action) $mi = New-Object System.Windows.Controls.MenuItem; $mi.Header = $label; $mi.Add_Click($action); [void]$m.Items.Add($mi); return $mi }
+  if ($t -and $t.canPick) {
+    # the project this tile shows (also from its title)
+    $pm = New-Object System.Windows.Controls.MenuItem; $pm.Header = 'Show project'
+    Add-ProjectItems $pm $t
+    [void]$m.Items.Add($pm)
+    [void]$m.Items.Add((New-Object System.Windows.Controls.Separator))
+  }
   [void](& $add 'Open Circle Studio' { Open-App '#/' })
   [void](& $add 'Edit widgets...' { Open-App '#/widgets' })
   [void](& $add 'Refresh now' { Refresh })
+  $lock = & $add 'Lock in place' { Set-Locked (-not $script:locked) }
+  $lock.IsCheckable = $true; $lock.IsChecked = [bool]$script:locked
+  $lock.ToolTip = 'Tiles cannot be dragged while locked; a click still opens Circle Studio'
   $top = & $add 'Keep on top of windows' { $saved.onTop = -not $saved.onTop; Save-State; Apply-Layer }
   $top.IsCheckable = $true; $top.IsChecked = $saved.onTop
   [void]$m.Items.Add((New-Object System.Windows.Controls.Separator))
@@ -270,6 +348,8 @@ function New-TileWindow($t, [int]$i) {
   $w.Width = $wh[0] + 24; $w.Height = $wh[1] + 24
   $w.Title = "Circle Studio - $($t.title)"
   $pos = $saved.positions[$t.key]
+  # a place saved before keys stopped naming the project: keep it
+  if (-not $pos -and $t.oldKey -and $saved.positions[$t.oldKey]) { $pos = $saved.positions[$t.oldKey]; $saved.positions[$t.key] = $pos; Save-State }
   if ($pos) { $w.Left = $pos.x; $w.Top = $pos.y } else { $p = Default-Place $i $t.size; $w.Left = $p[0]; $w.Top = $p[1] }
   $card = New-Object System.Windows.Controls.Border
   $card.Margin = '12'; $card.CornerRadius = 20; $card.Padding = $PAD; $card.BorderThickness = 1
@@ -280,7 +360,8 @@ function New-TileWindow($t, [int]$i) {
   $w.Add_MouseLeftButtonDown({
     param($sender, $e)
     $x = $sender.Left; $y = $sender.Top
-    try { $sender.DragMove() } catch { }
+    # locked in place: a press is only a click
+    if (-not $script:locked) { try { $sender.DragMove() } catch { } }
     if ([Math]::Abs($sender.Left - $x) -lt 3 -and [Math]::Abs($sender.Top - $y) -lt 3) {
       if ($sender.Tag.key -eq 'offline') { Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\wscript.exe') -ArgumentList ('"' + (Join-Path $appRoot 'scripts\launch.vbs') + '" --background') }
       else { Open-App $sender.Tag.url }
@@ -288,7 +369,6 @@ function New-TileWindow($t, [int]$i) {
     else { $saved.positions[$sender.Tag.key] = @{ x = $sender.Left; y = $sender.Top }; Save-State }
   })
   $w.Add_SourceInitialized({ param($sender, $e) $h = (New-Object System.Windows.Interop.WindowInteropHelper($sender)).Handle; [CsDesk]::Tool($h); if ($saved.onTop) { $sender.Topmost = $true } else { [CsDesk]::OnDesktop($h) } })
-  $w.ContextMenu = New-Menu $w
   return $w
 }
 
@@ -296,8 +376,10 @@ function Paint($w, $t) {
   $card = $w.Content
   $card.Background = Brush $script:pal.raised
   $card.BorderBrush = Brush $script:pal.line
+  $card.ClipToBounds = $true
   $card.Child = Build-Tile $t
   $w.Tag = @{ key = $t.key; url = $(if ($t.url) { $t.url } else { '#/' }) }
+  $w.ContextMenu = New-Menu $t # the project list changes, so the menu is built again each time
 }
 
 function Theme { try { $v = Get-ItemPropertyValue -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name AppsUseLightTheme; if ($v -eq 1) { 'light' } else { 'dark' } } catch { 'dark' } }
@@ -312,6 +394,8 @@ function Refresh {
     $script:offline = $true
   }
   if ($feed.palette) { $script:pal = @{}; foreach ($p in $feed.palette.PSObject.Properties) { $script:pal[$p.Name] = $p.Value }; $script:offline = $false }
+  $script:projects = @($feed.projects | Where-Object { $_ })
+  if ($null -ne $feed.locked) { $script:locked = [bool]$feed.locked }
   $keys = @()
   $i = 0
   foreach ($t in $feed.tiles) {

@@ -6,9 +6,11 @@ import { pref, setPref, state, subscribe } from '../state.js';
 import { openModal, toast } from './overlay.js';
 
 /** Change this id when there is something new to tell. */
-export const RELEASE = '2026-10-02-keys-tools-skills';
+export const RELEASE = '2026-10-02-chat-widget';
 
 const CHANGES = [
+  ['chat', 'A Chat widget, and widgets you can switch and lock',
+    'Widgets, Edit tiles, Add, Chat (medium or large): a project\'s main chat and its agents\' chats; tap one to read it, tap the title to open it and reply. Every project tile switches project from its title (on the desktop, click the name with the arrow, or right-click). Lock in place (right-click, or the Widgets page) keeps the tiles where they are. Desktop widgets started before an update now restart on their own, so a tap reuses your Circle Studio window instead of opening another.'],
   ['sparkle', "Let's begin, for people new to it",
     "The first time, Circle Studio asks which AI tools you use (Claude Code, Codex, Gemini, Copilot), shows which are ready, and gives the exact install and sign-in steps, with a button that runs them in a terminal. Sign in to GitHub there too (optional; Circle Studio never sees your token). Open it any time from the AI tools line at the bottom of the menu."],
   ['key', 'Keys in the menu, tools in each project',
@@ -21,8 +23,6 @@ const CHANGES = [
     'Connections, Manager: every connector grouped across your projects, with what is broken, copied over and over, set up for folders that are gone, or keeping a key in plain text, and a button that fixes each one. "Fix it for me" repeats a working setup; "Make it one shared server" replaces the copies; pasting a key saves it in your Windows environment so no file holds it. Every fix shows its steps first, backs up Claude Code\'s config, puts it back if a step fails, and tests the server afterwards. Circle Studio also checks every few hours and tells you when a connection breaks.'],
   ['pin', 'Real widgets on your desktop',
     'Settings, Desktop, "Show widgets on the desktop": rounded tiles that live on the desktop itself (not windows, not shortcuts): agent rings, spending, a workflow, what waits for you. Drag them anywhere; click to open Circle Studio there; right-click to keep them above windows or close them. In a project, Widget, "Put its agents and workflow on the desktop".'],
-  ['link', 'Broken connections get fixed',
-    'On Connections, Test starts a server the way an engine would and says why it fails in plain words, with commands to copy. When the same server works in another project, it gives you the exact commands to repeat that setup. "Ask Claude to fix it" reads the error and the code and proposes a config fix (applied through the usual review) and advice for the code.'],
 ];
 
 export function openWhatsNew() {

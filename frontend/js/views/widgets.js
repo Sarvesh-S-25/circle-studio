@@ -29,10 +29,16 @@ export async function mount(el) {
       } catch (e) { toast(e.message, { kind: 'danger' }); }
       drawDesk();
     };
+    const locked = (await api.settings().catch(() => null))?.settings?.widgetsLocked === true;
+    const lock = async () => {
+      try { await api.saveSettings({ widgetsLocked: !locked }); toast(locked ? 'Unlocked: drag a tile to move it.' : 'Locked in place: tiles stay put; a click still opens Circle Studio.', { kind: 'ok' }); } catch (e) { toast(e.message, { kind: 'danger' }); }
+      drawDesk();
+    };
     desk.replaceChildren(
       h('div', { class: 'cs-grow cs-stack cs-stack--tight' },
-        h('strong', {}, st.running ? 'On your desktop' : 'Not on your desktop'),
-        h('span', { class: 'cs-soft cs-small' }, st.running ? 'Drag a tile to move it. Click it to open Circle Studio there. Right-click for options.' : 'Put the tiles below on your desktop. They come back whenever Circle Studio runs.')),
+        h('strong', {}, st.running ? `On your desktop${locked ? ', locked in place' : ''}` : 'Not on your desktop'),
+        h('span', { class: 'cs-soft cs-small' }, st.running ? (locked ? 'Tiles stay where they are. Click one to open Circle Studio there; right-click for options, or switch a tile\'s project from its title.' : 'Drag a tile to move it. Click it to open Circle Studio there. Click a tile\'s title to show another project; right-click for options.') : 'Put the tiles below on your desktop. They come back whenever Circle Studio runs.')),
+      st.running ? h('button', { class: 'cs-btn', type: 'button', 'aria-pressed': String(locked), title: locked ? 'Let tiles be dragged again' : 'Keep every tile where it is', onclick: lock }, icon(locked ? 'lock' : 'pin', 's'), locked ? 'Unlock' : 'Lock in place') : null,
       h('button', { class: `cs-btn ${st.running ? '' : 'cs-btn--primary'}`, type: 'button', onclick: () => toggle(!st.running) }, icon(st.running ? 'close' : 'pin', 's'), st.running ? 'Take them off' : 'Put on desktop'),
       h('button', { class: 'cs-btn cs-btn--quiet', type: 'button', title: 'The same tiles in a small window of their own', onclick: () => api.openWindow('widget').catch((e) => toast(e.message, { kind: 'danger' })) }, icon('external', 's'), 'Own window'));
   }

@@ -107,4 +107,23 @@
 .cs-gallery__item { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); border: var(--bw) solid var(--c-line); border-radius: var(--r-l); }
 .cs-gallery__item p { margin: 0; }
 .cs-board--start { justify-content: start; }
+
+/* chat: the chats to switch between, then the last messages of the one shown */
+.cs-tile__threads { display: flex; flex-wrap: wrap; gap: var(--sp-1); max-block-size: calc(var(--sp-6) * 2 + var(--sp-1)); overflow: hidden; }
+.cs-tile__thread { display: inline-flex; align-items: center; gap: var(--sp-1); max-inline-size: 100%; padding: var(--sp-1) var(--sp-2); border: var(--bw) solid var(--c-line); border-radius: var(--r-pill); background: transparent; color: var(--c-text-soft); font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-medium); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-tile__thread:hover { border-color: var(--c-accent); color: var(--c-text); }
+.cs-tile__thread[aria-pressed="true"] { background: var(--c-accent); border-color: var(--c-accent); color: var(--c-on-accent); }
+.cs-tile__msgs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); flex: 1; min-block-size: 0; overflow: hidden; justify-content: flex-end; }
+.cs-tile__msg { display: flex; flex-direction: column; max-inline-size: 88%; padding: var(--sp-1) var(--sp-2); border-radius: var(--r-l); background: var(--c-sunken); font-size: var(--fs-xs); }
+.cs-tile__msg--mine { align-self: flex-end; background: var(--c-accent-soft); }
+.cs-tile__who { color: var(--c-text-soft); font-weight: var(--fw-semibold); }
+.cs-tile__said { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.cs-tile--m .cs-tile__msg { flex-direction: row; gap: var(--sp-1); align-items: baseline; }
+.cs-tile--m .cs-tile__who { flex: none; }
+.cs-tile--m .cs-tile__said { display: block; min-inline-size: 0; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.cs-tile--m .cs-tile__msg:nth-last-child(n+3) { display: none; } /* medium: the last two, whole */
+.cs-tile--l .cs-tile__said { -webkit-line-clamp: 2; }
+.cs-tile--l .cs-tile__msg:nth-last-child(n+5) { display: none; } /* large: the last four, whole */
+.cs-tile__titlebtn { display: inline-flex; align-items: center; gap: var(--sp-1); min-inline-size: 0; padding: 0; border: 0; background: none; color: var(--c-text); font: inherit; font-size: var(--fs-s); font-weight: var(--fw-semibold); cursor: pointer; }
+.cs-tile__titlebtn:hover { color: var(--c-accent); }
 .cs-tile__ctl--on { background: var(--c-accent); border-color: var(--c-accent); color: var(--c-on-accent); }

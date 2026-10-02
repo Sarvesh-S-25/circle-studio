@@ -84,6 +84,8 @@ export const api = {
   vaultRemove: (name) => request('DELETE', `/api/vault/${enc(name)}`),
   vaultImport: (body) => request('POST', '/api/vault/import', body),
   widgetsFeed: (theme = 'dark') => request('GET', `/api/widgets/feed?theme=${enc(theme)}`),
+  widgetChat: (projectId, nodeId = 'main', size = 'm') => request('GET', `/api/widgets/chat?projectId=${enc(projectId || '')}&nodeId=${enc(nodeId || 'main')}&size=${enc(size)}`),
+  pickWidget: (index, patch) => request('POST', '/api/widgets/pick', { index, ...patch }),
   desktopWidgets: (action) => request('POST', '/api/desktop/widgets', { action }),
   usage: (days = 30, fresh = false) => request('GET', `/api/usage?days=${days}&fresh=${fresh ? 1 : 0}`),
   pulse: (id) => request('GET', `/api/projects/${enc(id)}/pulse`),

@@ -95,20 +95,39 @@ function overviewTile(t, ctx) {
   };
 }
 
-const BUILD = { status: statusTile, spend: spendTile, workflow: workflowTile, inbox: inboxTile, project: projectTile, overview: overviewTile };
+/** The chat of one project: the threads to switch between, and the last messages of the one shown. */
+function chatTile(t, ctx) {
+  const c = ctx.chatAt(t);
+  if (!c) return { title: 'Chat', empty: 'No project yet.' };
+  const name = c.project?.name || 'Chat';
+  return {
+    title: name,
+    chat: { selected: c.selected, threads: (c.threads || []).map((x) => ({ id: x.id, label: x.label, on: x.id === c.selected })), messages: c.messages || [], heading: c.title || null },
+    empty: c.empty || null,
+    url: c.project ? `#/projects/${c.project.id}/chat` : '#/',
+  };
+}
 
-/** The tiles that are shown on the desktop, each with a stable key for its saved position. */
-export function buildFeed({ tiles, pulseOf, usage, stats, pending, alerts, nameOf, palette, defaultProject }) {
-  const ctx = { pulseOf: (id) => pulseOf(id || defaultProject), usage, stats, pending, alerts, nameOf };
+const BUILD = { status: statusTile, spend: spendTile, workflow: workflowTile, inbox: inboxTile, project: projectTile, overview: overviewTile, chat: chatTile };
+const PROJECT_KINDS = new Set(['status', 'workflow', 'project', 'chat']);
+
+/**
+ * The tiles that are shown on the desktop. Each has a key for its saved place that stays the same when the tile is
+ * switched to another project, its index on the board (to switch it), and for project tiles the project it shows.
+ */
+export function buildFeed({ tiles, pulseOf, usage, stats, pending, alerts, nameOf, palette, defaultProject, chats = new Map(), projects = [], locked = false }) {
+  const ctx = { pulseOf: (id) => pulseOf(id || defaultProject), usage, stats, pending, alerts, nameOf, chatAt: (t) => chats.get(tiles.indexOf(t)) || null };
   const seen = new Map();
   const out = [];
-  for (const t of tiles.filter((x) => x.desktop !== false)) {
-    const base = `${t.kind}:${t.size}:${t.projectId || '-'}`;
+  tiles.forEach((t, index) => {
+    if (t.desktop === false) return;
+    const base = `${t.kind}:${t.size}`;
     const n = (seen.get(base) || 0) + 1;
     seen.set(base, n);
     let body;
     try { body = BUILD[t.kind](t, ctx); } catch (e) { body = { title: t.kind, empty: `Could not draw: ${e.message}` }; }
-    out.push({ key: `${base}:${n}`, kind: t.kind, size: t.size, ...body });
-  }
-  return { at: new Date().toISOString(), palette, tiles: out };
+    const pick = PROJECT_KINDS.has(t.kind) ? { projectId: t.projectId || defaultProject || null, canPick: projects.length > 1 } : {};
+    out.push({ key: `${base}:${n}`, oldKey: `${base}:${t.projectId || '-'}:${n}`, index, kind: t.kind, size: t.size, ...pick, ...body });
+  });
+  return { at: new Date().toISOString(), palette, projects, locked, tiles: out };
 }

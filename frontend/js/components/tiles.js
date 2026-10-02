@@ -13,6 +13,7 @@ export const KINDS = {
   inbox: { title: 'Waiting for you', about: 'Questions and approvals from every project. Answer them here.', sizes: ['s', 'm', 'l'] },
   project: { title: 'Project', about: 'One project at a glance: status, numbers, git, the last conversation.', sizes: ['m', 'l'], project: true },
   overview: { title: 'All projects', about: 'Every project and its state.', sizes: ['m', 'l'] },
+  chat: { title: 'Chat', about: 'A project\'s main chat and its agents\' chats: switch between them in the tile, open one to reply.', sizes: ['m', 'l'], project: true },
 };
 
 const STATE_WORD = { working: 'Working', waiting: 'Waiting for you', done: 'Done', idle: 'Idle' };
@@ -55,7 +56,7 @@ function statusTile(tile, ctx) {
   const name = pu.project.name;
   if (tile.size === 's') {
     return [h('div', { class: 'cs-tile__rings4' }, top.slice(0, 4).map((a) => h('span', { title: `${a.title}: ${STATE_WORD[a.state]}` }, ring(a.state, ringPct(a), initials(a.title))))),
-      h('div', { class: 'cs-tile__foot' }, h('span', { class: 'cs-tile__name' }, name))];
+      h('div', { class: 'cs-tile__foot' }, projectPicker(tile, ctx) || h('span', { class: 'cs-tile__name' }, name))];
   }
   const max = tile.size === 'm' ? 4 : 8;
   const pick = projectPicker(tile, ctx);
@@ -158,7 +159,26 @@ function overviewTile(tile, ctx) {
   return [head(`${plural(s.totals.projects, 'project')}`, 'project'), h('ul', { class: 'cs-tile__list' }, rows)];
 }
 
-const RENDER = { status: statusTile, spend: spendTile, workflow: workflowTile, inbox: inboxTile, project: projectTile, overview: overviewTile };
+/* ---- chat: the main chat and the agents' chats of one project ---------------------------------- */
+function chatTile(tile, ctx) {
+  const c = ctx.chat(tile);
+  const pick = projectPicker(tile, ctx);
+  if (!c) return [head('Chat', 'chat', pick), notYet(tile, ctx)];
+  // the title opens the chat (the whole conversation, to reply)
+  const top = h('div', { class: 'cs-tile__head' }, icon('chat', 's'), h('button', { class: 'cs-tile__titlebtn', type: 'button', title: 'Open this chat in Circle Studio', onclick: () => ctx.openApp(`#/projects/${c.project.id}/chat`) }, pick ? 'Chat' : c.project?.name || 'Chat', icon('external', 's')), h('span', { class: 'cs-grow' }), pick);
+  if (!c.threads?.length) return [top, h('p', { class: 'cs-tile__quiet' }, c.empty || 'No chats in this project yet.')];
+  const threads = h('div', { class: 'cs-tile__threads', role: 'group', 'aria-label': 'Chats' }, c.threads.map((t) => h('button', {
+    class: 'cs-tile__thread', type: 'button', 'aria-pressed': String(t.id === c.selected), title: `${t.label}${t.lastAt ? ` · ${timeAgo(t.lastAt)}` : ''} · ${t.source}`,
+    onclick: () => { if (t.id !== c.selected) ctx.setNode(tile, t.id); },
+  }, t.id === 'main' ? icon('chat', 's') : null, t.label)));
+  const msgs = c.messages?.length
+    ? h('ol', { class: 'cs-tile__msgs' }, c.messages.map((m) => h('li', { class: `cs-tile__msg ${m.mine ? 'cs-tile__msg--mine' : ''}` }, h('span', { class: 'cs-tile__who' }, m.who), h('span', { class: 'cs-tile__said' }, m.text))))
+    : h('p', { class: 'cs-tile__quiet' }, c.empty || 'Nothing said in this chat yet.');
+  return [top, threads, c.title && tile.size === 'l' ? h('div', { class: 'cs-tile__muted' }, c.title) : null, msgs,
+    tile.size === 'l' ? h('button', { class: 'cs-tile__cta', type: 'button', onclick: () => ctx.openApp(`#/projects/${c.project.id}/chat`) }, 'Open the chat') : null];
+}
+
+const RENDER = { status: statusTile, spend: spendTile, workflow: workflowTile, inbox: inboxTile, project: projectTile, overview: overviewTile, chat: chatTile };
 
 /** Draw one tile into a fresh element. */
 export function renderTile(tile, ctx) {
@@ -170,18 +190,22 @@ export function renderTile(tile, ctx) {
 /** The data the tiles read, refreshed by the board. */
 export function createTileData({ openApp }) {
   const pulses = new Map();
+  const chats = new WeakMap(); // tile -> its chat
   const ctx = {
     stats: null,
     usage: null,
     pulse: (id) => pulses.get(id || ctx.defaultProject()) || null,
+    chat: (tile) => chats.get(tile) || null,
     defaultProject: () => state.recent.find((p) => p.exists)?.id || state.projects.find((p) => p.exists)?.id || null,
     nameOf: (id) => state.projects.find((p) => p.id === id)?.name || id,
     openApp,
     setProject: () => {},
+    setNode: () => {},
     async refresh(tiles, { usage = false, skipUsage = false } = {}) {
-      const ids = new Set(tiles.filter((t) => KINDS[t.kind]?.project).map((t) => t.projectId || ctx.defaultProject()).filter(Boolean));
+      const ids = new Set(tiles.filter((t) => KINDS[t.kind]?.project && t.kind !== 'chat').map((t) => t.projectId || ctx.defaultProject()).filter(Boolean));
       const jobs = [api.stats().then((s) => { ctx.stats = s; }).catch(() => {})];
       for (const id of ids) jobs.push(api.pulse(id).then((p) => pulses.set(id, p)).catch(() => {}));
+      for (const t of tiles.filter((x) => x.kind === 'chat')) jobs.push(api.widgetChat(t.projectId || ctx.defaultProject(), t.nodeId || 'main', t.size).then((c) => chats.set(t, c)).catch(() => {}));
       if (!skipUsage && (usage || !ctx.usage) && tiles.some((t) => t.kind === 'spend')) jobs.push(api.usage(30).then((u) => { ctx.usage = u; }).catch(() => {}));
       await Promise.all(jobs);
     },

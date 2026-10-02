@@ -77,7 +77,8 @@ test('desktop widgets: the feed draws every tile from tokens.css colours, and th
     tiles: [{ kind: 'status', size: 'm', projectId: 'p' }, { kind: 'spend', size: 'l' }, { kind: 'workflow', size: 'm', projectId: 'p' }, { kind: 'inbox', size: 's' }, { kind: 'overview', size: 'm', desktop: false }],
     pulseOf: () => pulse, usage, stats: null, pending: [{ title: 'Run npm test?', projectId: 'p', kind: 'approval' }], alerts: [], nameOf: () => 'Shop', palette: readPalette(path.resolve(import.meta.dirname, '..', '..'), 'dark'), defaultProject: 'p',
   });
-  assert.deepEqual(feed.tiles.map((t) => t.key), ['status:m:p:1', 'spend:l:-:1', 'workflow:m:p:1', 'inbox:s:-:1'], 'tiles kept off the desktop are left out');
+  assert.deepEqual(feed.tiles.map((t) => t.key), ['status:m:1', 'spend:l:1', 'workflow:m:1', 'inbox:s:1'], 'tiles kept off the desktop are left out; a key does not change with the project');
+  assert.deepEqual(feed.tiles.map((t) => t.oldKey), ['status:m:p:1', 'spend:l:-:1', 'workflow:m:p:1', 'inbox:s:-:1'], 'the old key, so a saved place carries over');
   assert.equal(feed.tiles[0].rings[0].state, 'waiting', 'what waits for you comes first');
   assert.equal(feed.tiles[0].rings[1].label, 'MS');
   assert.equal(feed.tiles[1].big, '$1.2k');

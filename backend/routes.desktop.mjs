@@ -18,11 +18,16 @@ import { folderKey } from './lib/cchistory.mjs';
 import os from 'node:os';
 import { applyUpdate, appVersion } from './lib/updater.mjs';
 import { spawn } from 'node:child_process';
+import { createChatFeed } from './lib/chatfeed.mjs';
 
 const WHERE = ['desktop', 'startmenu', 'startup'];
 export const WIDGET_SIZE = { width: 400, height: 660 };
 export const BOARD_SIZE = { width: 800, height: 700 };
-export const WIDGET_KINDS = ['status', 'spend', 'workflow', 'inbox', 'project', 'overview'];
+export const WIDGET_KINDS = ['status', 'spend', 'workflow', 'inbox', 'project', 'overview', 'chat'];
+// the tiles that show one project (switchable on the tile) and the sizes each kind comes in
+export const PROJECT_KINDS = ['status', 'workflow', 'project', 'chat'];
+const KIND_SIZES = { chat: ['m', 'l'], workflow: ['m', 'l'], project: ['m', 'l'], overview: ['m', 'l'] };
+const NODE_RE = /^(main|node:[A-Za-z0-9_-]{1,60}|run:[A-Za-z0-9 _.-]{1,80})$/;
 // a popped-out tile's window: the tile plus the window frame
 const TILE_WINDOW = { s: { width: 230, height: 270 }, m: { width: 420, height: 270 }, l: { width: 420, height: 460 } };
 
@@ -84,7 +89,44 @@ export function buildDesktopHandlers(app) {
     return { ...usageCache.get(key).data, at: new Date(usageCache.get(key).at).toISOString() };
   }
 
+  const chatFeed = createChatFeed({ claudeHome: config.claudeHome, chats: app.chats, chatKey: (...a) => app.sessions.chatKey(...a), workflowOf: (p) => app.workflows.head(p) });
+  const chatOf = (projectId, nodeId, size) => {
+    let p;
+    try { p = projects.get(projectId); } catch { return { threads: [], selected: null, messages: [], empty: 'No project yet.' }; }
+    return chatFeed.chatOf(p, { nodeId, size }).then((c) => ({ ...c, project: { id: p.id, name: p.name } }));
+  };
+  const defaultProject = () => projects.list().find((p) => p.exists)?.id || null;
+
   return {
+    // The Chat widget: the main chat and the agents' chats of one project; one shown at a time.
+    'widgets.chat': async ({ query }) => {
+      const projectId = query.get('projectId') || defaultProject();
+      if (!projectId) return { threads: [], selected: null, messages: [], empty: 'No project yet. Add a folder on Home.' };
+      return chatOf(projectId, query.get('nodeId') || 'main', query.get('size') === 'l' ? 'l' : 'm');
+    },
+    // Switch what one tile shows (its project, or which chat), from the board or a desktop widget.
+    'widgets.pick': async ({ body }) => {
+      const tiles = settings.get().widgets || [];
+      const i = Number(body?.index);
+      if (!Number.isInteger(i) || i < 0 || i >= tiles.length) throw badRequest('No such widget.');
+      const t = { ...tiles[i] };
+      if (body?.projectId !== undefined) {
+        if (!PROJECT_KINDS.includes(t.kind)) throw badRequest('This widget does not show a project.');
+        const id = String(body.projectId);
+        if (!projects.list().some((p) => p.id === id && p.exists)) throw badRequest('No such project.');
+        t.projectId = id;
+        if (t.kind === 'chat') delete t.nodeId; // another project: start from its main chat
+      }
+      if (body?.nodeId !== undefined) {
+        if (t.kind !== 'chat') throw badRequest('Only the chat widget switches chats.');
+        if (!NODE_RE.test(String(body.nodeId))) throw badRequest('No such chat.');
+        t.nodeId = String(body.nodeId);
+      }
+      const next = tiles.slice();
+      next[i] = t;
+      await settings.set({ widgets: next });
+      return { widget: t, index: i };
+    },
     'settings.get': () => {
       const ov = (where) => { const p = shortcutPath(where, null, { overview: true }); return Boolean(p && fs.existsSync(p)); };
       return { settings: settings.get(), desktop: { platform: process.platform, shortcuts: shortcuts(), overview: process.platform === 'win32' ? { desktop: ov('desktop'), startmenu: ov('startmenu') } : null } };
@@ -93,6 +135,7 @@ export function buildDesktopHandlers(app) {
       const patch = {};
       if (body?.desktopAlerts !== undefined) patch.desktopAlerts = body.desktopAlerts === true;
       if (body?.desktopWidgets !== undefined) patch.desktopWidgets = body.desktopWidgets === true;
+      if (body?.widgetsLocked !== undefined) patch.widgetsLocked = body.widgetsLocked === true; // tiles cannot be dragged
       if (body?.updates?.check !== undefined) {
         if (!['daily', 'off'].includes(body.updates.check)) throw badRequest('updates.check must be daily or off.');
         patch.updates = { ...settings.get().updates, check: body.updates.check };
@@ -102,8 +145,10 @@ export function buildDesktopHandlers(app) {
         patch.widgets = body.widgets.map((w) => {
           if (!WIDGET_KINDS.includes(w?.kind)) throw badRequest(`Unknown widget "${w?.kind}".`);
           if (!['s', 'm', 'l'].includes(w.size)) throw badRequest('size must be s, m or l.');
+          if (KIND_SIZES[w.kind] && !KIND_SIZES[w.kind].includes(w.size)) throw badRequest(`A ${w.kind} widget comes in ${KIND_SIZES[w.kind].join(' or ')}.`);
           const projectId = typeof w.projectId === 'string' && /^[a-z0-9_-]{1,60}$/.test(w.projectId) ? w.projectId : null;
-          return { kind: w.kind, size: w.size, projectId, desktop: w.desktop !== false };
+          const nodeId = w.kind === 'chat' && typeof w.nodeId === 'string' && NODE_RE.test(w.nodeId) ? w.nodeId : null;
+          return { kind: w.kind, size: w.size, projectId, ...(nodeId ? { nodeId } : {}), desktop: w.desktop !== false };
         });
       }
       return { settings: await settings.set(patch) };
@@ -170,8 +215,15 @@ export function buildDesktopHandlers(app) {
       const tiles = settings.get().widgets || [];
       const usage = tiles.some((t) => t.kind === 'spend' && t.desktop !== false) ? await usageOf(30).catch(() => null) : null;
       const recent = projects.list().filter((p) => p.exists);
+      // the chat tiles' messages are read first (Claude Code conversations are files on this PC)
+      const chats = new Map();
+      for (const [i, t] of tiles.entries()) {
+        if (t.kind === 'chat' && t.desktop !== false) chats.set(i, await chatOf(t.projectId || recent[0]?.id, t.nodeId || 'main', t.size).catch((e) => ({ threads: [], messages: [], empty: `Could not read the chats: ${e.message}` })));
+      }
       return buildFeed({
-        tiles, usage,
+        tiles, usage, chats,
+        projects: recent.map((p) => ({ id: p.id, name: p.name })),
+        locked: settings.get().widgetsLocked === true,
         pulseOf: (id) => { try { return id ? pulseOf(id) : null; } catch { return null; } },
         stats: tiles.some((t) => t.kind === 'overview') ? computeStats(app) : null,
         pending: app.inbox.list({ status: 'pending' }),

@@ -459,6 +459,18 @@
       "doc": "The desktop widgets' tiles, ready to draw (text, rings, rows, bars), with the tokens.css palette for ?theme=dark|light."
     },
     {
+      "id": "widgets.chat",
+      "method": "GET",
+      "path": "/api/widgets/chat",
+      "doc": "The Chat widget for ?projectId&nodeId&size: the threads (main chat, agents' chats) and the last messages of the one shown. Read only."
+    },
+    {
+      "id": "widgets.pick",
+      "method": "POST",
+      "path": "/api/widgets/pick",
+      "doc": "Switch one widget ({index, projectId?, nodeId?}): the project it shows, or which chat the Chat widget shows."
+    },
+    {
       "id": "desktop.widgets",
       "method": "POST",
       "path": "/api/desktop/widgets",
