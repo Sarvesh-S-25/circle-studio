@@ -303,6 +303,12 @@
       "doc": "Ask the workflow helper (Claude, no tools) to answer or propose a better workflow. Writes nothing."
     },
     {
+      "id": "workflow.patterns",
+      "method": "POST",
+      "path": "/api/projects/:id/patterns",
+      "doc": "The pattern store (ways to shape a team, with trade-offs) and where each fits this team ({workflow?}: the graph on screen), using measured context per agent. Read only."
+    },
+    {
       "id": "skills.discover",
       "method": "POST",
       "path": "/api/projects/:id/skills/discover",

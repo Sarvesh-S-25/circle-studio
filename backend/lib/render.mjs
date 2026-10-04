@@ -6,6 +6,26 @@ import { yamlScalar } from './frontmatter.mjs';
 import { scanSecrets } from './secrets.mjs';
 import { buildBrief } from './plan.mjs';
 import { agentsOf, stageOrder, stagesOf, ENGINE_LABEL } from './workflow.mjs';
+import fs from 'node:fs';
+import path from 'node:path';
+
+/* Automatic condensing: a Claude Code PostToolUse hook (backend/seed/hooks/circle-condense.mjs, copied into the project)
+   that has Haiku shorten long tool output for the agents that turned it on, above their share of context. */
+export const CONDENSE = {
+  script: '.claude/hooks/circle-condense.mjs',
+  config: '.claude/hooks/circle-condense.json',
+  command: 'node .claude/hooks/circle-condense.mjs',
+  // never Read (the agent may edit what it read); long command output, web pages, searches and MCP tools
+  matcher: 'Bash|WebFetch|WebSearch|Grep|Glob|mcp__.*',
+};
+export const condenseHookEntry = () => ({ matcher: CONDENSE.matcher, hooks: [{ type: 'command', command: CONDENSE.command, timeout: 90 }] });
+const SEED_HOOK = path.resolve(import.meta.dirname, '..', 'seed', 'hooks', 'circle-condense.mjs');
+
+/** { agentId: { above } } for the Claude agents that condense automatically. */
+export function condenseAgents(workflow) {
+  return Object.fromEntries(agentsOf(workflow).filter((a) => a.engine === 'claude' && a.condense).map((a) => [a.id, { above: a.condense }]));
+}
+export const condenseConfigText = (workflow) => `${JSON.stringify({ about: 'Written by Circle Studio (Workflow, an agent, its Haiku reader, automatic). Long tool output is condensed by Haiku for these agents above their share of context.', agents: condenseAgents(workflow), minTokens: 4000 }, null, 2)}\n`;
 
 /** Where each engine looks for skills. Codex and Copilot share .agents/skills; the Gemini folder is unverified. */
 export const SKILL_DIRS = { claude: '.claude/skills', codex: '.agents/skills', copilot: '.agents/skills', gemini: '.gemini/skills' };
@@ -151,5 +171,12 @@ export function renderProject({ name, idea = '', workflow, plan, library, brief 
     const found = scanSecrets(f.content)[0];
     if (found) throw badRequest(`The text for ${f.path} looks like it holds a secret (${found.kind}, line ${found.line}). Remove it from the workflow or the brief first.`);
   }
-  return { files: [...text, ...skillFiles(workflow, library, warnings)], warnings };
+  const hook = [];
+  if (Object.keys(condenseAgents(workflow)).length) {
+    hook.push({ path: CONDENSE.script, content: fs.readFileSync(SEED_HOOK, 'utf8') });
+    hook.push({ path: CONDENSE.config, content: condenseConfigText(workflow) });
+    // a new project gets this settings file; an existing one gets the entry merged into its own (ops: workflow-write)
+    hook.push({ path: '.claude/settings.json', content: `${JSON.stringify({ hooks: { PostToolUse: [condenseHookEntry()] } }, null, 2)}\n`, mergeHook: true });
+  }
+  return { files: [...text, ...hook, ...skillFiles(workflow, library, warnings)], warnings };
 }

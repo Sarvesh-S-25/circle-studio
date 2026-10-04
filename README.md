@@ -100,7 +100,7 @@ Everyone who cloned sees **Update ready** within a day. Change `RELEASE` and `CH
 | Area | What it does |
 |---|---|
 | Home | What needs you, what runs, and every project: workflow, git, your last conversation, 30 days of Claude use |
-| Workflow | The project's graph (the helper reads the folder, your building blocks and indexed pages before it proposes anything): Workflow (edit; drag from a card's dot to link, click a link to remove), Live, Versions. Checkpoints on the arrows. Workflow helper. Click "You" for the main session |
+| Workflow | Helpers beside agents (a Haiku reader, when the agent decides or automatically above a context limit), and Patterns: ways to shape the team with their trade-offs, which fit your agents, Try on with Undo. The project's graph (the helper reads the folder, your building blocks and indexed pages before it proposes anything): Workflow (edit; drag from a card's dot to link, click a link to remove), Live, Versions. Checkpoints on the arrows. Workflow helper. Click "You" for the main session |
 | Chat | A real agent session in the project folder. Every command, edit and question asks you first. **Earlier conversations** lists your Claude Code conversations from the terminal in that folder: read them or continue them here |
 | Cost | Claude use for 30 days (by model, day and agent, at API prices), what loads before you type, each agent's model and price, and ways to spend less (apply a cheaper model, or let AI rearrange the workflow), all through a reviewed diff |
 | Health | What needs you now, in plain words; details underneath |

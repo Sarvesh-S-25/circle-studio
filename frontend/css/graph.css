@@ -132,6 +132,31 @@
 .cs-gcheck--engine { border-color: var(--c-accent); background: var(--c-accent-soft); color: var(--c-accent); border-style: dashed; }
 .cs-gcheck--both { border-color: var(--c-gate); background: var(--c-accent-soft); }
 .cs-gcheck--inline { position: static; transform: none; box-shadow: none; cursor: default; }
+
+/* a helper beside an agent (its Haiku reader): dashed, smaller than a card, not a step of the flow */
+.cs-ghelper {
+  position: absolute; left: var(--x); top: var(--y); width: var(--w); min-height: var(--h); z-index: 1;
+  display: flex; flex-direction: column; justify-content: center; gap: var(--bw);
+  padding: var(--sp-1) var(--sp-2); border: var(--bw-strong) dashed var(--c-line-strong); border-radius: var(--r-l);
+  background: var(--c-surface-raised); color: var(--c-text); font: inherit; font-size: var(--fs-xs); line-height: var(--lh-tight);
+  text-align: start; cursor: pointer; box-shadow: var(--sh-1);
+}
+.cs-ghelper:hover { border-color: var(--c-accent); box-shadow: var(--sh-2); }
+.cs-ghelper:focus-visible { outline: var(--bw-strong) solid var(--c-focus); outline-offset: var(--bw-strong); }
+.cs-ghelper__name { display: inline-flex; align-items: center; gap: var(--sp-1); font-weight: var(--fw-semibold); white-space: nowrap; }
+.cs-ghelper__when { color: var(--c-text-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cs-ghelper--hanging { box-shadow: var(--sh-2); }
+.cs-ghelper--inline { position: static; width: auto; min-height: 0; box-shadow: none; cursor: default; display: inline-flex; }
+.cs-gedge--helper { stroke-dasharray: var(--sp-1) var(--sp-1); }
+
+/* the Patterns panel */
+.cs-pat__fits { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-2); }
+.cs-pat__fit { display: grid; gap: var(--sp-1); padding: var(--sp-2); border: var(--bw) solid var(--c-line); border-radius: var(--r-m); background: var(--c-surface); }
+.cs-pat__fit p { margin: 0; }
+.cs-pat__item { padding: var(--sp-2); border: var(--bw) solid var(--c-line); border-radius: var(--r-m); }
+.cs-pat__item > summary { cursor: pointer; }
+.cs-pat__item[open] { display: grid; gap: var(--sp-2); }
+.cs-pat .cs-prose { margin: 0; padding-inline-start: var(--sp-4); }
 .cs-npanel__switches { display: grid; gap: var(--sp-1); }
 .cs-npanel__check { scroll-margin-top: var(--sp-4); }
 .cs-npanel__check:focus { outline: none; }

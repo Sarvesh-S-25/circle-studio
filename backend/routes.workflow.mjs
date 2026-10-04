@@ -17,6 +17,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createSkillFinder, githubLinks } from './lib/skillfind.mjs';
 import { claudePlugins } from './lib/connections.mjs';
+import { loadPatterns, relate, patternsForPrompt } from './lib/patterns.mjs';
+import { measuredUsage } from './lib/cost.mjs';
 
 const ALL = { write: true, run: true, claude: true };
 const opt = (v, max) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : undefined);
@@ -109,11 +111,26 @@ export function buildWorkflowHandlers(app) {
       const blocks = app.catalog.search(query, { types: ['skill', 'agent', 'connector', 'link'], limit: 12 });
       const urls = current.nodes.flatMap((n) => n.links || []);
       const passages = app.catalog.passages(message, { urls: urls.length ? urls : null, limit: 3 });
-      const prompt = helperPrompt({ workflow: current, plan, lanes: current.lanes, engines: engineList, skills, history, message, digest, blocks, passages });
+      // the patterns that fit this team, related to its agents and to how much context each really carries
+      const measured = await measuredUsage(project.root, { claudeHome: config.claudeHome }).catch(() => null);
+      const patterns = patternsForPrompt(current, { usage: measured?.byAgent || [], usableEngines: new Set(engineList.filter((e) => e.usable).map((e) => e.id)) });
+      const prompt = helperPrompt({ workflow: current, plan, lanes: current.lanes, engines: engineList, skills, history, message, digest, blocks, passages, patterns });
       const model = ['haiku', 'sonnet', 'opus'].includes(body?.model) ? body.model : undefined;
       const r = await app.claude.advise({ key: `helper:${project.id}`, prompt, model, root: project.root, schema: HELPER_SCHEMA, kind: 'helper', projectId: project.id });
       const usable = new Set(engineList.filter((e) => e.usable).map((e) => e.id));
       return { ...helperResult(current, r.data, { skills, usable: engineList.length ? usable : undefined }), models: r.models, costUsd: r.costUsd, ms: r.ms, read: { digest: digest.length > 0, blocks: blocks.map((b) => `${b.type}: ${b.name}`), passages: passages.map((p) => p.title) } };
+    },
+    // The pattern store and where each pattern fits this team (the graph as it is on screen), with measured context.
+    'workflow.patterns': async ({ params, body }) => {
+      const project = projects.get(params.id);
+      const workflow = body?.workflow !== undefined ? normalizeWorkflow(body.workflow) : workflows.get(project).workflow;
+      const measured = project.exists ? await measuredUsage(project.path, { claudeHome: config.claudeHome }).catch(() => null) : null;
+      const usable = await usableEngines(app);
+      return {
+        patterns: loadPatterns(),
+        fits: relate(workflow, { usage: measured?.byAgent || [], usableEngines: usable }),
+        condensed: measured?.condensed || null,
+      };
     },
     // Skills from GitHub for this workflow: Claude names what the team lacks, GitHub is searched (or the links the
     // human gave are read), Claude picks the few that fit and explains each. Imports nothing.

@@ -32,7 +32,7 @@ export const HELPER_SCHEMA = {
               id: { type: 'string' }, kind: { type: 'string', enum: KINDS }, title: { type: 'string' }, parent: { type: 'string' },
               does: { type: 'string' }, engine: { type: 'string', enum: ENGINE_IDS }, model: { type: 'string' },
               consult: { type: 'array', items: { type: 'string', enum: ENGINE_IDS } }, skills: { type: 'array', items: { type: 'string' } },
-              optional: { type: 'boolean' }, reader: { type: 'boolean' }, gate: gateSchema,
+              optional: { type: 'boolean' }, reader: { type: 'boolean' }, condense: { type: 'integer', minimum: 30, maximum: 95 }, gate: gateSchema,
             },
             additionalProperties: false,
           },
@@ -53,7 +53,7 @@ export function compactWorkflow(wf) {
       const o = { id: n.id, kind: n.kind, title: n.title };
       if (n.parent) o.parent = n.parent;
       if (n.does) o.does = n.does.slice(0, 400);
-      if (n.kind === 'agent') Object.assign(o, { engine: n.engine, model: n.model || '', consult: n.consult, optional: n.optional, ...(n.reader ? { reader: true } : {}) });
+      if (n.kind === 'agent') Object.assign(o, { engine: n.engine, model: n.model || '', consult: n.consult, optional: n.optional, ...(n.reader ? { reader: true } : {}), ...(n.condense ? { condense: n.condense } : {}) });
       if (n.kind === 'stage') o.gate = n.gate;
       if (n.skills?.length) o.skills = n.skills;
       return o;
@@ -77,7 +77,7 @@ const briefLines = (plan) => {
 /**
  * The prompt for one helper turn. `engines` = [{ id, usable }], `skills` = [name], `history` = [{ role:'you'|'helper', text }].
  */
-export function helperPrompt({ workflow, plan, lanes, engines = [], skills = [], history = [], message, digest = '', blocks = [], passages = [] }) {
+export function helperPrompt({ workflow, plan, lanes, engines = [], skills = [], history = [], message, digest = '', blocks = [], passages = [], patterns = '' }) {
   const usable = engines.filter((e) => e.usable).map((e) => e.id);
   const past = history.slice(-6).map((m) => `${m.role === 'helper' ? 'Helper' : 'Human'}: ${String(m.text).slice(0, 2000)}`).join('\n');
   return redact([
@@ -94,6 +94,8 @@ export function helperPrompt({ workflow, plan, lanes, engines = [], skills = [],
     '- Be lean: a small project needs few stages and agents. Do not add stages the brief does not need.',
     '- Models: haiku for searching, scanning, formatting and routine steps; sonnet for most building and reviewing; opus only where hard reasoning pays off.',
     '- "reader": true gives a claude agent a Haiku reader that reads long files, logs and pages for it and answers briefly. Use it only for an expensive agent (opus or sonnet) that reads a lot it does not change (reviewers, researchers, debuggers on long logs). Do not use it for agents that edit the code they read: they need the exact text.',
+    '- "condense": a percentage (30 to 95) makes a hook shorten a claude agent\'s long command output, web pages, searches and MCP results with Haiku once its context is fuller than that; the full output is kept in a file it can read, and files it reads are never shortened. Good for agents that run tests, builds or fetch pages in long sessions (60 is a sensible start). It is automatic, unlike "reader", which the agent decides to use. Never both on one agent unless asked.',
+    '- Use the patterns under "Patterns that fit this team" when they help, say why in plain words, and respect their "avoid when". Do not add one just because it is listed.',
     '- Design for the real project described under "The project folder": its language, size, tests and what the team already has. Reuse existing agents, skills and connectors from "Building blocks" before inventing new ones; name the ones you use in your reply.',
     '',
     `Engines usable now: ${usable.join(', ') || 'none detected'}. All engines: ${ENGINE_IDS.join(', ')}.`,
@@ -105,6 +107,7 @@ export function helperPrompt({ workflow, plan, lanes, engines = [], skills = [],
     ...(digest ? ['', 'The project folder (read just now):', digest] : []),
     ...(blocks.length ? ['', 'Building blocks the human already has that fit this request (from their catalog):', ...blocks.map((b) => `- ${b.type} "${b.name}"${b.model ? ` (${b.model})` : ''}${b.where ? ` in ${b.where}` : ''}: ${b.summary}`)] : []),
     ...(passages.length ? ['', 'From the reading links (indexed pages), the passages that match:', ...passages.map((p) => `[${p.title}] ${String(p.text).slice(0, 700)}`)] : []),
+    ...(patterns ? ['', patterns] : []),
     '',
     'The current workflow (JSON):',
     '<workflow>',

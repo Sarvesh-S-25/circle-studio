@@ -82,6 +82,8 @@ function normalizeNode(raw, at) {
     node.optional = bool(raw.optional, false);
     node.defaultOn = bool(raw.defaultOn, true);
     if (raw.reader === true) node.reader = true; // long reads go through a Haiku reader first (render.readerText)
+    // automatic: above this share of its context (30..95 %), long tool output is condensed by Haiku (a hook)
+    if (Number.isFinite(raw.condense)) node.condense = Math.max(30, Math.min(95, Math.round(raw.condense)));
     const prompt = text(raw.prompt, 8000);
     if (prompt) node.prompt = prompt;
   } else {
@@ -282,7 +284,7 @@ export function planToWorkflow(plan, base) {
 
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const edgeKey = (e) => `${e.from}>${e.to}`;
-const FIELD_LABEL = { title: 'title', does: 'role text', engine: 'engine', model: 'model', consult: 'engines it may ask', reader: 'Haiku reader', optional: 'optional', defaultOn: 'default on', prompt: 'prompt', gate: 'checkpoint', needs: 'needs', skills: 'skills', links: 'links', notes: 'notes', skipWhen: 'skip rule', position: 'position', parent: 'stage', kind: 'kind' };
+const FIELD_LABEL = { title: 'title', does: 'role text', engine: 'engine', model: 'model', consult: 'engines it may ask', reader: 'Haiku reader', condense: 'automatic condensing', optional: 'optional', defaultOn: 'default on', prompt: 'prompt', gate: 'checkpoint', needs: 'needs', skills: 'skills', links: 'links', notes: 'notes', skipWhen: 'skip rule', position: 'position', parent: 'stage', kind: 'kind' };
 
 function changedFields(a, b) {
   return [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => k !== 'id' && !same(a[k], b[k]));

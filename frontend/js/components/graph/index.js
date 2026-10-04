@@ -7,7 +7,7 @@ import { h, icon } from '../../dom.js';
 import { state } from '../../state.js';
 import { confirmDialog, openMenu, toast } from '../overlay.js';
 import { svg } from './svg.js';
-import { NODE_W, boxOf, bounds, checkpointPoint, edgeGeometry, fmtTokens, neighbour, nodeHeight, placed, tidy, uniqueId } from './layout.js';
+import { NODE_W, boxOf, bounds, checkpointPoint, edgeGeometry, fmtTokens, neighbour, nodeHeight, placed, tidy, uniqueId, hasHelper, helperBox } from './layout.js';
 import { renderVersions } from './versions.js';
 
 const MODES = [['edit', 'Workflow'], ['live', 'Live'], ['versions', 'Versions']];
@@ -153,6 +153,14 @@ export function mountGraph(el, opts) {
         edgesSvg.append(svg('g', { class: 'cs-gedge__label', transform: `translate(${g.mid.x - w / 2} ${g.mid.y - 11 - lift})` }, svg('rect', { width: w, height: 22, rx: 11 }), svg('text', { x: w / 2, y: 15, 'text-anchor': 'middle' }, e.label)));
       }
     }
+    // an agent and its helper: a short dashed line, no arrow (it is called inside the agent's turn, not handed work)
+    for (const n of S.wf.nodes.filter(hasHelper)) {
+      const ab = box(n);
+      const hb = helperOf(n);
+      if (hb.hanging) continue; // it hangs off the card itself
+      const s = { x: ab.x + ab.w, y: hb.y + hb.h / 2 };
+      edgesSvg.append(svg('path', { d: `M${s.x} ${s.y} L${hb.x} ${s.y}`, class: 'cs-gedge cs-gedge--helper' }));
+    }
     if (S.connecting) {
       const a = nodeById(S.connecting.from);
       const g = edgeGeometry(box(a), { x: S.connecting.x, y: S.connecting.y, w: 1, h: 1 });
@@ -191,10 +199,28 @@ export function mountGraph(el, opts) {
     }, h('span', { class: 'cs-gcheck__who' }, icon(w.icon, 's'), w.who), h('span', { class: 'cs-gcheck__what' }, what));
   }
 
+  /* ---- helpers: a small node beside an agent, working inside its turn (not a step of the flow) -------- */
+  function helperOf(n) {
+    const others = S.wf.nodes.filter((o) => o.id !== n.id).map(box);
+    return helperBox(box(n), others);
+  }
+  const helperWhen = (n) => (n.condense ? `auto, above ${n.condense}%` : 'when it decides');
+  function helperEl(n) {
+    const hb = helperOf(n);
+    return h('button', {
+      class: ['cs-ghelper', hb.hanging && 'cs-ghelper--hanging'], type: 'button', dataset: { helper: n.id },
+      style: { '--x': `${hb.x}px`, '--y': `${hb.y}px`, '--w': `${hb.w}px`, '--h': `${hb.h}px` },
+      title: n.condense ? `Haiku condenses ${n.title}'s long command output, pages and searches once its context is over ${n.condense}% full. Click to change.` : `${n.title} hands long reading to a Haiku reader when it decides to. Click to change.`,
+      'aria-label': `${n.title}'s helper: Haiku reader, ${helperWhen(n)}`,
+      onclick: () => { S.sel = n.id; opts.onOpenNode?.(n, { focus: 'helper' }); },
+    }, h('span', { class: 'cs-ghelper__name' }, icon('sparkle', 's'), 'Haiku reader'), h('span', { class: 'cs-ghelper__when' }, helperWhen(n)));
+  }
+
   function drawNodes() {
     const focused = document.activeElement?.closest?.('.cs-gnode')?.dataset.id;
     const checks = S.mode === 'versions' ? [] : S.wf.nodes.filter((n) => n.kind === 'stage' && n.gate?.on).map(checkpointEl);
-    nodesHost.replaceChildren(...S.wf.nodes.map(nodeEl), ...checks);
+    const helpers = S.mode === 'versions' ? [] : S.wf.nodes.filter(hasHelper).map(helperEl);
+    nodesHost.replaceChildren(...S.wf.nodes.map(nodeEl), ...checks, ...helpers);
     if (focused) nodesHost.querySelector(`[data-id="${CSS.escape(focused)}"]`)?.focus({ preventScroll: true });
   }
 
@@ -223,7 +249,8 @@ export function mountGraph(el, opts) {
         h('li', {}, h('span', { class: 'cs-gcheck cs-gcheck--both cs-gcheck--inline' }, h('span', { class: 'cs-gcheck__who' }, icon('gate', 's'), 'Codex, then you')), h('span', { class: 'cs-soft' }, 'an engine reviews first, then you approve')),
         h('li', {}, h('span', { class: 'cs-soft' }, 'An arrow with no marker: the next stage starts straight away.')),
         h('li', {}, h('span', { class: 'cs-glegend__line' }), h('span', { class: 'cs-soft' }, 'hand-off between stages')),
-        h('li', {}, h('span', { class: 'cs-glegend__line cs-glegend__line--dashed' }), h('span', { class: 'cs-soft' }, 'an agent working for a stage or another agent'))));
+        h('li', {}, h('span', { class: 'cs-glegend__line cs-glegend__line--dashed' }), h('span', { class: 'cs-soft' }, 'an agent working for a stage or another agent')),
+        h('li', {}, h('span', { class: 'cs-ghelper cs-ghelper--inline' }, h('span', { class: 'cs-ghelper__name' }, icon('sparkle', 's'), 'Haiku reader')), h('span', { class: 'cs-soft' }, 'a helper beside an agent: a cheap model reads long output for it, inside its turn'))));
   }
   function toggleLegend() { S.legend = !S.legend; drawBar(); drawLegend(); }
 

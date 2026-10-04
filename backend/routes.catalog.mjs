@@ -7,13 +7,15 @@ import { htmlToText, SUMMARY_SCHEMA, summaryPrompt } from './lib/catalog.mjs';
 import { listServers } from './lib/connections.mjs';
 import { parseFrontMatter, fieldString } from './lib/frontmatter.mjs';
 import { str } from './lib/route-helpers.mjs';
+import { patternSources } from './lib/patterns.mjs';
 
 const STALE_MS = 10 * 60 * 1000;
 const read = (p) => { try { return fs.readFileSync(p, 'utf8'); } catch { return null; } };
 
 /** Everything the human has, as catalog sources. Read only. */
 export function catalogSources(app) {
-  const out = [];
+  // the pattern store comes first: ways to shape a team, with their trade-offs (backend/seed/patterns.json)
+  const out = [...patternSources()];
   for (const s of app.library.list()) out.push({ type: 'skill', name: s.name, text: s.description || '', where: 'your library' });
   for (const p of app.projects.list().filter((x) => x.exists)) {
     const dir = path.join(p.path, '.claude', 'agents');

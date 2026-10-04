@@ -6,6 +6,7 @@ import { state } from '../state.js';
 import { mountGraph } from '../components/graph/index.js';
 import { openNodePanel } from '../components/graph/nodepanel.js';
 import { mountHelper } from '../components/graph/helper.js';
+import { mountPatterns } from '../components/graph/patterns.js';
 import { pref, setPref } from '../state.js';
 import { suggestBump } from '../components/graph/layout.js';
 import { reviewChanges } from '../components/diffreview.js';
@@ -36,6 +37,24 @@ export async function mount(el, pctx) {
   let helper = null;
   const helperMemory = { messages: [] };
   const helperBtn = h('button', { class: 'cs-btn', type: 'button', 'aria-pressed': 'false', onclick: () => (helper ? closeHelper() : showHelper(true)) }, icon('sparkle', 's'), 'Workflow helper');
+  // the pattern store: ways to shape the team, which fit and why, try one on an agent (unsaved)
+  let patterns = null;
+  const patternsBtn = h('button', { class: 'cs-btn', type: 'button', 'aria-pressed': 'false', title: 'Ways to shape your team, with when they pay off; try one on an agent', onclick: () => (patterns ? closePatterns() : showPatterns()) }, icon('library', 's'), 'Patterns');
+  function showPatterns() {
+    if (mode === 'versions') return;
+    panel?.destroy(); panel = null;
+    if (helper) { helper.destroy(); helper = null; helperBtn.setAttribute('aria-pressed', 'false'); }
+    patterns?.destroy();
+    patterns = mountPatterns(pctx.side, {
+      project,
+      getWorkflow: () => graph.getWorkflow(),
+      onApply: (wf) => { graph.setWorkflow(wf); markDirty(graph.getWorkflow()); },
+      onOpenNode: (n) => openNode(n),
+      onClose: closePatterns,
+    });
+    patternsBtn.setAttribute('aria-pressed', 'true');
+  }
+  function closePatterns() { patterns?.destroy(); patterns = null; patternsBtn.setAttribute('aria-pressed', 'false'); }
 
   /* ---- where this workflow came from: never pretend a template is the project ------------------------ */
   const startEl = h('div', { class: 'cs-stack cs-stack--tight' });
@@ -94,6 +113,7 @@ export async function mount(el, pctx) {
     if (pref('helper', innerWidth >= 1440 ? 'on' : 'off') !== 'on' || mode === 'versions') return;
     panel?.destroy();
     panel = null;
+    closePatterns();
     helper?.destroy();
     helper = mountHelper(pctx.side, {
       project, memory: helperMemory,
@@ -128,13 +148,14 @@ export async function mount(el, pctx) {
     }
     panel?.destroy();
     if (helper) { helper.destroy(); helper = null; helperBtn.setAttribute('aria-pressed', 'false'); }
+    closePatterns();
     panel = openNodePanel(pctx.side, { node: graph.getWorkflow().nodes.find((x) => x.id === n.id), workflow: () => graph.getWorkflow(), graph, project, focus });
   }
 
   graph = mountGraph(graphHost, {
     workflow: current, mode: 'edit', modes: ['edit', 'live', 'versions'], projectId: project.id, versions: record.versions, head: record.head,
     onChange: markDirty, onOpenNode: openNode, onRestore: restore,
-    onMode: (m) => { mode = m; if (m === 'live') startLive(); else stopLive(); if (m === 'versions') { panel?.destroy(); panel = null; helper?.destroy(); helper = null; } else if (!panel && !helper) showHelper(); },
+    onMode: (m) => { mode = m; if (m === 'live') startLive(); else stopLive(); if (m === 'versions') { panel?.destroy(); panel = null; helper?.destroy(); helper = null; closePatterns(); } else if (!panel && !helper && !patterns) showHelper(); },
   });
 
   async function restore(version) {
@@ -277,7 +298,7 @@ export async function mount(el, pctx) {
   el.append(h('div', { class: 'cs-stack cs-stack--loose' },
     h('div', { class: 'cs-row cs-row--wrap cs-row--between' },
       h('div', {}, h('div', { class: 'cs-row' }, h('h2', { class: 'cs-h2' }, 'Workflow'), versionPill, dirtyPill), h('p', { class: 'cs-soft cs-small' }, 'Click a node to change it or talk to it. A marker on an arrow is a checkpoint: who checks the work before the next stage.')),
-      h('div', { class: 'cs-row cs-row--wrap' }, status, helperBtn, saveBtn, h('button', { class: 'cs-btn cs-btn--primary', type: 'button', onclick: writeFiles }, icon('diff', 's'), 'Review and write files'))),
+      h('div', { class: 'cs-row cs-row--wrap' }, status, helperBtn, patternsBtn, saveBtn, h('button', { class: 'cs-btn cs-btn--primary', type: 'button', onclick: writeFiles }, icon('diff', 's'), 'Review and write files'))),
     startEl, warnEl, graphHost, optionsEl, briefEl, pinsEl));
   drawWarnings();
   drawOptions();
@@ -287,6 +308,7 @@ export async function mount(el, pctx) {
 
   return { destroy() {
     stopLive();
+    patterns?.destroy();
     window.removeEventListener('circle:run', onLiveEvent);
     window.removeEventListener('circle:requests', onLiveEvent);
     if (planTimer) { clearTimeout(planTimer); api.savePlan(project.id, plan).catch(() => {}); }

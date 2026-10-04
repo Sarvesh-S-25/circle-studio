@@ -97,6 +97,18 @@ export async function mount(el, pctx) {
       h('p', { class: 'cs-soft cs-small' }, '"main session" is you talking to Claude Code; the others are agents it handed work to.'));
   }
 
+  /** What automatic condensing (an agent's Haiku reader, "automatically") did, read from the transcripts. */
+  function condensed() {
+    const c = data.usage?.condensed;
+    if (!c?.count) return null;
+    const kept = Math.max(0, c.was - c.now);
+    const k = (n) => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
+    return h('section', { class: 'cs-card cs-stack', 'aria-labelledby': 'cost-cond' }, h('h2', { class: 'cs-h2', id: 'cost-cond' }, 'Condensed by Haiku'),
+      h('p', {}, `${plural(c.count, 'long output')} shortened: about ${k(c.was)} tokens became ${k(c.now)}, so about ${k(kept)} tokens stayed out of the agents' context.`),
+      h('ul', { class: 'cs-cost__rows' }, Object.entries(c.byAgent).map(([name, a]) => h('li', { class: 'cs-cost__row' }, h('span', { class: 'cs-cost__name' }, name), h('span', { class: 'cs-cost__val' }, `${k(a.saved)} tokens kept out`), h('span', { class: 'cs-soft cs-small' }, plural(a.count, 'output'))))),
+      h('p', { class: 'cs-soft cs-small' }, 'Each one cost a short Haiku call. The full outputs were kept in files the agents could read.'));
+  }
+
   function before() {
     const w = data.weight;
     const max = Math.max(...w.always.map((x) => x.tokens), 1);
@@ -149,7 +161,7 @@ export async function mount(el, pctx) {
   }
 
   function draw() {
-    el.replaceChildren(h('div', { class: 'cs-stack cs-stack--loose cs-cost' }, hero(), savings(), agentsTable(), before(), byAgent(), circleSpend()));
+    el.replaceChildren(h('div', { class: 'cs-stack cs-stack--loose cs-cost' }, hero(), savings(), agentsTable(), before(), byAgent(), condensed(), circleSpend()));
   }
   draw();
   return {};

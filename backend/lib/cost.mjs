@@ -99,6 +99,14 @@ async function fileUsage(file, agentType) {
   const records = [];
   const rl = readline.createInterface({ input: fs.createReadStream(file, { encoding: 'utf8' }), crlfDelay: Infinity });
   for await (const line of rl) {
+    // a tool output that Circle Studio's condense hook shortened (its note says how much)
+    const cut = line.includes('Circle Studio condensed:') && /Circle Studio condensed: (\w+) output was (\d+) tokens, now (\d+)/.exec(line);
+    if (cut) {
+      let day = '';
+      try { day = String(JSON.parse(line).timestamp || '').slice(0, 10); } catch { /* keep the counts */ }
+      records.push({ kind: 'condensed', day, agent: agentType, tool: cut[1], was: Number(cut[2]), now: Number(cut[3]) });
+      continue;
+    }
     if (!line.includes('"usage"')) continue;
     let o;
     try { o = JSON.parse(line); } catch { continue; }
@@ -147,7 +155,15 @@ export async function usageInDir(dir, { days = 30, now = Date.now() } = {}) {
       all.push(...(await fileUsage(path.join(sub, f), String(type).slice(0, 60))));
     }
   }
-  const recs = all.filter((r) => r.day >= since);
+  // condensed outputs: how many, and the tokens that stayed out of the agents' context
+  const cuts = all.filter((r) => r.kind === 'condensed' && (!r.day || r.day >= since));
+  const condensed = { count: cuts.length, was: 0, now: 0, byAgent: {} };
+  for (const c of cuts) {
+    condensed.was += c.was; condensed.now += c.now;
+    const a = (condensed.byAgent[c.agent] ||= { count: 0, saved: 0 });
+    a.count++; a.saved += Math.max(0, c.was - c.now);
+  }
+  const recs = all.filter((r) => r.kind !== 'condensed' && r.day >= since);
   const blank = () => ({ input: 0, output: 0, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0, usd: 0, answers: 0 });
   const addTo = (t, r) => { for (const k of ['input', 'output', 'cacheRead', 'cacheWrite5m', 'cacheWrite1h']) t[k] += r[k]; t.usd += costOf(r.model, r) || 0; t.answers++; };
   const byModel = new Map();
@@ -168,7 +184,7 @@ export async function usageInDir(dir, { days = 30, now = Date.now() } = {}) {
   for (let i = days - 1; i >= 0; i--) { const d = new Date(now - i * 86400000).toISOString().slice(0, 10); dayList.push({ date: d, usd: byDay.get(d) || 0 }); }
   const sorted = (m) => [...m.entries()].map(([name, t]) => ({ name, ...t })).sort((a, b) => b.usd - a.usd);
   const inputSide = total.input + total.cacheRead + total.cacheWrite5m + total.cacheWrite1h;
-  return { found: true, days, since, sessions, total, cacheShare: inputSide ? total.cacheRead / inputSide : null, byModel: sorted(byModel), byAgent: sorted(byAgent).slice(0, 12), byDay: dayList };
+  return { found: true, days, since, sessions, total, cacheShare: inputSide ? total.cacheRead / inputSide : null, byModel: sorted(byModel), byAgent: sorted(byAgent).slice(0, 12), byDay: dayList, condensed };
 }
 
 /* ---- the model each agent runs on, problems, cheaper options ---------------------------------------- */
@@ -186,7 +202,7 @@ export function agentCosts(workflow, weight) {
   for (const n of nodes) {
     const file = byName.get(n.id.toLowerCase()) || byName.get(String(n.title).toLowerCase());
     if (file) seen.add(file.name.toLowerCase());
-    out.push({ id: n.id, title: n.title, engine: n.engine || 'claude', model: n.model || file?.model || null, does: n.does || '', inWorkflow: true, bodyTokens: file?.bodyTokens ?? null, reader: n.reader === true });
+    out.push({ id: n.id, title: n.title, engine: n.engine || 'claude', model: n.model || file?.model || null, does: n.does || '', inWorkflow: true, bodyTokens: file?.bodyTokens ?? null, reader: n.reader === true, condense: n.condense || null });
   }
   for (const a of weight.agents) if (!seen.has(a.name.toLowerCase())) out.push({ id: a.name, title: a.name, engine: 'claude', model: a.model, does: '', inWorkflow: false, bodyTokens: a.bodyTokens });
   return out.map((a) => {
@@ -224,7 +240,7 @@ export function findIssues({ weight, agents, usage }) {
   // big context on every answer. Measured from its own transcripts, so it is only suggested where it would show.
   for (const u of usage?.byAgent || []) {
     const ag = agents.find((a) => a.id.toLowerCase() === String(u.name).toLowerCase() || String(a.title).toLowerCase() === String(u.name).toLowerCase());
-    if (!ag || ag.engine !== 'claude' || ag.reader || u.answers < 10) continue;
+    if (!ag || ag.engine !== 'claude' || ag.reader || ag.condense || u.answers < 10) continue;
     const fam = familyOf(ag.model);
     const perAnswer = (u.input + u.cacheRead + u.cacheWrite5m + u.cacheWrite1h) / u.answers;
     const text = `${ag.id} ${ag.title} ${ag.does}`;

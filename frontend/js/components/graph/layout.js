@@ -80,12 +80,26 @@ export const placed = (wf, auto) => Object.fromEntries(wf.nodes.map((n) => [n.id
 
 export const boxOf = (n, p) => ({ x: p.x, y: p.y, w: NODE_W, h: nodeHeight(n) });
 
+/* Helpers: a small node beside an agent (its Haiku reader), joined by a dashed line. Not a step of the flow: it works
+   inside that agent's turn. It sits in the gap to the right of the card, or hangs off the card's corner when another
+   card is there (a stage with more than four agents). */
+export const HELPER_W = 132;
+export const HELPER_H = 50;
+const overlaps = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+export const hasHelper = (n) => n.kind === 'agent' && (n.reader === true || Boolean(n.condense));
+export function helperBox(agentBox, others = []) {
+  const beside = { x: agentBox.x + agentBox.w + 24, y: agentBox.y + 28, w: HELPER_W, h: HELPER_H };
+  if (!others.some((o) => overlaps(beside, o))) return { ...beside, hanging: false };
+  return { x: agentBox.x + agentBox.w - HELPER_W + 10, y: agentBox.y + agentBox.h - 18, w: HELPER_W, h: HELPER_H, hanging: true };
+}
+
 export function bounds(wf, positions) {
   if (!wf.nodes.length) return { x: 0, y: 0, w: 1, h: 1 };
   let x1 = Infinity; let y1 = Infinity; let x2 = -Infinity; let y2 = -Infinity;
   for (const n of wf.nodes) {
     const b = boxOf(n, positions[n.id]);
     x1 = Math.min(x1, b.x); y1 = Math.min(y1, b.y); x2 = Math.max(x2, b.x + b.w); y2 = Math.max(y2, b.y + b.h);
+    if (hasHelper(n)) x2 = Math.max(x2, b.x + b.w + 24 + HELPER_W); // room for its helper beside it
   }
   return { x: x1 - PAD, y: y1 - PAD, w: x2 - x1 + PAD * 2, h: y2 - y1 + PAD * 2 };
 }

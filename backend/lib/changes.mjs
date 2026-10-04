@@ -9,6 +9,7 @@ import { diffText } from './diff.mjs';
 import { scanSecrets, redact } from './secrets.mjs';
 import { atomicWrite, detectEol, sha256, toLf } from './textfile.mjs';
 import { resolveInside, isWritable } from './paths.mjs';
+import { isCondenseFile, checkCondenseWrite } from './condenseguard.mjs';
 import { runCommand } from './run.mjs';
 import { conflict, notFound, HttpError } from './errors.mjs';
 
@@ -99,6 +100,7 @@ export class ChangeManager {
     for (const f of cs.files) {
       resolveInside(proj.root, f.rel);
       if (!isWritable(f.rel)) throw new HttpError('forbidden', `Circle Studio does not write ${f.rel}.`);
+      if (isCondenseFile(f.rel)) checkCondenseWrite(f.rel, f.after); // checked again right before it reaches the disk
       let cur = null;
       try { cur = fs.readFileSync(f.abs); } catch (e) { if (e.code !== 'ENOENT') throw e; }
       const hash = cur === null ? null : sha256(cur);

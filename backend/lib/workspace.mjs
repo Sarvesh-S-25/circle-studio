@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import { resolveInside, isWritable, toPosix } from './paths.mjs';
 import { forbidden } from './errors.mjs';
+import { isCondenseFile, checkCondenseWrite } from './condenseguard.mjs';
 import { looksBinary, detectEol, sha256 } from './textfile.mjs';
 
 const same = (a, b) => {
@@ -54,6 +55,7 @@ export class Workspace {
   write(rel, content, { via = 'app' } = {}) {
     const e = this.entry(rel);
     if (!isWritable(e.rel)) throw forbidden(`Circle Studio does not write ${e.rel}.`);
+    if (isCondenseFile(e.rel)) checkCondenseWrite(e.rel, content);
     e.after = content;
     e.via = via;
     if (Buffer.isBuffer(content)) e.binary = true;

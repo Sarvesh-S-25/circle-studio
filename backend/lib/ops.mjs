@@ -12,7 +12,7 @@ import { scanSecrets } from './secrets.mjs';
 import { P, TIERS, ENGINES, parseJson, roleEntry, readProjectText } from './team.mjs';
 import { buildBrief, rosterFromWorkflow } from './plan.mjs';
 import { ENGINE_IDS } from './workflow.mjs';
-import { renderProject, skillTargets, GEMINI_SKILLS_NOTE } from './render.mjs';
+import { renderProject, skillTargets, GEMINI_SKILLS_NOTE, CONDENSE, condenseHookEntry, condenseConfigText } from './render.mjs';
 import { GI_START, GI_END } from './gitblock.mjs';
 import { answerAlertText } from './alerts.mjs';
 
@@ -587,6 +587,18 @@ function opPlanWrite(ws, op, env) {
 const SKILL_FILE = /^\.(?:claude|agents|gemini)\/skills\//;
 
 /** workflow.json, AGENTS.md, the Claude agent files and the skills the nodes list. The brief is plan-write's. */
+/** Add or remove Circle Studio's condense hook in the project's .claude/settings.json, keeping everything else in it. */
+function syncCondenseHook(ws, on) {
+  const rel = '.claude/settings.json';
+  const text = ws.read(rel);
+  if (text == null) { if (on) ws.write(rel, `${JSON.stringify({ hooks: { PostToolUse: [condenseHookEntry()] } }, null, 2)}\n`); return; }
+  const cfg = readJson(ws, rel, rel);
+  const list = Array.isArray(cfg.hooks?.PostToolUse) ? cfg.hooks.PostToolUse : [];
+  const ours = (h) => Array.isArray(h?.hooks) && h.hooks.some((x) => x?.command === CONDENSE.command);
+  if (on && !list.some(ours)) patchJson(ws, rel, ['hooks', 'PostToolUse'], [...list, condenseHookEntry()]);
+  if (!on && list.some(ours)) patchJson(ws, rel, ['hooks', 'PostToolUse'], list.filter((h) => !ours(h)));
+}
+
 function opWorkflowWrite(ws, op, env) {
   const workflow = env.ctx.getWorkflow(env.projectId);
   const plan = env.ctx.getPlan(env.projectId);
@@ -602,7 +614,12 @@ function opWorkflowWrite(ws, op, env) {
   warnings.forEach((w) => env.warn(w));
   const left = [];
   let rewritten = 0;
+  // automatic condensing: the project's own .claude/settings.json gets one hook entry merged in (or taken out)
+  const condensing = files.some((f) => f.mergeHook);
+  syncCondenseHook(ws, condensing);
+  if (!condensing && ws.read(CONDENSE.config) != null) ws.write(CONDENSE.config, condenseConfigText({ nodes: [] }));
   for (const f of files) {
+    if (f.mergeHook) continue;
     const content = typeof f.content === 'string' ? f.content : asContent(f.content);
     const cur = ws.entry(f.path).after;
     if (cur !== null && SKILL_FILE.test(f.path) && !sameContent(cur, content)) { left.push(f.path); continue; }

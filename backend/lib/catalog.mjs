@@ -96,7 +96,8 @@ export class Catalog {
   }
 
   /** Entries whose one-line description is missing, too long, or just their name. */
-  weak() { return this.read().entries.filter((e) => e.summaryBy !== 'haiku' && (e.summary.length < 25 || e.summary.length > 160 || e.summary === e.name)); }
+  // patterns come with their own wording: never sent to Haiku to be described
+  weak() { return this.read().entries.filter((e) => e.type !== 'pattern' && e.summaryBy !== 'haiku' && (e.summary.length < 25 || e.summary.length > 160 || e.summary === e.name)); }
 
   setSummaries(items) {
     return this.store.serial('catalog', () => {

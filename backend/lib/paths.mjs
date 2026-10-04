@@ -74,6 +74,8 @@ const WRITE_ALLOW = [
 export function isWritable(relPosix) {
   if (relPosix.includes('..') || relPosix.includes('\0')) return false;
   if (/^\.git\//.test(relPosix) || /^CLAUDE\.md$/i.test(relPosix)) return false;
+  // the one exception in .claude/hooks/: Circle Studio's own condense hook, content-checked on every write (condenseguard)
+  if (relPosix === '.claude/hooks/circle-condense.mjs' || relPosix === '.claude/hooks/circle-condense.json') return true;
   if (/^\.claude\/hooks\//.test(relPosix) || /^scripts\//.test(relPosix)) return false;
   if (/\/\.circle/.test(relPosix)) return false;
   return WRITE_ALLOW.some((re) => re.test(relPosix));

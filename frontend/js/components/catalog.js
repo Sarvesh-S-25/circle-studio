@@ -6,7 +6,7 @@ import { api } from '../api.js';
 import { h, icon, timeAgo, plural } from '../dom.js';
 import { toast } from './overlay.js';
 
-const TYPE = { skill: ['skill', 'Skill'], agent: ['agent', 'Agent'], connector: ['link', 'Connector'], link: ['globe', 'Link'] };
+const TYPE = { pattern: ['library', 'Pattern'], skill: ['skill', 'Skill'], agent: ['agent', 'Agent'], connector: ['link', 'Connector'], link: ['globe', 'Link'] };
 
 export function catalogSection() {
   const box = h('div', { class: 'cs-stack' });

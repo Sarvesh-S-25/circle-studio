@@ -118,6 +118,7 @@ export const api = {
   saveWorkflow: (id, body) => request('PUT', `/api/projects/${enc(id)}/workflow`, body),
   restoreWorkflow: (id, version) => request('POST', `/api/projects/${enc(id)}/workflow/restore`, { version }),
   suggestWorkflow: (id, body) => request('POST', `/api/projects/${enc(id)}/workflow/suggest`, body),
+  patterns: (id, workflow) => request('POST', `/api/projects/${enc(id)}/patterns`, { workflow }),
   discoverSkills: (id, body) => request('POST', `/api/projects/${enc(id)}/skills/discover`, body),
 
   /**

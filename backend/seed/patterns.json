@@ -1,0 +1,103 @@
+{
+  "about": "Ways to shape an agent team, with when they pay off and when they do not. The workflow helper reads the ones that match a request, relates them to the agents and to measured use, and the Patterns panel lets a person try one on an agent. Plain words; no pattern is free.",
+  "patterns": [
+    {
+      "id": "reader",
+      "name": "Haiku reader (when the agent decides)",
+      "kind": "helper",
+      "summary": "A cheap Haiku agent reads long files, logs and pages for an expensive agent and answers in a few lines, so the expensive agent's context stays small.",
+      "useWhen": ["The agent mostly reads and judges: reviewers, researchers, auditors, debuggers on long logs.", "It runs on Sonnet or Opus and carries a big context on every answer (the Cost tab measures this)."],
+      "avoidWhen": ["The agent edits the code it reads: it needs the exact text, and a summary makes edits fail or makes it read again.", "Reads are short anyway: the hand-off costs more than it saves."],
+      "costs": "One Haiku answer per long read (cheap), a few seconds more per read, and a small chance a detail is left out.",
+      "howHere": "Workflow, the agent, Helper: \"When it decides\". The agent is told to hand long reads to the reader; it still reads exact lines itself before changing them.",
+      "apply": { "reader": true },
+      "signals": ["review", "research", "audit", "debug", "investigate", "analyse", "analyze", "read", "scan", "log", "logs", "docs"],
+      "against": ["build", "implement", "write", "fix", "refactor", "edit", "code"],
+      "relatesTo": ["condense", "cheap-model"]
+    },
+    {
+      "id": "condense",
+      "name": "Automatic condensing above a context limit",
+      "kind": "helper",
+      "summary": "A Claude Code hook: once the agent's context is fuller than a limit you choose, long command output, web pages, searches and MCP results are shortened by Haiku before the agent sees them. The full output is kept in a file the agent can read.",
+      "useWhen": ["The agent runs commands with long output (test runs, builds, logs) or fetches pages.", "Sessions run long and the context fills up, so Claude Code would summarise the conversation sooner.", "You want it to happen without the agent having to decide."],
+      "avoidWhen": ["You need every line of output verbatim on screen in the agent's reasoning (rare: it can read the kept file).", "Outputs are short: nothing to gain."],
+      "costs": "One Haiku call per long output (about 5 to 15 seconds and a fraction of a cent). Files read with Read are never condensed.",
+      "howHere": "Workflow, the agent, Helper: \"Automatically above\" a percentage. Writing the workflow adds the hook to the project's .claude/settings.json (merged, you review the change). It works when the team runs in Claude Code; Circle Studio's own Chat keeps project hooks off for safety. Measured on the Cost tab.",
+      "apply": { "condense": 60 },
+      "signals": ["test", "tests", "log", "logs", "runner", "ci", "deploy", "fetch", "scrape", "crawl", "debug", "benchmark", "e2e"],
+      "against": [],
+      "relatesTo": ["reader"]
+    },
+    {
+      "id": "consult",
+      "name": "A second opinion from another engine",
+      "kind": "helper",
+      "summary": "The agent may ask a different engine (Codex, Gemini, Copilot) to check its plan or result before it goes on. Different models miss different things.",
+      "useWhen": ["The decision is costly to get wrong: architecture, security, data migrations, a plan the whole team follows.", "You have another engine signed in and its cost is acceptable."],
+      "avoidWhen": ["Routine work: every consult is another full model call and more waiting.", "Only one engine is ready."],
+      "costs": "One extra model call per consult on the other engine's plan or account.",
+      "howHere": "Workflow, the agent, Engines it may ask.",
+      "apply": null,
+      "signals": ["architect", "architecture", "security", "plan", "planner", "design", "migration", "review", "decide"],
+      "against": ["format", "lint", "docs", "copy"],
+      "relatesTo": ["engine-check"]
+    },
+    {
+      "id": "engine-check",
+      "name": "An engine checks the stage instead of you",
+      "kind": "checkpoint",
+      "summary": "At the end of a stage another engine reviews the work against a short rule and the team goes on; you are asked only where a real decision is needed.",
+      "useWhen": ["The check is routine and can be put in one sentence: tests pass, nothing outside the brief changed, no secrets.", "You stop the work too often for things you approve anyway."],
+      "avoidWhen": ["The step needs your taste or a business decision (scope, money, what users see).", "Nothing else is signed in to do the check."],
+      "costs": "One review answer from the checking engine per stage run.",
+      "howHere": "Workflow, the marker on the arrow after a stage: Checked by an engine (or both: an engine, then you).",
+      "apply": null,
+      "signals": ["test", "tests", "lint", "check", "verify", "qa", "quality"],
+      "against": [],
+      "relatesTo": ["consult"]
+    },
+    {
+      "id": "cheap-model",
+      "name": "The cheapest model that does the job",
+      "kind": "model",
+      "summary": "Haiku for searching, scanning, formatting and running things; Sonnet for most building and reviewing; Opus only where hard reasoning pays off.",
+      "useWhen": ["An agent's job reads as routine but it runs on Opus.", "An agent has no model of its own and inherits the main session's (often the most expensive)."],
+      "avoidWhen": ["Results got worse after a switch: go back, the cheaper model was not enough.", "The job is architecture, security or tricky debugging."],
+      "costs": "None; it saves. Haiku costs about a third of Sonnet; Sonnet about half of Opus.",
+      "howHere": "Workflow, the agent, Model. The Cost tab suggests switches from your real use.",
+      "apply": null,
+      "signals": ["search", "scan", "find", "format", "lint", "docs", "changelog", "summar", "translate", "runner", "deploy"],
+      "against": ["architect", "security", "reason", "plan"],
+      "relatesTo": ["reader"]
+    },
+    {
+      "id": "skills",
+      "name": "Skills: how-to cards an agent reads when needed",
+      "kind": "knowledge",
+      "summary": "Instructions (sometimes with scripts) an agent loads only when a task needs them, instead of carrying everything in its main prompt.",
+      "useWhen": ["The same know-how is pasted into prompts again and again.", "A task has a known good way to do it (testing a framework, writing release notes)."],
+      "avoidWhen": ["You do not trust the source: a skill is text your agent follows.", "It duplicates one you already have (Find skills leaves those out)."],
+      "costs": "Only a short description is always loaded; the rest when used.",
+      "howHere": "Workflow helper, Find skills; or Library, Import from GitHub; then give it to an agent.",
+      "apply": null,
+      "signals": ["test", "release", "docs", "framework", "react", "api", "deploy", "pdf", "spreadsheet"],
+      "against": [],
+      "relatesTo": []
+    },
+    {
+      "id": "optional-agents",
+      "name": "Optional agents for a lighter team",
+      "kind": "team",
+      "summary": "Mark agents that a small project can skip (a second reviewer, a market check) as optional, so the team is only as big as the work.",
+      "useWhen": ["The workflow came from a big template and the project is small.", "Some stages only matter for a release."],
+      "avoidWhen": ["Each agent clearly earns its place."],
+      "costs": "None.",
+      "howHere": "Workflow, the agent, Optional; or ask the helper to make it lighter.",
+      "apply": null,
+      "signals": ["optional", "extra", "second", "market", "business"],
+      "against": [],
+      "relatesTo": []
+    }
+  ]
+}

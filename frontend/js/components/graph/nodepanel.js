@@ -64,10 +64,35 @@ export function openNodePanel(side, { node, workflow, graph, project, tab = 'set
     return field('Engine', sel, cur ? capabilityNote(cur) : 'Which engine runs this agent.');
   }
 
-  /** On/off per engine, like skills: which other engines this agent may ask for a second opinion. */
-  function readerRow() {
-    return h('div', { class: 'cs-field' }, sw('Haiku reader for long reads', node.reader === true, (v) => { patch({ reader: v || undefined }); drawSettings(); }),
-      h('span', { class: 'cs-field__hint' }, node.reader ? 'A cheap Haiku agent reads big files, logs and pages for it and answers in a few lines. Saves tokens on a reviewer or researcher; skip it for agents that edit what they read.' : 'Off: it reads everything itself, in full.'));
+  /**
+   * The helper beside this agent: a Haiku reader. Off; when the agent decides (it is told to hand long reads over);
+   * or automatic above a share of its context (a hook shortens long command output, pages and searches).
+   */
+  const HELPER_CHOICES = [
+    ['off', 'Off', 'It reads everything itself, in full.'],
+    ['ask', 'When it decides', 'It hands long files, logs and pages to Haiku and works from a short answer. Good for reviewers and researchers; skip it for agents that edit what they read.'],
+    ['auto', 'Automatically', 'Once its context is fuller than the limit below, long command output, web pages and searches are shortened by Haiku before it sees them. The full output stays in a file it can read; files it reads are never shortened.'],
+  ];
+  function helperSection() {
+    const mode = node.condense ? 'auto' : node.reader ? 'ask' : 'off';
+    const set = (next) => {
+      if (next === 'off') patch({ reader: undefined, condense: undefined });
+      else if (next === 'ask') patch({ reader: true, condense: undefined });
+      else patch({ reader: undefined, condense: node.condense || 60 });
+      drawSettings();
+      root.querySelector('#npanel-helper')?.querySelector(`[data-choice="${next}"]`)?.focus();
+    };
+    const radios = h('div', { class: 'cs-radios', role: 'radiogroup', 'aria-label': 'Haiku reader' },
+      HELPER_CHOICES.map(([v, label, hint]) => h('label', { class: 'cs-radio', dataset: { checked: String(mode === v) } },
+        h('input', { type: 'radio', name: `helper-${node.id}`, value: v, checked: mode === v || undefined, dataset: { choice: v }, onchange: () => set(v) }),
+        h('span', { class: 'cs-grow' }, h('strong', {}, label), h('span', { class: 'cs-radio__hint' }, hint)))));
+    let limit = null;
+    if (mode === 'auto') {
+      const out = h('output', { class: 'cs-mono' }, `${node.condense}%`);
+      const range = h('input', { type: 'range', class: 'cs-range', min: 30, max: 95, step: 5, value: node.condense, 'aria-label': 'Context limit', oninput: (e) => { out.textContent = `${e.target.value}%`; patch({ condense: Number(e.target.value) }, { soon: true }); } });
+      limit = field('Start when its context is fuller than', h('div', { class: 'cs-row' }, range, out), 'Lower starts sooner (smaller context, more Haiku calls); higher keeps outputs whole for longer. 60% is a good start. Takes effect when you write the files (Review and write files), for this agent when your team runs in Claude Code. Circle Studio\'s own Chat keeps project hooks off for safety, so it does not condense there.');
+    }
+    return h('fieldset', { class: 'cs-fieldset cs-npanel__check', id: 'npanel-helper', tabindex: '-1' }, h('legend', { class: 'cs-h3' }, 'Helper: Haiku reader'), radios, limit);
   }
 
   function consultRow() {
@@ -146,7 +171,7 @@ export function openNodePanel(side, { node, workflow, graph, project, tab = 'set
           return h('div', {}, i, h('datalist', { id: 'node-models' }, list.map((m) => h('option', { value: m }))));
         })()),
         consultRow(),
-        node.engine === 'claude' ? readerRow() : null,
+        node.engine === 'claude' ? helperSection() : null,
         stages.length ? field('Belongs to stage', h('select', { class: 'cs-select', onchange: (e) => patch({ parent: e.target.value }) }, stages.map((s) => h('option', { value: s.id, selected: node.parent === s.id || undefined }, s.title)))) : null,
         sw('Optional (can be switched off)', node.optional, (v) => patch({ optional: v })),
         field('Instructions', text(node.prompt, (v) => patch({ prompt: v }, { soon: true }), { area: true, rows: 3, placeholder: 'How this agent should work (added to its system prompt).' }))) : null,
@@ -181,9 +206,9 @@ export function openNodePanel(side, { node, workflow, graph, project, tab = 'set
     tabs, h('div', { class: 'cs-inspector__body' }, body));
   side.replaceChildren(root);
   draw();
-  if (focus === 'checkpoint' && node.kind === 'stage') {
+  if ((focus === 'checkpoint' && node.kind === 'stage') || (focus === 'helper' && node.kind === 'agent')) {
     requestAnimationFrame(() => {
-      const sec = root.querySelector('#npanel-check');
+      const sec = root.querySelector(focus === 'helper' ? '#npanel-helper' : '#npanel-check');
       sec?.scrollIntoView({ block: 'nearest' });
       (sec?.querySelector('input:checked') || sec)?.focus({ preventScroll: true });
     });
