@@ -524,7 +524,9 @@ version `1.1.0`.
 
 ## 17. Working on it again (for a new chat)
 
-Start a new chat with: *"Read `CLAUDE.md` and `WHAT-IS-WHERE.md` first."* They hold the rules and this map.
+Claude Code loads `CLAUDE.md` by itself in this folder, and `CLAUDE.md` says to read this file first and to keep it
+true: every change to features, files, limits, facts or state updates the matching section here before the final
+report. So a new chat needs nothing extra. If in doubt, say: *"Read `CLAUDE.md` and `WHAT-IS-WHERE.md` first."*
 
 - **The rules** are in `CLAUDE.md`: local only, no API key ever, you do git yourself, diff first for every write into a
   project, agents ask first, secrets never shown, design values only from `tokens.css`, Node built-ins only, no shell.

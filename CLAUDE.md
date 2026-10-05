@@ -1,5 +1,12 @@
 # Circle Studio: rules for whoever works on it
 
+**Read `WHAT-IS-WHERE.md` first, every time.** It is the map of what is built and where it lives, the current state
+(git, what is on this PC, the human's to-do list), the known limits, facts learned by running things, and every request
+and where it went. **Keep it true:** whenever you add, move, rename or remove a feature or file, change a limit, learn
+a fact the hard way, or the state changes (tests count, git, what the human still has to do), update the matching
+section of `WHAT-IS-WHERE.md` in the same piece of work, before your final report. Correct anything in it you find to be
+wrong; never leave it describing something that is no longer so.
+
 `docs/spec.md` is how it is built and what is fixed. `docs/original-prompt.md` is the human's own words (highest
 authority); `docs/decisions.md` records every departure from them. `docs/research/` holds facts with provenance:
 re-check them only by running things, not by re-researching.
@@ -29,4 +36,6 @@ re-check them only by running things, not by re-researching.
 
 Usage matters to the human: do not redo research, do not re-read large docs, build and check by running. Windows first:
 `cmd`/PowerShell/Git Bash, CRLF files exist, paths have spaces, `taskkill /T /F` to stop a process tree. Finish with an
-honest report: what works (with the commands you ran), what does not, what you skipped, what you deleted.
+honest report: what works (with the commands you ran), what does not, what you skipped, what you deleted. Before that
+report, update `WHAT-IS-WHERE.md` (sections 2 to 6 for files and features, 12 for the version log, 13 and 14 for the
+state and the human's to-do list, 15 for limits, 16 for facts learned, 17 for the requests table).
