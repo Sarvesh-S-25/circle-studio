@@ -98,6 +98,40 @@ test('writing the workflow: the hook goes in, the project\'s own settings stay, 
   }
 });
 
+test('writing only the helpers: hand-written agent files keep their text; the reader is one paragraph in and out', async () => {
+  const s = await startServer();
+  const root = makeMiniProject();
+  try {
+    fs.mkdirSync(path.join(root, '.claude', 'agents'), { recursive: true });
+    const own = '---\r\nname: tester\r\ndescription: Tests.\r\ntools: Read, Bash\r\n---\r\n\r\nMy own long instructions.\r\nKeep them.\r\n';
+    const agentFile = path.join(root, '.claude', 'agents', 'tester.md');
+    fs.writeFileSync(agentFile, own);
+    const id = (await s.call('POST', '/api/projects', { path: root, permissions: ALL })).json.project.id;
+    const wf = (extra) => ({ nodes: [{ id: 'you', kind: 'human', title: 'You' }, { id: 'build', kind: 'stage', title: 'Build' }, { id: 'tester', kind: 'agent', title: 'Tester', parent: 'build', engine: 'claude', ...extra }], edges: [{ from: 'you', to: 'build' }] });
+    const write = async (extra) => {
+      await s.call('PUT', `/api/projects/${id}/workflow`, { workflow: wf(extra), note: 't' });
+      const p = (await s.call('POST', '/api/changes/preview', { projectId: id, ops: [{ op: 'helpers-write' }] })).json;
+      if (p.id) assert.equal((await s.call('POST', '/api/changes/apply', { id: p.id })).status, 200);
+      return p;
+    };
+    const p = await write({ condense: 60 });
+    assert.deepEqual(p.files.map((f) => f.path).sort(), ['.claude/hooks/circle-condense.json', '.claude/hooks/circle-condense.mjs', '.claude/settings.json']);
+    assert.equal(fs.readFileSync(agentFile, 'utf8'), own, 'the agent file is not touched');
+    assert.ok(!fs.existsSync(path.join(root, 'workflow.json')) && !fs.existsSync(path.join(root, 'AGENTS.md')), 'nothing else is written');
+    await write({ reader: true });
+    const withReader = fs.readFileSync(agentFile, 'utf8');
+    assert.ok(withReader.startsWith(own.trimEnd()) && /Haiku\) with what you need/.test(withReader), 'one paragraph added at the end');
+    assert.ok(!withReader.replace(/\r\n/g, '').includes('\n'), 'the file keeps its CRLF line ends');
+    assert.ok(fs.existsSync(path.join(root, '.claude', 'agents', 'reader.md')), 'the reader agent is created');
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root, '.claude', 'settings.json'), 'utf8')).hooks.PostToolUse, [], 'condensing off: our hook is out');
+    await write({});
+    assert.equal(fs.readFileSync(agentFile, 'utf8'), own, 'reader off: the file is exactly as it was');
+  } finally {
+    await s.close();
+    rmDir(root);
+  }
+});
+
 test('the one door into .claude/hooks/: only the shipped script, only names and percentages', async () => {
   const { checkCondenseWrite } = await import('../../backend/lib/condenseguard.mjs');
   const { isWritable } = await import('../../backend/lib/paths.mjs');

@@ -6,9 +6,11 @@ import { pref, setPref, state, subscribe } from '../state.js';
 import { openModal, toast } from './overlay.js';
 
 /** Change this id when there is something new to tell. */
-export const RELEASE = '2026-10-04-helpers-patterns';
+export const RELEASE = '2026-10-05-notifications';
 
 const CHANGES = [
+  ['bell', 'Notifications, Running now, and small tiles',
+    'Widgets, Edit tiles, Add: Notifications keeps what Circle Studio told you (an agent asking, a long run finished or failed, a team question, an update, a broken connection), even while a window was open; tap one to go there, or Mark all read. Running now shows what works right now in every project, and for how long. Every tile now also comes small. In Workflow, an agent\'s Helper has "Write only the helper files": it adds the Haiku helper without rewriting your agent files.'],
   ['library', 'Helpers on the graph, and Patterns to explore',
     'An agent\'s Haiku reader now shows beside it on the graph (dashed: it works inside that agent\'s turn). Choose "when it decides" or "automatically above" a context limit: then long command output, pages and searches are shortened by Haiku once its context is that full, with the full output kept in a file. Workflow, Patterns: ways to shape the team with when they pay off and when not, which fit your agents and why (from what each really used), and Try on an agent, unsaved, with Undo. The Cost tab shows what condensing saved.'],
   ['chat', 'A Chat widget, and widgets you can switch and lock',
@@ -21,8 +23,6 @@ const CHANGES = [
     'In the Workflow helper, "Find skills" works out what your agents lack, searches GitHub, and suggests a few skills with what each does and which agent it is for. Tick the ones you want: they go to your library and to their agents. Paste a GitHub link and it shows what is in it.'],
   ['widgets', 'One window, and Widgets in the menu',
     'Opening Circle Studio while it is already open brings that window to the front instead of opening another one; the same goes for the widget board and each project\'s widget, and for clicks on the desktop widgets. Widgets now has its own page in the menu, below Connections: choose and arrange your tiles there, and put them on the desktop or take them off.'],
-  ['link', 'Connections fix themselves',
-    'Connections, Manager: every connector grouped across your projects, with what is broken, copied over and over, set up for folders that are gone, or keeping a key in plain text, and a button that fixes each one. "Fix it for me" repeats a working setup; "Make it one shared server" replaces the copies; pasting a key saves it in your Windows environment so no file holds it. Every fix shows its steps first, backs up Claude Code\'s config, puts it back if a step fails, and tests the server afterwards. Circle Studio also checks every few hours and tells you when a connection breaks.'],
 ];
 
 export function openWhatsNew() {

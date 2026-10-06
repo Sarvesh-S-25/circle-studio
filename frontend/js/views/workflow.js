@@ -149,7 +149,7 @@ export async function mount(el, pctx) {
     panel?.destroy();
     if (helper) { helper.destroy(); helper = null; helperBtn.setAttribute('aria-pressed', 'false'); }
     closePatterns();
-    panel = openNodePanel(pctx.side, { node: graph.getWorkflow().nodes.find((x) => x.id === n.id), workflow: () => graph.getWorkflow(), graph, project, focus });
+    panel = openNodePanel(pctx.side, { node: graph.getWorkflow().nodes.find((x) => x.id === n.id), workflow: () => graph.getWorkflow(), graph, project, focus, writeHelpers });
   }
 
   graph = mountGraph(graphHost, {
@@ -219,6 +219,13 @@ export async function mount(el, pctx) {
     const has = pctx.team?.roster?.humanDoesGit === true;
     if (pctx.team?.roster && record.workflow.flags.humanDoesGit !== has) ops.push({ op: 'human-git', value: record.workflow.flags.humanDoesGit });
     const r = await reviewChanges({ projectId: project.id, ops, title: 'Write the brief, the workflow and the config files', applyLabel: 'Write files' });
+    if (r) pctx.reload();
+  }
+
+  /** Only the helper files (the condense hook and its settings entry, the reader): the agent files keep their own text. */
+  async function writeHelpers() {
+    if (dirty) { saveDialog(); toast('Save a version first, then write the helper files.', { kind: 'info' }); return; }
+    const r = await reviewChanges({ projectId: project.id, ops: [{ op: 'helpers-write' }], title: 'Write only the helper files', applyLabel: 'Write files' });
     if (r) pctx.reload();
   }
 

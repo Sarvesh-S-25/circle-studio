@@ -53,8 +53,10 @@ export function buildEngineHandlers(app) {
       const forget = key && /^[a-z]+(:[A-Za-z0-9_-]{0,60}){0,3}$/.test(key) ? app.addWindow(key, (name, data) => stream.send(name, data)) : () => {};
       for (const r of inbox.list({ status: 'pending' }).reverse()) stream.send('request', r);
       const off = sessions.subscribe((name, data) => stream.send(name, data));
+      const offNotice = app.notices ? app.notices.subscribe((n) => stream.send('notice', n)) : () => {};
       await new Promise((resolve) => { if (signal.aborted) resolve(); else signal.addEventListener('abort', resolve, { once: true }); });
       off();
+      offNotice();
       forget();
       app.viewers.count = Math.max(0, app.viewers.count - 1);
       stream.end();

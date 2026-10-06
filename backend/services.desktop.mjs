@@ -8,12 +8,15 @@ import { parseAlerts } from './lib/alerts.mjs';
 import { checkUpdate } from './lib/updater.mjs';
 import { listServers } from './lib/connections.mjs';
 import { analyze } from './lib/mcpmanage.mjs';
+import { Notices } from './lib/notices.mjs';
 
 const ALERT_POLL_MS = 30_000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function createDesktopServices({ config, store, projects, sessions, overrides = {} }) {
   const settings = new Settings(store);
+  // every notice is kept for the Notifications tile; the Windows toast is extra, only when no window is open
+  const notices = overrides.notices || new Notices(store);
   // Tests never pop real notifications.
   const toast = overrides.toast || (process.env.NODE_TEST_CONTEXT ? () => false : windowsToast);
   const viewers = { count: 0 };
@@ -33,10 +36,25 @@ export function createDesktopServices({ config, store, projects, sessions, overr
 
   const quiet = () => viewers.count > 0 || settings.get().desktopAlerts === false;
 
+  // runs that took a while (or failed) are worth a notice; a quick chat answer you watched is not
+  const runStarts = new Map();
+  const LONG_RUN_MS = 20_000;
   sessions.subscribe((name, data) => {
-    if (name !== 'request' || quiet()) return;
+    if (name === 'run') {
+      if (data.status === 'active') { if (!runStarts.has(data.runId)) runStarts.set(data.runId, Date.now()); return; }
+      if (!['done', 'error', 'idle'].includes(data.status)) return; // waiting for you: still the same run
+      const started = runStarts.get(data.runId);
+      runStarts.delete(data.runId);
+      const who = `${nameOf(data.projectId)}: ${data.nodeId && data.nodeId !== 'main' ? data.nodeId : 'the chat'}`;
+      if (data.status === 'error') notices.add({ kind: 'error', title: `${who} stopped with an error`, projectId: data.projectId, url: `#/projects/${data.projectId}/chat` });
+      else if (data.status === 'done' && started && Date.now() - started >= LONG_RUN_MS) notices.add({ kind: 'done', title: `${who} finished`, body: `after ${Math.round((Date.now() - started) / 1000)} s`, projectId: data.projectId, url: `#/projects/${data.projectId}/chat` });
+      return;
+    }
+    if (name !== 'request') return;
     const who = data.kind === 'question' ? 'has a question' : 'asks to go ahead';
-    toast({ title: `${nameOf(data.projectId)}: ${data.nodeId || 'the agent'} ${who}`, body: data.title || 'Open Circle Studio to answer.', url: `${base()}/#/inbox` });
+    const title = `${nameOf(data.projectId)}: ${data.nodeId || 'the agent'} ${who}`;
+    notices.add({ kind: data.kind === 'question' ? 'question' : 'approval', title, body: data.title || '', projectId: data.projectId, url: '#/inbox' });
+    if (!quiet()) toast({ title, body: data.title || 'Open Circle Studio to answer.', url: `${base()}/#/inbox` });
   });
 
   let known = null;
@@ -44,8 +62,12 @@ export function createDesktopServices({ config, store, projects, sessions, overr
     let open;
     try { open = listAlerts('open'); } catch { return; }
     const keys = new Set(open.map((a) => `${a.projectId}:${a.id}`));
-    if (known && !quiet()) {
-      for (const a of open) if (!known.has(`${a.projectId}:${a.id}`)) toast({ title: `${a.projectName}: your team has a question`, body: a.title || 'Open Circle Studio to answer.', url: `${base()}/#/inbox` });
+    if (known) {
+      for (const a of open) {
+        if (known.has(`${a.projectId}:${a.id}`)) continue;
+        notices.add({ kind: 'team', title: `${a.projectName}: your team has a question`, body: a.title || '', projectId: a.projectId, url: '#/inbox' });
+        if (!quiet()) toast({ title: `${a.projectName}: your team has a question`, body: a.title || 'Open Circle Studio to answer.', url: `${base()}/#/inbox` });
+      }
     }
     known = keys;
   }
@@ -61,7 +83,9 @@ export function createDesktopServices({ config, store, projects, sessions, overr
       if (!force && this.last && Date.now() - Date.parse(this.last.at) < DAY_MS) return this.last;
       this.checking ||= (async () => {
         try {
+          const before = settings.get().updates?.available === true;
           this.last = await (overrides.checkUpdate || checkUpdate)(config.appRoot);
+          if (this.last.available && !before) notices.add({ kind: 'update', title: 'An update for Circle Studio is ready', body: (this.last.changes || []).slice(0, 2).join('; '), url: '#/settings' });
           await settings.set({ updates: { ...settings.get().updates, lastCheck: this.last.at, available: this.last.available === true } });
           if (this.last.available && viewers.count === 0 && settings.get().desktopAlerts !== false) toast({ title: 'Circle Studio: an update is ready', body: 'Open Circle Studio and press Update in Settings.', url: `${base()}/#/settings` });
           return this.last;
@@ -85,6 +109,7 @@ export function createDesktopServices({ config, store, projects, sessions, overr
     const before = new Set(settings.get().connectionsBroken || []);
     const fresh = broken.filter((b) => !before.has(b.id));
     await settings.set({ connectionsBroken: broken.map((b) => b.id) });
+    for (const b of fresh) notices.add({ kind: 'connection', title: `Connection "${b.name}" stopped working`, body: b.title, url: '#/connections' });
     for (const b of fresh) if (settings.get().desktopAlerts !== false) toast({ title: `Connection "${b.name}" stopped working`, body: `${b.title}.${b.canFix ? ' Circle Studio can fix it for you.' : ' Open Keys, Everything on this PC, to see why.'}`, url: `${base()}/#/connections` });
     return fresh;
   }
@@ -141,5 +166,5 @@ export function createDesktopServices({ config, store, projects, sessions, overr
     return { shown: 'new', appWindow: open(url, size) };
   }
 
-  return { settings, viewers, listAlerts, pollAlerts, updates, watchConnections, addWindow, showWindow, openWindows: () => [...windows.keys()], stopDesktop: () => { clearInterval(timer); clearInterval(updTimer); clearTimeout(first); clearInterval(cxTimer); clearTimeout(cxFirst); } };
+  return { settings, notices, viewers, listAlerts, pollAlerts, updates, watchConnections, addWindow, showWindow, openWindows: () => [...windows.keys()], stopDesktop: () => { clearInterval(timer); clearInterval(updTimer); clearTimeout(first); clearInterval(cxTimer); clearTimeout(cxFirst); } };
 }

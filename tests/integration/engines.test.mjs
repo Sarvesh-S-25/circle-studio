@@ -66,6 +66,41 @@ test('codex over app-server: approvals are answered accept or decline, usage car
   assert.equal((await turn(codex(), () => ({ decision: 'allow' }), { sessionId: 'thr-9' })).outcome.sessionId, 'thr-9');
 });
 
+test('codex file change: the paths and diff from item/started reach the request, not "unknown files"', async () => {
+  process.env.FAKE_CODEX_FILES = 'src/a.js,src/b.js';
+  try {
+    const r = await turn(codex(), () => ({ decision: 'allow' }), { prompt: 'edit them' });
+    const req = r.asked[0];
+    assert.equal(req.tool, 'Edit');
+    assert.deepEqual(req.input.files, ['src/a.js', 'src/b.js']);
+    assert.equal(req.input.unknownPath, undefined);
+    assert.match(req.input.diff, /\+new src\/b\.js/);
+    assert.equal(r.text, 'Edited.');
+    assert.equal((await turn(codex(), () => ({ decision: 'deny' }), { prompt: 'edit them' })).text, 'Not edited.');
+  } finally { delete process.env.FAKE_CODEX_FILES; }
+});
+
+test('codex questions: answers go back keyed by question id; a secret question is never relayed', async () => {
+  const r = await turn(codex(), (req) => ({ decision: 'allow', answers: { [req.input.questions[0].question]: 'Blue' } }), { prompt: 'ask me' });
+  assert.deepEqual(r.asked[0].input.questions[0].options.map((o) => o.label), ['Red', 'Blue']);
+  assert.equal(r.text, 'Got {"q1":{"answers":["Blue"]}}');
+  process.env.FAKE_CODEX_SECRET = '1';
+  try {
+    const s = await turn(codex(), () => { throw new Error('must not ask'); }, { prompt: 'ask me' });
+    assert.equal(s.asked.length, 0);
+    assert.equal(s.text, 'Got {}');
+    assert.ok(s.events.some((e) => e[0] === 'notice' && /secret/.test(e[1].message)));
+  } finally { delete process.env.FAKE_CODEX_SECRET; }
+});
+
+test('codex signed out mid-turn: the first 401 ends the turn with a sign-in hint, not a minute of retries', async () => {
+  const t0 = Date.now();
+  const r = await turn(codex(), () => ({ decision: 'allow' }), { prompt: 'signed out' });
+  assert.equal(r.outcome.status, 'error');
+  assert.match(r.events.find((e) => e[0] === 'error')[1].message, /codex login/);
+  assert.ok(Date.now() - t0 < 10_000);
+});
+
 test('codex detection: signed in, signed out, missing', async () => {
   assert.deepEqual(await codex().detect().then((d) => [d.installed, d.loggedIn]), [true, true]);
   process.env.FAKE_ENGINE_LOGGEDOUT = '1';

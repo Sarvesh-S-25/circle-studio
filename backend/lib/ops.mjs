@@ -12,7 +12,7 @@ import { scanSecrets } from './secrets.mjs';
 import { P, TIERS, ENGINES, parseJson, roleEntry, readProjectText } from './team.mjs';
 import { buildBrief, rosterFromWorkflow } from './plan.mjs';
 import { ENGINE_IDS } from './workflow.mjs';
-import { renderProject, skillTargets, GEMINI_SKILLS_NOTE, CONDENSE, condenseHookEntry, condenseConfigText } from './render.mjs';
+import { renderProject, skillTargets, GEMINI_SKILLS_NOTE, CONDENSE, condenseHookEntry, condenseConfigText, condenseAgents, readerText, READER_ID } from './render.mjs';
 import { GI_START, GI_END } from './gitblock.mjs';
 import { answerAlertText } from './alerts.mjs';
 
@@ -634,6 +634,43 @@ function opWorkflowWrite(ws, op, env) {
   }
 }
 
+/**
+ * Only the helpers: the condense hook (script, its config, the one entry in .claude/settings.json) and, for agents with
+ * a Haiku reader, the reader agent and one paragraph added to (or taken out of) each agent file. Every other line of
+ * the project, and the hand-written text of the agent files, stays as it is. workflow-write rewrites all of that.
+ */
+function opHelpersWrite(ws, op, env) {
+  const workflow = env.ctx.getWorkflow(env.projectId);
+  const claude = (workflow.nodes || []).filter((n) => n.kind === 'agent' && (n.engine || 'claude') === 'claude');
+  const rendered = () => renderProject({
+    name: path.basename(env.root), idea: '', workflow, plan: env.ctx.getPlan(env.projectId),
+    library: { files: env.ctx.libraryFiles, enginesFor: env.ctx.skillEngines }, brief: false, claudeMd: false,
+  }).files;
+  const condensing = Object.keys(condenseAgents(workflow)).length > 0;
+  syncCondenseHook(ws, condensing);
+  if (condensing) {
+    for (const f of rendered()) if (f.path === CONDENSE.script || f.path === CONDENSE.config) ws.write(f.path, f.content);
+  } else if (ws.read(CONDENSE.config) != null) ws.write(CONDENSE.config, condenseConfigText({ nodes: [] }));
+  // the reader: one paragraph at the end of each agent file that uses it, never a rewrite of the file
+  const paragraph = readerText({ reader: true });
+  let missing = 0;
+  for (const a of claude) {
+    const rel = `${P.agentsDir}/${a.id}.md`;
+    const cur = ws.read(rel);
+    if (cur == null) { if (a.reader) missing++; continue; }
+    const eol = detectEol(cur);
+    const has = cur.includes(paragraph);
+    if (a.reader && !has) ws.write(rel, `${cur.trimEnd()}${eol}${eol}${paragraph}${eol}`);
+    if (!a.reader && has) ws.write(rel, `${cur.split(paragraph).map((p) => p.trim()).filter(Boolean).join(`${eol}${eol}`)}${eol}`);
+  }
+  const readerFile = `${P.agentsDir}/${READER_ID}.md`;
+  if (claude.some((a) => a.reader) && !claude.some((a) => a.id === READER_ID) && ws.read(readerFile) == null) {
+    const f = rendered().find((x) => x.path === readerFile);
+    if (f) ws.write(readerFile, f.content);
+  }
+  if (missing) env.warn(`${missing} agent${missing === 1 ? ' has' : 's have'} a Haiku reader but no agent file yet. Use Review and write files once to create ${missing === 1 ? 'it' : 'them'}.`);
+}
+
 /* ---- registry --------------------------------------------------------------------------------- */
 
 function opSyncAgents(ws, op, env) {
@@ -652,6 +689,7 @@ export const OPS = {
   'agent-install': opAgentInstall,
   'plan-write': opPlanWrite,
   'workflow-write': opWorkflowWrite,
+  'helpers-write': opHelpersWrite,
   'board-post': opBoardPost,
   'human-git': opHumanGit,
   'secrets-fix': opSecretsFix,

@@ -17,11 +17,11 @@ const CHECK_CHOICES = [
 const lines = (s) => s.split('\n').map((x) => x.trim()).filter(Boolean);
 
 /**
- * openNodePanel(side, { node, workflow, graph, project, tab, focus }) fills `side` for one node.
+ * openNodePanel(side, { node, workflow, graph, project, tab, focus, writeHelpers }) fills `side` for one node.
  * Changes go to graph.updateNode(id, patch), which redraws the graph and reports the new workflow to its owner.
  * focus: 'checkpoint' scrolls to and focuses the stage's checkpoint section.
  */
-export function openNodePanel(side, { node, workflow, graph, project, tab = 'settings', focus }) {
+export function openNodePanel(side, { node, workflow, graph, project, tab = 'settings', focus, writeHelpers }) {
   if (!node) { side.replaceChildren(); return { destroy() {} }; }
   let current = tab;
   let chat = null;
@@ -90,9 +90,11 @@ export function openNodePanel(side, { node, workflow, graph, project, tab = 'set
     if (mode === 'auto') {
       const out = h('output', { class: 'cs-mono' }, `${node.condense}%`);
       const range = h('input', { type: 'range', class: 'cs-range', min: 30, max: 95, step: 5, value: node.condense, 'aria-label': 'Context limit', oninput: (e) => { out.textContent = `${e.target.value}%`; patch({ condense: Number(e.target.value) }, { soon: true }); } });
-      limit = field('Start when its context is fuller than', h('div', { class: 'cs-row' }, range, out), 'Lower starts sooner (smaller context, more Haiku calls); higher keeps outputs whole for longer. 60% is a good start. Takes effect when you write the files (Review and write files), for this agent when your team runs in Claude Code. Circle Studio\'s own Chat keeps project hooks off for safety, so it does not condense there.');
+      limit = field('Start when its context is fuller than', h('div', { class: 'cs-row' }, range, out), 'Lower starts sooner (smaller context, more Haiku calls); higher keeps outputs whole for longer. 60% is a good start. Takes effect when you write the helper files (below), for this agent when your team runs in Claude Code. Circle Studio\'s own Chat keeps project hooks off for safety, so it does not condense there.');
     }
-    return h('fieldset', { class: 'cs-fieldset cs-npanel__check', id: 'npanel-helper', tabindex: '-1' }, h('legend', { class: 'cs-h3' }, 'Helper: Haiku reader'), radios, limit);
+    // writes the hook and the reader only; "Review and write files" would rewrite every agent file from the workflow
+    const write = writeHelpers ? h('div', { class: 'cs-row' }, h('button', { class: 'cs-btn cs-btn--small', type: 'button', onclick: () => writeHelpers() }, icon('diff', 's'), 'Write only the helper files')) : null;
+    return h('fieldset', { class: 'cs-fieldset cs-npanel__check', id: 'npanel-helper', tabindex: '-1' }, h('legend', { class: 'cs-h3' }, 'Helper: Haiku reader'), radios, limit, write);
   }
 
   function consultRow() {

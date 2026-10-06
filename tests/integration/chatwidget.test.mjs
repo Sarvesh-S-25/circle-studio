@@ -39,8 +39,9 @@ test('chat widget: main chat, agents\' chats, one at a time; switching saves jus
     assert.deepEqual(reviewer.messages.map((m) => m.text), ['Review the cart', 'Two issues found.']);
     assert.equal((await s.call('GET', `/api/widgets/chat?projectId=${id}&nodeId=node:gone`)).json.selected, 'main', 'an unknown chat falls back to the main one');
 
-    // tiles: a chat tile comes in medium or large; switching saves only that tile
-    assert.equal((await s.call('PUT', '/api/settings', { widgets: [{ kind: 'chat', size: 's' }] })).status, 400);
+    // tiles: a chat tile comes in every size (small shows the last message); switching saves only that tile
+    assert.equal((await s.call('PUT', '/api/settings', { widgets: [{ kind: 'chat', size: 's' }] })).status, 200);
+    assert.equal((await s.call('PUT', '/api/settings', { widgets: [{ kind: 'chat', size: 'xl' }] })).status, 400);
     await s.call('PUT', '/api/settings', { widgets: [{ kind: 'spend', size: 'm' }, { kind: 'chat', size: 'm', projectId: id }] });
     assert.equal((await s.call('POST', '/api/widgets/pick', { index: 1, nodeId: 'node:reviewer' })).json.widget.nodeId, 'node:reviewer');
     assert.equal((await s.call('POST', '/api/widgets/pick', { index: 0, nodeId: 'main' })).status, 400, 'only the chat tile switches chats');

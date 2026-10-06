@@ -43,6 +43,10 @@ function workflowTile(t, ctx) {
   const wf = pu.workflow;
   if (!wf || !wf.stages.length) return { title: pu.project.name, empty: 'No workflow yet.', url: `#/projects/${pu.project.id}/workflow` };
   const cur = wf.stages.find((s) => s.state === 'waiting' || s.state === 'working');
+  if (t.size === 's') {
+    const done = wf.stages.filter((s) => s.state === 'done').length;
+    return { title: pu.project.name, big: `${done}/${wf.stages.length}`, bigState: cur?.state === 'waiting' ? 'waiting' : 'idle', sub: cur ? `${cur.title}: ${STATE_WORD[cur.state].toLowerCase()}` : 'stages done', url: `#/projects/${pu.project.id}/workflow` };
+  }
   return {
     title: pu.project.name,
     steps: wf.stages.slice(0, t.size === 'l' ? 8 : 6).map((s, i) => ({ n: i + 1, label: s.title, state: s.state })),
@@ -72,6 +76,11 @@ function projectTile(t, ctx) {
   if (!pu) return { title: 'Project', empty: 'No project yet.' };
   const agents = pu.agents || [];
   const g = pu.repo;
+  if (t.size === 's') {
+    const waiting = agents.filter((a) => a.state === 'waiting').length;
+    const working = agents.filter((a) => a.state === 'working').length;
+    return { title: pu.project.name, big: String(waiting || working), bigState: waiting ? 'waiting' : 'idle', sub: waiting ? 'waiting for you' : working ? 'working' : g?.isRepo ? [g.branch, g.changed ? `${g.changed} changed` : ''].filter(Boolean).join(' · ') : 'all quiet', url: `#/projects/${pu.project.id}/workflow` };
+  }
   return {
     title: pu.project.name,
     stats: ['working', 'waiting', 'done'].map((s) => ({ n: agents.filter((a) => a.state === s).length, label: STATE_WORD[s].toLowerCase(), state: s })),
@@ -84,6 +93,12 @@ function projectTile(t, ctx) {
 function overviewTile(t, ctx) {
   const s = ctx.stats;
   if (!s) return { title: 'Projects', empty: 'Loading...' };
+  if (t.size === 's') {
+    const live = s.projects.filter((p) => p.exists);
+    const waiting = live.filter((p) => ctx.pending.some((r) => r.projectId === p.id) || ctx.alerts.some((a) => a.projectId === p.id)).length;
+    const working = live.filter((p) => s.running.some((r) => r.projectId === p.id) || p.activity?.live).length;
+    return { title: 'Projects', big: String(live.length), bigState: waiting ? 'waiting' : 'idle', sub: [working ? `${working} working` : '', waiting ? `${waiting} waiting` : ''].filter(Boolean).join(' · ') || 'all quiet', url: '#/' };
+  }
   return {
     title: plural(s.totals.projects, 'project'),
     items: s.projects.filter((p) => p.exists).slice(0, t.size === 'm' ? 3 : 8).map((p) => {
@@ -100,6 +115,10 @@ function chatTile(t, ctx) {
   const c = ctx.chatAt(t);
   if (!c) return { title: 'Chat', empty: 'No project yet.' };
   const name = c.project?.name || 'Chat';
+  if (t.size === 's') {
+    const last = (c.messages || []).at(-1);
+    return { title: name, sub: last ? `${last.who}: ${last.text}` : c.empty || 'Nothing said yet.', empty: null, url: c.project ? `#/projects/${c.project.id}/chat` : '#/' };
+  }
   return {
     title: name,
     chat: { selected: c.selected, threads: (c.threads || []).map((x) => ({ id: x.id, label: x.label, on: x.id === c.selected })), messages: c.messages || [], heading: c.title || null },
@@ -108,15 +127,47 @@ function chatTile(t, ctx) {
   };
 }
 
-const BUILD = { status: statusTile, spend: spendTile, workflow: workflowTile, inbox: inboxTile, project: projectTile, overview: overviewTile, chat: chatTile };
+const NOTICE_STATE = { question: 'waiting', approval: 'waiting', team: 'waiting', done: 'done', error: 'danger', update: 'working', connection: 'danger' };
+const ago = (iso, now) => { const m = Math.max(0, Math.round((now - Date.parse(iso)) / 60_000)); return m < 1 ? 'now' : m < 60 ? `${m} min` : m < 1440 ? `${Math.round(m / 60)} h` : `${Math.round(m / 1440)} d`; };
+
+/** What Circle Studio told you lately (lib/notices.mjs): unread ones first in the count, newest first in the list. */
+function noticesTile(t, ctx) {
+  const { notices = [], unread = 0 } = ctx.notices || {};
+  const now = ctx.now();
+  if (t.size === 's') return { title: 'Notifications', big: String(unread), bigState: unread ? 'waiting' : 'idle', sub: notices[0]?.title || 'Nothing new.', url: notices[0]?.url || '#/' };
+  return {
+    title: unread ? `Notifications · ${unread} new` : 'Notifications',
+    items: notices.slice(0, t.size === 'm' ? 2 : 6).map((n) => ({ title: n.title, sub: [ago(n.at, now), n.body].filter(Boolean).join(' · '), state: n.read ? 'idle' : NOTICE_STATE[n.kind] })),
+    empty: notices.length ? null : 'Nothing yet. When an agent asks, finishes a long run or fails, it shows here.',
+    url: notices[0]?.url || '#/',
+  };
+}
+
+/** What works right now, in every project: chats in Circle Studio and Claude Code teams that are active. */
+function runningTile(t, ctx) {
+  const s = ctx.stats;
+  if (!s) return { title: 'Running now', empty: 'Loading...' };
+  const now = ctx.now();
+  const runs = s.running.slice().sort((a, b) => Date.parse(a.startedAt || 0) - Date.parse(b.startedAt || 0));
+  const label = (r) => (r.source === 'team' ? `${r.name}: ${r.agent || 'team'}` : `${r.name}: ${r.kind === 'chat' ? 'chat' : r.kind || 'run'}`);
+  if (t.size === 's') return { title: 'Running now', big: String(runs.length), bigState: 'idle', sub: runs[0] ? label(runs[0]) : 'Nothing is running.', url: runs[0]?.projectId ? `#/projects/${runs[0].projectId}/workflow` : '#/' };
+  return {
+    title: runs.length ? `Running now · ${runs.length}` : 'Running now',
+    items: runs.slice(0, t.size === 'm' ? 2 : 6).map((r) => ({ title: label(r), sub: [r.startedAt ? (ago(r.startedAt, now) === 'now' ? 'just started' : `for ${ago(r.startedAt, now)}`) : '', r.what || ''].filter(Boolean).join(' · '), state: 'working' })),
+    empty: runs.length ? null : 'Nothing is running.',
+    url: '#/',
+  };
+}
+
+const BUILD = { running: runningTile, status: statusTile, spend: spendTile, workflow: workflowTile, inbox: inboxTile, project: projectTile, overview: overviewTile, chat: chatTile, notices: noticesTile };
 const PROJECT_KINDS = new Set(['status', 'workflow', 'project', 'chat']);
 
 /**
  * The tiles that are shown on the desktop. Each has a key for its saved place that stays the same when the tile is
  * switched to another project, its index on the board (to switch it), and for project tiles the project it shows.
  */
-export function buildFeed({ tiles, pulseOf, usage, stats, pending, alerts, nameOf, palette, defaultProject, chats = new Map(), projects = [], locked = false }) {
-  const ctx = { pulseOf: (id) => pulseOf(id || defaultProject), usage, stats, pending, alerts, nameOf, chatAt: (t) => chats.get(tiles.indexOf(t)) || null };
+export function buildFeed({ tiles, pulseOf, usage, stats, pending, alerts, nameOf, palette, defaultProject, chats = new Map(), projects = [], locked = false, notices = null, now = Date.now() }) {
+  const ctx = { pulseOf: (id) => pulseOf(id || defaultProject), usage, stats, pending, alerts, nameOf, chatAt: (t) => chats.get(tiles.indexOf(t)) || null, notices, now: () => now };
   const seen = new Map();
   const out = [];
   tiles.forEach((t, index) => {

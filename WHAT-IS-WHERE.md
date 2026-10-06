@@ -1,6 +1,6 @@
 # Circle Studio: what is built, and where it is
 
-A map of everything in this folder, written 2026-10-04 (version 13). For *how* it is built and what is fixed, see
+A map of everything in this folder, written 2026-10-04, kept up to 2026-10-05 (version 14). For *how* it is built and what is fixed, see
 `docs/spec.md`; for why things changed from the original request, `docs/decisions.md`; for install and commands,
 `README.md`.
 
@@ -8,7 +8,7 @@ A map of everything in this folder, written 2026-10-04 (version 13). For *how* i
 step, served on `http://127.0.0.1:4380`. It runs Claude Code, Codex, Gemini (`agy`) and GitHub Copilot through your own
 sign-ins, never an API key.
 
-About 25,000 lines across `backend/`, `frontend/`, `scripts/` and `tests/`. 255 tests: 252 pass, 3 skip (they need an
+About 25,000 lines across `backend/`, `frontend/`, `scripts/` and `tests/`. 263 tests: 260 pass, 3 skip (they need an
 optional reference folder).
 
 ---
@@ -32,6 +32,7 @@ optional reference folder).
 | `CLAUDE.md` | The rules for whoever (human or AI) works on the code |
 | `trail.md` | An old test log from an earlier team; safe to delete (`git rm trail.md`) |
 | `.playwright-mcp/` | Leftover browser-check logs from building; ignored by git, safe to delete |
+| `Desktopcircle-studio-site` (a separate folder, not in this repository) | The public website for Vercel, with the Download button. Static HTML, uses a copy of `tokens.css`. Its own `README.md` says how to deploy |
 
 ---
 
@@ -65,6 +66,7 @@ Each row: what you see, the screen file, the backend files, and the tests that c
 | **Workflow helper** (proposes a workflow) | `graph/helper.js` | `lib/helper.mjs`, `lib/digest.mjs`, `lib/catalog.mjs` | `unit/helper.test.mjs` |
 | Find skills on GitHub (you approve) | `graph/helper.js` | `lib/skillfind.mjs`, `lib/github.mjs`, `lib/ghcli.mjs` | `integration/tools.test.mjs` |
 | **Helpers beside agents** (dashed node: Haiku reader, "when it decides" or "auto above N%") | `graph/index.js` (`helperEl`), `graph/layout.js` (`helperBox`), `graph/nodepanel.js` (`helperSection`) | `lib/workflow.mjs` (`reader`, `condense`), `lib/render.mjs` | `integration/helpers.test.mjs` |
+| **Write only the helper files** (no agent file rewritten) | `graph/nodepanel.js` (Helper section), `views/workflow.js` (`writeHelpers`) | `lib/ops.mjs` (`helpers-write`) | `integration/helpers.test.mjs` |
 | **Automatic condensing** (hook) | same as above | `seed/hooks/circle-condense.mjs`, `lib/render.mjs` (`condenseHookEntry`), `lib/ops.mjs` (`syncCondenseHook`), `lib/condenseguard.mjs` | `integration/helpers.test.mjs`, `helpers/fake-haiku.mjs` |
 | **Patterns panel** (what fits your agents, Try on, Undo) | `graph/patterns.js` | `lib/patterns.mjs`, `seed/patterns.json` | `integration/helpers.test.mjs` |
 
@@ -133,6 +135,7 @@ Each row: what you see, the screen file, the backend files, and the tests that c
 | Widgets page (choose and arrange tiles) | `js/views/widgets.js`, `components/board.js`, `components/tiles.js`, `css/tiles.css` | `lib/feed.mjs` | `integration/v7.test.mjs` |
 | A project's widget window | `frontend/widget.html`, `js/widget.js`, `css/widget.css` | `projects.pulse` route | `integration/desktop.test.mjs` |
 | Chat widget (main chat and agents' chats) | `components/tiles.js` | `lib/chatfeed.mjs` | `integration/chatwidget.test.mjs` |
+| Notifications (kept, live, marked read) and Running now tiles; every tile small, medium or large | `components/tiles.js`, `components/board.js`, `components/requests.js` (`notice` event), `css/tiles.css`, `icons.js` (`bell`) | `lib/notices.mjs`, `services.desktop.mjs` (records each event), `lib/feed.mjs` (`noticesTile`, `runningTile`, small variants), `notices.list/read` | `integration/notices.test.mjs` |
 | Real desktop widgets (rounded, draggable, lock in place, switch project) | | `scripts/widgets/desktop-widgets.ps1`, `scripts/widgets/start-widgets.vbs`, `lib/deskhost.mjs`, `lib/palette.mjs` | `integration/chatwidget.test.mjs` |
 | One window per thing (reopening brings it forward) | | `services.desktop.mjs`, `lib/desktop.mjs`, `scripts/launch.mjs` | `integration/windows.test.mjs` |
 
@@ -206,6 +209,7 @@ Each row: what you see, the screen file, the backend files, and the tests that c
 | `plan.mjs`, `records.mjs` | Plan, brief, chat transcripts |
 | `health.mjs` | Health checks in plain words |
 | `alerts.mjs` | `docs/tasks/ALERTS.md` questions |
+| `notices.mjs` | Notifications kept for the tiles: the newest 60, redacted, in `data/notices.json` |
 | `frontmatter.mjs` | YAML front matter of agents and skills |
 | `gitblock.mjs` | The managed block in a project's `.gitignore` |
 
@@ -318,7 +322,7 @@ Each row: what you see, the screen file, the backend files, and the tests that c
 |---|---|
 | `unit/` | Pure logic: policy, workflow, layout, render, cost, health, helper, semver, templates, frontmatter, design rules, and `frontend-syntax.test.mjs` (parses every browser module) |
 | `contract/routes.test.mjs` | Every route in `contracts/api.json` has a handler and every frontend call matches |
-| `integration/` | The real server on a private port with temp data: api, workflow, ops, chat, engines, history, guide, alerts, desktop, windows, installer, launcher, updater, security, tools, chatwidget, helpers, v6 / v7 / v8 |
+| `integration/` | The real server on a private port with temp data: api, workflow, ops, chat, engines, history, guide, alerts, desktop, windows, installer, launcher, updater, security, tools, chatwidget, helpers, notices, v6 / v7 / v8 |
 | `helpers/` | Fake CLIs (`fake-claude`, `fake-engines`, `fake-haiku`, `fake-mcp`), fake transcripts (`fake-history`), server and project helpers |
 | `fixtures/` | Recorded real Claude output and an old plan |
 | `live/claude-live.mjs` | Real Claude, three Haiku turns. Not part of `npm test` |
@@ -353,6 +357,7 @@ Run: `npm test` (all of it), `npm run contrast`.
 | `library/` | Your skills library |
 | `backups/` | Backups taken before every write (safe to clear) |
 | `desktop-widgets.*` | Desktop widget layout, process id, version |
+| `notices.json` | Your notifications (the newest 60; what the Notifications tile shows) |
 | `server.log` | Server log (secrets masked) |
 
 ---
@@ -388,7 +393,7 @@ Git is never written: you commit and push yourself.
 
 ---
 
-## 11. API routes (`contracts/api.json`, 85 routes)
+## 11. API routes (`contracts/api.json`, 87 routes)
 
 | Group | Routes |
 |---|---|
@@ -401,7 +406,7 @@ Git is never written: you commit and push yourself.
 | Skills | `skills.list/get/save/remove/use/scan/fetch`, `import.files` |
 | Catalog | `catalog.get/rebuild/describe/index` |
 | Connections and keys | `connections.list/check/test/fix/manage/plan/apply`, `security.scan`, `vault.list/set/remove/import`, `usage.providers` |
-| Desktop and widgets | `settings.get/save`, `desktop.shortcut/status/open/widgets`, `widgets.feed/chat/pick` |
+| Desktop and widgets | `settings.get/save`, `desktop.shortcut/status/open/widgets`, `widgets.feed/chat/pick`, `notices.list/read` |
 
 ---
 
@@ -422,33 +427,43 @@ Git is never written: you commit and push yourself.
 | v11 | 2026-10-02 | GitHub sign-in through `gh`, npm installs found, OpenClaw checked (cannot ask first, so not supported), security pass |
 | v12 | 2026-10-02 | Chat widget, switching and locking tiles, widgets that restart after updates |
 | v13 | 2026-10-04 | Helpers on the graph, automatic condensing, the pattern store and Patterns panel |
+| v14 | 2026-10-05 | Install check from GitHub, Codex matched to its real protocol, "Write only the helper files", Notifications and Running now tiles, small tiles |
 
 The full reasoning for each is in `docs/decisions.md`.
 
 ---
 
-## 13. Where things stand right now (2026-10-04)
+## 13. Where things stand right now (2026-10-05)
 
-**Code.** v13 is finished and tested: `npm test` gives 255 tests, 252 pass, 0 fail, 3 skipped (they need an optional
+**Code.** v14: `npm test` gives 263 tests, 260 pass, 0 fail, 3 skipped (they need an optional
 `Desktop\circle-studio` reference folder that is not on this PC). `npm run contrast` passes in both themes. A secret
 scan of the files to push found nothing real (4 known false positives, nothing over 2 MB). `package.json` says
 version `1.1.0`.
 
-**Git and GitHub (read 2026-10-04):**
+**Git and GitHub (read 2026-10-05 with `git fetch` and `git ls-remote`):**
 
 | What | State |
 |---|---|
 | Repository | `https://github.com/Sarvesh-S-25/circle-studio.git` (remote `origin`) |
-| Your local branch | `master`, the same as `origin/master` (last commit `6bccd58 Modified Widget Feature`, 2026-10-02: v9 to v12) |
-| GitHub's default branch | **`main`, which holds only `67bd8f2 Initial commit`**. Anyone who clones or downloads the ZIP today gets that, not the app. `master` is 5 commits ahead of `main` and 0 behind, so `main` can simply be moved forward |
-| Not committed yet | All of v13: 24 changed files and 8 new ones (`WHAT-IS-WHERE.md`, `condenseguard.mjs`, `patterns.mjs`, `seed/hooks/`, `seed/patterns.json`, `graph/patterns.js`, `fake-haiku.mjs`, `helpers.test.mjs`) |
+| Your local branch | `master`, the same as `origin/master`: `88bfe64 New features for smaller agents` (v13 is pushed to `master`) |
+| GitHub's default branch | **`main`, still at `88b4086`** (v12: no `patterns.mjs`, 241 tests). A stranger who clones, or uses the ZIP or the website's Download button, gets v12, not v13 |
+| `main` and `master` have split | `main` has 2 commits `master` lacks (the GitHub merge commits of pull requests #1 and #2, no file changes of their own); `master` has 4 that `main` lacks. So `git push origin master:main` alone is **refused** (not a fast-forward). Merging `origin/main` into `master` first is clean and changes no files (checked with `git merge-tree`). See the to-do list |
+| Not committed yet | All of v14 (2026-10-05): the Codex fixes (`engines/codex.mjs`, `policy.mjs`), `helpers-write` (`ops.mjs`, `nodepanel.js`, `workflow.js`), notifications and the new tiles (`notices.mjs` new, `services.desktop.mjs`, `routes.desktop.mjs`, `routes.engines.mjs`, `feed.mjs`, `tiles.js`, `board.js`, `requests.js`, `api.js`, `icons.js`, `tiles.css`, `contracts/api.json`), tests (`notices.test.mjs` new, `engines`, `helpers`, `chatwidget`, `policy`, `fake-engines`), `whatsnew.js`, `README.md`, `docs/decisions.md`, this file |
 | `trail.md` | Still in git; an old test log from an earlier team, not part of the app |
+
+**Stranger install check (2026-10-05).** Fresh clones of both branches were made in a temp folder whose path has a
+space, then deleted. Both pass `npm test` (`master`: 255 tests, 252 pass, 3 skip; `main`: 241, 238 pass, 3 skip).
+`Install Circle Studio.cmd`, both double-click style and the README's PowerShell line, with `CIRCLE_SHORTCUT_DIR`
+and a private port, made the Desktop and Start-menu shortcuts (pointing to `launch.vbs` in the clone, with the icon
+in its `data`) and started the server. The updater, on a copy moved back one commit, said **Update ready**, and on
+`master` **Update and restart** fast-forwarded it and restarted. Nothing in the app needed fixing. The only problem a
+newcomer hits is that `main` is behind.
 
 **On this PC:**
 
-- Your running Circle Studio (port 4380) still runs the code from before v13. Close its window and open it again from
-  the Desktop. It notices the newer code and restarts on it.
-- Your desktop widgets were restarted on the v12 code and restart on their own after updates.
+- Your running Circle Studio (port 4380) runs v14 (restarted in the background 2026-10-05; health says not stale). Your desktop widgets restart on their own; add Notifications or Running now on the Widgets page.
+- **sample-test has automatic condensing on for `qa` (above 60%)**, written 2026-10-05 after you approved the diff: `.claude/settings.json` (+12 lines, one PostToolUse entry), `.claude/hooks/circle-condense.mjs` and `.json`. Backup and Undo: `data\backups\sample_test\2026-10-05T16-59-38-938Z`. Its workflow is now v1.0.3 in Circle Studio.
+- Your desktop widgets restart on their own after updates.
 - `data\backups` holds 4 old copies of `~/.claude.json` from 2026-10-02. They contain **the plain-text keys** that the
   connection fixes later moved out. They are in the app's own data folder (never in git), but they are worth deleting.
 - In the `uml-analyzer` project, a hand-made copy of the `stitch` connection duplicates one a plugin already brings. The
@@ -456,19 +471,23 @@ version `1.1.0`.
 
 ## 14. Your to-do list
 
-1. **Reopen Circle Studio** so it runs v13.
-2. **Delete the old backups** (they hold plain-text keys): in PowerShell, from the app folder:
+1. **Delete the old backups** (they hold plain-text keys): in PowerShell, from the app folder:
    `Remove-Item -Recurse -Force data\backups`
-3. **Publish v13 and put the app on `main`** (from the app folder):
+2. **Put v13 on `main`** (this is what strangers get; today they get v12). From the app folder:
    ```
    npm test
    git rm trail.md
    git add -A
    git status                       (check: no data/ files, only what you mean to publish)
-   git commit -m "v13: helpers on the graph, automatic condensing, patterns"
+   git commit -m "Notes, remove old test log"
+   git fetch origin
+   git merge origin/main            (takes in GitHub's two pull-request merges; no files change)
    git push origin master
-   git push origin master:main      (moves GitHub's main forward to your work; no merge, nothing lost)
+   git push origin master:main      (now a fast-forward: main moves to your work, nothing lost)
    ```
+   Without the `git merge origin/main` line, the last push is refused, because `main` has those two merge commits.
+   Merging (not force-pushing) also matters for people who already cloned `main`: their copy can still fast-forward,
+   so their **Update ready** keeps working.
    Then choose one name and stick to it. To keep `main` (what the README and the ZIP link use):
    ```
    git branch -m master main
@@ -477,16 +496,27 @@ version `1.1.0`.
    ```
    From then on, `git push origin main` publishes. The app's own updater follows whatever branch your copy tracks, so
    people who clone `main` get **Update ready** when `main` moves.
-4. Optional: in the `uml-analyzer` project, remove the duplicate `stitch` through the manager.
-5. Optional: try automatic condensing in a real project. In Workflow, click an agent, set Helper to "Automatically",
-   then "Review and write files". It works when that team runs in Claude Code in a terminal.
+3. **Put the website online** (`Desktopcircle-studio-site`): make it its own GitHub repository, then in Vercel Add New,
+   Project, preset **Other**, no build command. Do step 2 first, so the Download button gives v13. Details in that
+   folder's `README.md`.
+4. Optional, to finish the Codex test: run `codex login` in a terminal, then ask for "test Codex for real" again (a few
+   short turns in a temp folder, one that runs a command so the popup is tried).
+5. Optional: in the `uml-analyzer` project, remove the duplicate `stitch` through the manager.
+6. Optional: see condensing work in sample-test. In a terminal: `cd $HOME\Desktop\sample-test`, `claude`, then ask for
+   something that makes the qa agent read a lot, for example *"Use the qa subagent to review every test and script in
+   this folder and run the checks it finds."* It condenses only once qa's own context is 60% full, so a short task
+   shows nothing; to see it sooner, set the limit to 30% (Workflow, qa, Helper) and use "Write only the helper files".
+   Then Circle Studio, sample-test, Cost: "condensed" shows how many outputs and how many tokens were kept out, per
+   agent. Never use "Review and write files" on sample-test unless you want its 19 agent files rewritten.
 
 ## 15. Limits and what has not been verified
 
 | Area | The honest state |
 |---|---|
-| Automatic condensing | Works only when the team runs in Claude Code (terminal or IDE). Circle Studio's own Chat runs with project hooks off on purpose. Verified with real Haiku in a temp folder; **not yet written into one of your real projects** |
-| Codex | Built from its documented protocol, tested against a fake. Not tried for real |
+| Automatic condensing | Works only when the team runs in Claude Code (terminal or IDE). Circle Studio's own Chat runs with project hooks off on purpose. Verified with real Haiku in a temp folder. Written into sample-test (qa, 60%) on 2026-10-05; the hook passed a dry run there. **Not yet seen condensing in a real team run** |
+| "Review and write files" | Rewrites every agent file from the workflow: hand-written instructions in them are replaced (in sample-test, 19 files would lose 40 to 165 lines each). The diff shows it and a warning counts them. For helpers, use "Write only the helper files" |
+| Notifications | Only from now on (nothing before 2026-10-05 was kept). A run counts when it took 20 s or more, or failed. Team runs in Claude Code are not notified when they finish (only their questions in `ALERTS.md`) |
+| Codex | Installed here (codex-cli 0.154.0) but **not signed in**, so no real answer has run. Checked 2026-10-05 against the schema the real binary writes (`codex app-server generate-json-schema`), and the real app-server ran through the adapter signed out: start, thread and turn are accepted, and the missing sign-in now ends the turn in about 5 s with "Run `codex login`". Command approvals, file-change approvals and questions are tested only against the fake (now in the real shapes). To finish: `codex login`, then a few short turns in a temp folder |
 | Gemini (`agy`) | Cannot ask you before acting in headless mode, so it answers and reads only |
 | Copilot | Approvals verified for real |
 | Claude Code | Verified for real (shell with approvals, questions, resume) |
@@ -495,6 +525,8 @@ version `1.1.0`.
 | "Do it for me" (Let's begin) | Checked with a harmless command, not by really installing or signing in an engine |
 | Condensing savings | Mostly context quality, not money: Claude Code already offloads huge outputs, and cache reads cost about a tenth |
 | A ZIP download | Cannot update itself; only a git clone can |
+| A stranger's install | Verified 2026-10-05 from fresh GitHub clones (tests, installer with shortcuts redirected, updater sees and applies an update). Not tried on a PC without Node, or as a different Windows user. The installer opening the window was skipped (`CIRCLE_NO_OPEN`) |
+| The website | Checked locally in a browser (light and dark, 1280, 700 and 375 px, theme button, 404 page). Not yet deployed to Vercel, so `vercel.json` (redirects, headers) is untested there |
 
 ## 16. Facts learned by running things (keep these; they cost time to find)
 
@@ -521,6 +553,29 @@ version `1.1.0`.
   its title (`services.desktop.mjs`, `lib/desktop.mjs`).
 - Screen capture and clicks need `SetProcessDPIAware` (and `PrintWindow`) under display scaling.
 - Desktop widgets started from older code must be restarted: `lib/deskhost.mjs` compares a fingerprint.
+- To run the installer from a script, call the file itself (`& "...\Install Circle Studio.cmd"`). `cmd /c` with the
+  quoted name can be split at the space and run `install.cmd` from `PATH` instead (nvm-windows ships one).
+
+**Codex app-server (codex-cli 0.154.0):**
+- `codex app-server generate-json-schema --out <folder>` writes the whole protocol; check field names there, not in docs.
+- A file-change approval (`item/fileChange/requestApproval`) names **no file**: the paths and diff are in that item's
+  earlier `item/started` (`changes[].path`, `.diff`, `.kind.move_path`). `codex.mjs` keeps them by item id.
+- Question answers go back as `{ answers: { <question id>: { answers: [text] } } }`. Questions may be `isSecret`.
+- Signed out, a turn does not fail: it sends `error` notifications with `codexErrorInfo.*.httpStatusCode: 401` and
+  `willRetry: true`, 5 tries over WebSocket then 5 over HTTPS (over a minute). Treat the first 401 as signed out.
+- A `CODEX_HOME` under `%TEMP%` works but warns that it will not create its helper programs there.
+
+**Circle Studio itself:**
+- `workflow-write` regenerates every agent file from the workflow (the body becomes the role text plus stage and
+  helper lines). Found by previewing condensing in sample-test before writing. `helpers-write` exists for that.
+- Headless Edge takes page screenshots when the Playwright browser is busy: `msedge --headless=new
+  --user-data-dir=<temp> --blink-settings=preferredColorScheme=0` (dark; 1 light) `--window-size=1280,1100
+  --virtual-time-budget=8000 --screenshot=<file> <url>`.
+
+**GitHub:**
+- Merging a pull request on GitHub adds a merge commit to `main` that the local branch does not have, so later
+  `git push origin master:main` is refused. Merge `origin/main` locally first. Do not force-push: clones of `main` would
+  then fail to fast-forward.
 
 ## 17. Working on it again (for a new chat)
 
@@ -560,3 +615,8 @@ report. So a new chat needs nothing extra. If in doubt, say: *"Read `CLAUDE.md` 
 | A cheaper model shrinking context, through hooks above a limit | v13 (automatic condensing) |
 | The smaller agent as part of the workflow | v13 (helper nodes) |
 | A store of patterns that relates them to your team, open to explore | v13 (patterns and the Patterns panel) |
+| A website for Vercel in the app's style, with a download | `Desktopcircle-studio-site` (2026-10-05) |
+| Test Codex for real | 2026-10-05: not signed in, so checked against its own schema and run signed out; three fixes (file approvals, answers, sign-in error). Live turns still to do (section 15) |
+| Try automatic condensing in a real project | 2026-10-05: sample-test, qa above 60%; found and fixed the rewrite of every agent file (`helpers-write`) |
+| Notifications in the same design, small tiles, other useful widgets | v14: Notifications, Running now, small sizes for every tile |
+| Check that a stranger can really install it from GitHub | Checked 2026-10-05: works; `main` is behind (section 13, to-do 2) |

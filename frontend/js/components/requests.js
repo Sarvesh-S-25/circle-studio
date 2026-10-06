@@ -45,6 +45,7 @@ export function initRequests(windowKey = '') {
       announce('circle:requests', data);
       showNext();
     } else if (name === 'run' || name === 'usage') announce('circle:run', data);
+    else if (name === 'notice') announce('circle:notice', data);
   }, windowKey);
 }
 

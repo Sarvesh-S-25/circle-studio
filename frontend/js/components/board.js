@@ -21,7 +21,7 @@ async function loadShell() {
 function listen(redraw, windowKey) {
   initRequests(windowKey);
   initAlerts();
-  for (const ev of ['circle:requests', 'circle:alerts', 'circle:run']) window.addEventListener(ev, redraw);
+  for (const ev of ['circle:requests', 'circle:alerts', 'circle:run', 'circle:notice']) window.addEventListener(ev, redraw);
 }
 
 /** One tile alone in its window. */
@@ -33,6 +33,7 @@ export async function mountSingleTile(root, { kind, size, projectId, openApp }) 
   ctx.setProject = (t, id) => { t.projectId = id; delete t.nodeId; const u = new URL(location.href); u.searchParams.set('p', id); u.searchParams.delete('n'); history.replaceState(null, '', u); refresh(); };
   ctx.setNode = (t, id) => { t.nodeId = id; const u = new URL(location.href); u.searchParams.set('n', id); history.replaceState(null, '', u); refresh(); };
   const draw = () => root.replaceChildren(h('div', { class: 'cs-solo' }, renderTile(tile, ctx)));
+  ctx.redraw = draw;
   async function refresh(usage = false) { await ctx.refresh([tile], { usage, skipUsage: !usage && !ctx.usage && kind !== 'spend' }); draw(); }
   document.title = `${KINDS[kind].title} · Circle Studio`;
   draw();
@@ -108,6 +109,7 @@ export async function mountBoard(root, { openApp, embedded = false }) {
   }
 
   async function refresh(usage = false) { if (gone) return; await ctx.refresh(tiles, { usage }); draw(); }
+  ctx.redraw = () => draw();
   const destroy = () => { gone = true; timers.forEach(clearInterval); offs.forEach((f) => f()); };
 
   if (!embedded) document.title = 'Circle Studio widgets';
@@ -121,7 +123,7 @@ export async function mountBoard(root, { openApp, embedded = false }) {
   if (embedded) {
     // the app already listens for requests: only redraw on its announcements, and stop when the page is left
     const redraw = () => refresh();
-    for (const ev of ['circle:requests', 'circle:alerts', 'circle:run']) { window.addEventListener(ev, redraw); offs.push(() => window.removeEventListener(ev, redraw)); }
+    for (const ev of ['circle:requests', 'circle:alerts', 'circle:run', 'circle:notice']) { window.addEventListener(ev, redraw); offs.push(() => window.removeEventListener(ev, redraw)); }
   } else listen(() => refresh(), 'board');
   timers.push(setInterval(() => { if (document.visibilityState === 'visible' && !editing) refresh(); }, POLL_MS));
   timers.push(setInterval(() => refresh(true), USAGE_MS));

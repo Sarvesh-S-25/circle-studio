@@ -76,6 +76,8 @@ function targetsOf(tool, input) {
   if (tool === 'Grep') return [{ raw: input.path ?? '.', need: false }, { raw: input.glob, need: false, pattern: true }];
   if (tool === 'Glob') return [{ raw: input.path ?? '.', need: false }, { raw: input.pattern, need: true, pattern: true }];
   if (tool === 'NotebookEdit') return [{ raw: input.notebook_path, need: true }];
+  // one change to several files (a Codex patch): every file is checked
+  if (Array.isArray(input.files) && input.files.length) return input.files.slice(0, 50).map((f) => ({ raw: f, need: true }));
   return [{ raw: input.file_path ?? input.path, need: true }];
 }
 
@@ -87,6 +89,7 @@ const staticPrefix = (pattern) => {
 };
 
 function previewOf(tool, input) {
+  if (typeof input.diff === 'string' && input.diff) return clip(input.diff, 4000);
   if (tool === 'Write') return clip(input.content, 4000);
   if (tool === 'Edit') return `- ${clip(input.old_string, 2000).replace(/\n/g, '\n- ')}\n+ ${clip(input.new_string, 2000).replace(/\n/g, '\n+ ')}`;
   if (tool === 'MultiEdit' && Array.isArray(input.edits)) return input.edits.slice(0, 20).map((e) => `- ${clip(e?.old_string, 500)}\n+ ${clip(e?.new_string, 500)}`).join('\n\n');
@@ -111,8 +114,11 @@ function checkTarget(t, write, ctx, found) {
 
 function evaluatePaths(tool, input, blockedPath, ctx) {
   const write = EDIT_TOOLS.has(tool);
-  const shown = displayPath(input.file_path ?? input.path ?? input.notebook_path ?? input.pattern ?? '', ctx.root);
-  const base = { title: write ? `${tool === 'Write' ? 'Write' : 'Edit'} ${shown}` : `${tool} ${shown}`, detail: write ? `${shown}\n\n${previewOf(tool, input)}` : shown };
+  const many = Array.isArray(input.files) && input.files.length > 1 ? input.files.filter((f) => typeof f === 'string') : null;
+  const first = displayPath(input.file_path ?? input.path ?? input.notebook_path ?? input.pattern ?? '', ctx.root);
+  const shown = many ? `${first} and ${many.length - 1} more` : first;
+  const listed = many ? many.slice(0, 50).map((f) => displayPath(f, ctx.root)).join('\n') : shown;
+  const base = { title: write ? `${tool === 'Write' ? 'Write' : 'Edit'} ${shown}` : `${tool} ${shown}`, detail: write ? `${listed}\n\n${previewOf(tool, input)}` : shown };
   if (write && !ctx.permissions.write) return refuse('Changing files is turned off for this project (Permissions).', 'normal', base);
   const found = { danger: [], outside: [] };
   if (write && input.unknownPath === true) found.outside.push('The files it will change are not known yet. Check the details.');
@@ -158,6 +164,7 @@ export function rememberRule(tool, input) {
     if (runner || !words[1] || !SUBCOMMAND.test(words[1])) return { tool, kind: 'exact', words };
     return { tool, kind: 'prefix', words: words.slice(0, 2) };
   }
+  if (Array.isArray(input?.files) && input.files.length > 1) return null; // a change to several files is never remembered
   if ((tool === 'Edit' || tool === 'Write') && typeof input?.file_path === 'string') return { tool, kind: 'file', value: input.file_path.replace(/\\/g, '/').toLowerCase() };
   return null;
 }
@@ -165,7 +172,7 @@ export function rememberRule(tool, input) {
 /** Does an earlier remembered rule cover this new request? */
 export function ruleCovers(rule, tool, input) {
   if (rule.tool !== tool) return false;
-  if (rule.kind === 'file') return typeof input?.file_path === 'string' && input.file_path.replace(/\\/g, '/').toLowerCase() === rule.value;
+  if (rule.kind === 'file') return !(Array.isArray(input?.files) && input.files.length > 1) && typeof input?.file_path === 'string' && input.file_path.replace(/\\/g, '/').toLowerCase() === rule.value;
   const words = plainWords(input?.command);
   if (!words) return false;
   if (rule.kind === 'exact') return words.length === rule.words.length && words.every((w, i) => w === rule.words[i]);

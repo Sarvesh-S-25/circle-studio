@@ -127,3 +127,11 @@
 .cs-tile__titlebtn { display: inline-flex; align-items: center; gap: var(--sp-1); min-inline-size: 0; padding: 0; border: 0; background: none; color: var(--c-text); font: inherit; font-size: var(--fs-s); font-weight: var(--fw-semibold); cursor: pointer; }
 .cs-tile__titlebtn:hover { color: var(--c-accent); }
 .cs-tile__ctl--on { background: var(--c-accent); border-color: var(--c-accent); color: var(--c-on-accent); }
+
+/* small tiles that show one line of text, and the Notifications tile */
+.cs-tile__said--s { font-size: var(--fs-xs); -webkit-line-clamp: 4; }
+.cs-tile__said--s strong { font-weight: var(--fw-semibold); }
+.cs-tile__linkbtn { flex: none; padding: 0; border: 0; background: none; color: var(--c-accent); font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold); cursor: pointer; }
+.cs-tile__linkbtn:hover { text-decoration: underline; }
+.cs-tile__row--read strong { font-weight: var(--fw-regular); color: var(--c-text-soft); }
+.cs-tile--s .cs-tile__sub { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; white-space: normal; overflow-wrap: anywhere; }

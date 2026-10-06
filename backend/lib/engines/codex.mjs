@@ -1,5 +1,6 @@
 // Codex as an engine, over `codex app-server` (JSON-RPC lines on stdio). Built from the generated schema and the
-// documentation only: this PC has no Codex login, so nothing here is live-tested (capabilities.liveVerified: false).
+// documentation, then checked against the schema `codex app-server generate-json-schema` writes (codex-cli 0.154.0).
+// Not live-tested: Codex is not signed in on this PC (capabilities.liveVerified: false).
 import { startChild, killTree, runCommand, versionOf, resolveCli } from './proc.mjs';
 import { RpcPeer } from './rpc.mjs';
 import { redact } from '../secrets.mjs';
@@ -14,7 +15,7 @@ export function createCodexAdapter({ bin, prefixArgs = [] } = {}) {
     label: 'Codex',
     models: [],
     capabilities: CAPABILITIES,
-    notes: ['Not live-tested: there is no Codex sign-in on this PC. Built from its documented protocol.', 'Runs in the workspace-write sandbox and asks before acting.'],
+    notes: ["Not live-tested yet: checked against Codex's own protocol schema, but no real turn has run.", 'Runs in the workspace-write sandbox and asks before acting.'],
 
     async detect() {
       const v = await versionOf(cli().bin, [...cli().prefix, '--version']);
@@ -39,27 +40,49 @@ export function createCodexAdapter({ bin, prefixArgs = [] } = {}) {
       signal?.addEventListener('abort', onAbort, { once: true });
       if (signal?.aborted) onAbort();
       const started = Date.now();
+      // A file-change approval names no file: the paths and the diff come before it, in that item's item/started.
+      const changes = new Map();
+      let retrying = false;
       const rpc = new RpcPeer(child, {
         jsonrpc: false,
         onRequest: async (method, p) => {
           if (method === 'item/commandExecution/requestApproval') {
-            const d = await onRequest({ tool: 'Bash', input: { command: p.command ?? '' }, toolUseId: p.itemId });
+            // the folder it runs in is checked like a path the command reaches
+            const d = await onRequest({ tool: 'Bash', input: { command: p.command ?? '' }, ...(p.cwd ? { blockedPath: p.cwd } : {}), toolUseId: p.itemId });
             return { decision: d.decision === 'allow' ? 'accept' : 'decline' };
           }
           if (method === 'item/fileChange/requestApproval') {
-            const d = await onRequest({ tool: 'Edit', input: { file_path: p.path ?? p.grantRoot, old_string: '', new_string: '', ...(p.path ? {} : { unknownPath: true }) }, toolUseId: p.itemId });
+            const list = changes.get(p.itemId) || [];
+            const files = list.flatMap((c) => [c.path, c.kind?.move_path]).filter((f) => typeof f === 'string' && f);
+            const input = files.length
+              ? { file_path: files[0], files, diff: list.map((c) => c.diff ?? '').join('\n') }
+              : { file_path: p.grantRoot, old_string: '', new_string: '', unknownPath: true };
+            const d = await onRequest({ tool: 'Edit', input, toolUseId: p.itemId });
             return { decision: d.decision === 'allow' ? 'accept' : 'decline' };
           }
           if (method === 'item/tool/requestUserInput') {
-            const d = await onRequest({ tool: 'AskUserQuestion', input: { questions: p.questions ?? [] }, toolUseId: p.itemId });
-            return d.decision === 'allow' ? { answers: d.answers ?? {} } : { answers: {} };
+            const qs = Array.isArray(p.questions) ? p.questions : [];
+            // a secret typed into the Inbox would be stored and shown again: never relayed
+            if (qs.some((q) => q.isSecret)) { emit('notice', { message: 'Codex asked for a secret. Circle Studio does not take secrets in chat; put it in Keys.' }); return { answers: {} }; }
+            const d = await onRequest({ tool: 'AskUserQuestion', input: { questions: qs.map((q) => ({ question: q.question, header: q.header, options: q.options ?? [], multiSelect: false })) }, toolUseId: p.itemId });
+            if (d.decision !== 'allow' || !d.answers) return { answers: {} };
+            // the app answers by question text; Codex wants { [question id]: { answers: [text] } }
+            return { answers: Object.fromEntries(qs.filter((q) => d.answers[q.question] !== undefined).map((q) => [q.id, { answers: [String(d.answers[q.question])] }])) };
           }
           throw new Error('Not supported here.');
         },
         onNotification: (method, p) => {
+          if (method === 'item/started' && p.item?.type === 'fileChange') changes.set(p.item.id, Array.isArray(p.item.changes) ? p.item.changes : []);
+          // Signed out or expired, Codex retries 10 times over a minute or more before failing: stop at the first 401.
+          if (method === 'error') {
+            const info = p.error?.codexErrorInfo || {};
+            const status = Object.values(info).find((v) => v && typeof v === 'object' && 'httpStatusCode' in v)?.httpStatusCode;
+            if (status === 401) finish({ signedOut: true });
+            else if (p.willRetry && !retrying) { retrying = true; emit('notice', { message: redact(`Codex is retrying: ${String(p.error?.message ?? 'connection lost')}`).slice(0, 300) }); }
+          }
           if (method === 'item/agentMessage/delta') emit('text', { delta: p.delta ?? '' });
           else if (method === 'item/started' && p.item?.type === 'commandExecution') emit('tool', { id: p.item.id, name: 'Bash', summary: redact(`Run ${String(p.item.command ?? '').slice(0, 80)}`), status: 'start' });
-          else if (method === 'item/completed' && p.item?.type === 'commandExecution') emit('tool', { id: p.item.id, status: 'end', ok: p.item.status !== 'failed' });
+          else if (method === 'item/completed' && p.item?.type === 'commandExecution') emit('tool', { id: p.item.id, status: 'end', ok: p.item.status === 'completed' });
           else if (method === 'thread/tokenUsage/updated') {
             const t = p.tokenUsage || {};
             emit('usage', { inputTokens: t.total?.inputTokens || 0, outputTokens: t.total?.outputTokens || 0, contextTokens: t.last?.totalTokens ?? null, contextWindow: t.modelContextWindow ?? null, costUsd: null });
@@ -78,6 +101,7 @@ export function createCodexAdapter({ bin, prefixArgs = [] } = {}) {
         await rpc.request('turn/start', { threadId, input: [{ type: 'text', text: prompt }] });
         const end = await finished;
         if (end.aborted) { emit('stopped', { runId }); return { status: 'stopped', sessionId: threadId }; }
+        if (end.signedOut) { emit('error', { code: 'not_ready', message: 'Codex is not signed in, or its sign-in has expired. Run `codex login` in a terminal, then try again.' }); return { status: 'error', sessionId: threadId }; }
         const failed = end.turn?.status === 'failed';
         if (failed) { emit('error', { code: 'upstream', message: redact(String(end.turn?.error?.message ?? 'Codex reported a failed turn.')).slice(0, 400) }); return { status: 'error', sessionId: threadId }; }
         emit('done', { runId, sessionId: threadId, ms: Date.now() - started, costUsd: null, stopReason: end.turn?.status ?? null, models: [model || 'default'], denials: 0, result: '' });

@@ -9,11 +9,13 @@ import { openRequest } from './requests.js';
 export const KINDS = {
   status: { title: 'Agents', about: 'A ring per agent: working, waiting for you, done or idle.', sizes: ['s', 'm', 'l'], project: true },
   spend: { title: 'Spending', about: 'Use per provider over 30 days: Claude priced, Codex tokens, the others turns.', sizes: ['s', 'm', 'l'] },
-  workflow: { title: 'Workflow', about: 'The stages of a project and where the work is. Switch projects in the tile.', sizes: ['m', 'l'], project: true },
+  workflow: { title: 'Workflow', about: 'The stages of a project and where the work is. Switch projects in the tile.', sizes: ['s', 'm', 'l'], project: true },
   inbox: { title: 'Waiting for you', about: 'Questions and approvals from every project. Answer them here.', sizes: ['s', 'm', 'l'] },
-  project: { title: 'Project', about: 'One project at a glance: status, numbers, git, the last conversation.', sizes: ['m', 'l'], project: true },
-  overview: { title: 'All projects', about: 'Every project and its state.', sizes: ['m', 'l'] },
-  chat: { title: 'Chat', about: 'A project\'s main chat and its agents\' chats: switch between them in the tile, open one to reply.', sizes: ['m', 'l'], project: true },
+  project: { title: 'Project', about: 'One project at a glance: status, numbers, git, the last conversation.', sizes: ['s', 'm', 'l'], project: true },
+  overview: { title: 'All projects', about: 'Every project and its state.', sizes: ['s', 'm', 'l'] },
+  chat: { title: 'Chat', about: 'A project\'s main chat and its agents\' chats: switch between them in the tile, open one to reply.', sizes: ['s', 'm', 'l'], project: true },
+  running: { title: 'Running now', about: 'What is working right now in every project: chats here and Claude Code teams, and for how long.', sizes: ['s', 'm', 'l'] },
+  notices: { title: 'Notifications', about: 'What Circle Studio told you: agents asking, long runs done or failed, team questions, updates, broken connections.', sizes: ['s', 'm', 'l'] },
 };
 
 const STATE_WORD = { working: 'Working', waiting: 'Waiting for you', done: 'Done', idle: 'Idle' };
@@ -100,6 +102,13 @@ function workflowTile(tile, ctx) {
   if (!wf || !wf.stages.length) return [top, h('p', { class: 'cs-tile__quiet' }, 'No workflow yet.')];
   const stages = wf.stages;
   const now = stages.findIndex((s) => s.state === 'waiting' || s.state === 'working');
+  if (tile.size === 's') {
+    const cur = now >= 0 ? stages[now] : null;
+    const done = stages.filter((s) => s.state === 'done').length;
+    return [head('Workflow', 'plan'), h('div', { class: `cs-tile__big ${cur?.state === 'waiting' ? 'cs-st--waiting' : ''}` }, `${done}/${stages.length}`),
+      h('div', { class: 'cs-tile__sub' }, cur ? `${cur.title}: ${STATE_WORD[cur.state].toLowerCase()}` : 'stages done'),
+      h('div', { class: 'cs-tile__foot' }, pick || h('span', { class: 'cs-tile__name' }, pu.project.name))];
+  }
   const steps = h('ol', { class: 'cs-tile__steps' }, stages.map((s, i) => h('li', { class: `cs-tile__step cs-st--${s.state}`, title: `${s.title}: ${STATE_WORD[s.state]}${s.checkpoint ? `, then a checkpoint (${s.checkpoint})` : ''}` },
     h('span', { class: 'cs-tile__stepdot' }, s.state === 'done' ? icon('check', 's') : String(i + 1)),
     tile.size === 'l' || stages.length <= 5 ? h('span', { class: 'cs-tile__steplabel' }, s.title) : null)));
@@ -134,6 +143,12 @@ function projectTile(tile, ctx) {
   const agents = pu.agents || [];
   const counts = ['working', 'waiting', 'done'].map((s) => [s, agents.filter((a) => a.state === s).length]);
   const st = counts.find(([s, n]) => s === 'waiting' && n) ? 'waiting' : counts.find(([s, n]) => s === 'working' && n) ? 'working' : 'idle';
+  if (tile.size === 's') {
+    const n = counts.find(([s]) => s === st)?.[1] ?? 0;
+    return [h('div', { class: 'cs-tile__head' }, sigil(pu.project.id, 's'), h('span', { class: 'cs-tile__title' }, pu.project.name)),
+      h('div', { class: `cs-tile__big cs-st--${st}` }, String(n)), h('div', { class: 'cs-tile__sub' }, st === 'idle' ? 'all quiet' : STATE_WORD[st].toLowerCase()),
+      h('div', { class: 'cs-tile__foot' }, projectPicker(tile, ctx) || h('button', { class: 'cs-tile__cta', type: 'button', onclick: () => ctx.openApp(`#/projects/${pu.project.id}/workflow`) }, 'Open'))];
+  }
   const out = [h('div', { class: 'cs-tile__head' }, sigil(pu.project.id, 's'), h('span', { class: 'cs-tile__title' }, pu.project.name), h('span', { class: 'cs-grow' }), projectPicker(tile, ctx) || h('span', { class: `cs-tile__badge cs-st--${st}` }, STATE_WORD[st])),
     h('div', { class: 'cs-tile__stats' }, counts.map(([s, n]) => h('span', { class: `cs-tile__stat cs-st--${s}` }, h('strong', {}, String(n)), STATE_WORD[s].toLowerCase())))];
   const g = pu.repo;
@@ -150,6 +165,13 @@ function projectTile(tile, ctx) {
 function overviewTile(tile, ctx) {
   const s = ctx.stats;
   if (!s) return [head('Projects', 'project'), h('p', { class: 'cs-tile__quiet' }, 'Loading...')];
+  if (tile.size === 's') {
+    const live = s.projects.filter((p) => p.exists);
+    const waiting = live.filter((p) => state.pending.some((r) => r.projectId === p.id) || state.alerts.some((a) => a.projectId === p.id)).length;
+    const working = live.filter((p) => s.running.some((r) => r.projectId === p.id) || p.activity?.live).length;
+    return [head('Projects', 'project'), h('div', { class: `cs-tile__big ${waiting ? 'cs-st--waiting' : ''}` }, String(live.length)),
+      h('div', { class: 'cs-tile__sub' }, [working ? `${working} working` : '', waiting ? `${waiting} waiting` : ''].filter(Boolean).join(' · ') || 'all quiet')];
+  }
   const rows = s.projects.filter((p) => p.exists).slice(0, tile.size === 'm' ? 3 : 8).map((p) => {
     const wait = state.pending.filter((r) => r.projectId === p.id).length + state.alerts.filter((a) => a.projectId === p.id).length;
     const run = s.running.some((r) => r.projectId === p.id) || p.activity?.live;
@@ -167,6 +189,12 @@ function chatTile(tile, ctx) {
   // the title opens the chat (the whole conversation, to reply)
   const top = h('div', { class: 'cs-tile__head' }, icon('chat', 's'), h('button', { class: 'cs-tile__titlebtn', type: 'button', title: 'Open this chat in Circle Studio', onclick: () => ctx.openApp(`#/projects/${c.project.id}/chat`) }, pick ? 'Chat' : c.project?.name || 'Chat', icon('external', 's')), h('span', { class: 'cs-grow' }), pick);
   if (!c.threads?.length) return [top, h('p', { class: 'cs-tile__quiet' }, c.empty || 'No chats in this project yet.')];
+  if (tile.size === 's') {
+    const last = c.messages?.at(-1);
+    return [h('div', { class: 'cs-tile__head' }, icon('chat', 's'), h('span', { class: 'cs-tile__title' }, c.project?.name || 'Chat')),
+      last ? h('p', { class: 'cs-tile__said cs-tile__said--s' }, h('strong', {}, `${last.who}: `), last.text) : h('p', { class: 'cs-tile__quiet' }, c.empty || 'Nothing said yet.'),
+      h('button', { class: 'cs-tile__cta', type: 'button', onclick: () => ctx.openApp(`#/projects/${c.project.id}/chat`) }, 'Reply')];
+  }
   const threads = h('div', { class: 'cs-tile__threads', role: 'group', 'aria-label': 'Chats' }, c.threads.map((t) => h('button', {
     class: 'cs-tile__thread', type: 'button', 'aria-pressed': String(t.id === c.selected), title: `${t.label}${t.lastAt ? ` · ${timeAgo(t.lastAt)}` : ''} · ${t.source}`,
     onclick: () => { if (t.id !== c.selected) ctx.setNode(tile, t.id); },
@@ -178,7 +206,51 @@ function chatTile(tile, ctx) {
     tile.size === 'l' ? h('button', { class: 'cs-tile__cta', type: 'button', onclick: () => ctx.openApp(`#/projects/${c.project.id}/chat`) }, 'Open the chat') : null];
 }
 
-const RENDER = { status: statusTile, spend: spendTile, workflow: workflowTile, inbox: inboxTile, project: projectTile, overview: overviewTile, chat: chatTile };
+/* ---- notifications: what Circle Studio told you ------------------------------------------------- */
+const NOTICE_STATE = { question: 'waiting', approval: 'waiting', team: 'waiting', done: 'done', error: 'danger', update: 'working', connection: 'danger' };
+function noticesTile(tile, ctx) {
+  const n = ctx.notices;
+  if (!n) return [head('Notifications', 'bell'), h('p', { class: 'cs-tile__quiet' }, 'Loading...')];
+  const open = (x) => { ctx.readNotices([x.id]); ctx.openApp(x.url || '#/'); };
+  if (tile.size === 's') {
+    const first = n.notices[0];
+    return [head('Notifications', 'bell'), h('div', { class: `cs-tile__big ${n.unread ? 'cs-st--waiting' : ''}` }, String(n.unread)),
+      h('div', { class: 'cs-tile__sub' }, first ? first.title : 'Nothing new.'),
+      first ? h('button', { class: 'cs-tile__cta', type: 'button', onclick: () => open(first) }, 'Open') : null];
+  }
+  const max = tile.size === 'm' ? 2 : 6;
+  const allRead = n.unread ? h('button', { class: 'cs-tile__linkbtn', type: 'button', onclick: () => ctx.readNotices(null) }, 'Mark all read') : null;
+  return [head(n.unread ? `Notifications · ${n.unread} new` : 'Notifications', 'bell', allRead),
+    n.notices.length
+      ? h('ul', { class: 'cs-tile__list' }, n.notices.slice(0, max).map((x) => h('li', {}, h('button', { class: `cs-tile__row ${x.read ? 'cs-tile__row--read' : ''}`, type: 'button', onclick: () => open(x) },
+        h('span', { class: `cs-dotst cs-dotst--${x.read ? 'idle' : NOTICE_STATE[x.kind] || 'idle'}` }),
+        h('span', { class: 'cs-tile__rowtext' }, h('strong', {}, x.title), h('span', { class: 'cs-tile__muted' }, [timeAgo(x.at), x.body].filter(Boolean).join(' · ')))))))
+      : h('p', { class: 'cs-tile__quiet' }, 'Nothing yet. When an agent asks, finishes a long run or fails, it shows here.'),
+    n.notices.length > max ? h('div', { class: 'cs-tile__sub' }, `and ${n.notices.length - max} earlier`) : null];
+}
+
+/* ---- running now: every project ---------------------------------------------------------------- */
+function runningTile(tile, ctx) {
+  const s = ctx.stats;
+  if (!s) return [head('Running now', 'play'), h('p', { class: 'cs-tile__quiet' }, 'Loading...')];
+  const runs = s.running.slice().sort((a, b) => Date.parse(a.startedAt || 0) - Date.parse(b.startedAt || 0));
+  const label = (r) => (r.source === 'team' ? `${r.name}: ${r.agent || 'team'}` : `${r.name}: ${r.kind === 'chat' ? 'chat' : r.kind || 'run'}`);
+  const go = (r) => ctx.openApp(r.projectId ? `#/projects/${r.projectId}/${r.source === 'team' ? 'workflow' : 'chat'}` : '#/');
+  if (tile.size === 's') {
+    return [head('Running now', 'play'), h('div', { class: `cs-tile__big ${runs.length ? 'cs-st--working' : ''}` }, String(runs.length)),
+      h('div', { class: 'cs-tile__sub' }, runs[0] ? label(runs[0]) : 'Nothing is running.')];
+  }
+  const max = tile.size === 'm' ? 2 : 6;
+  return [head(runs.length ? `Running now · ${runs.length}` : 'Running now', 'play'),
+    runs.length
+      ? h('ul', { class: 'cs-tile__list' }, runs.slice(0, max).map((r) => h('li', {}, h('button', { class: 'cs-tile__row', type: 'button', onclick: () => go(r) },
+        h('span', { class: 'cs-dotst cs-dotst--working' }),
+        h('span', { class: 'cs-tile__rowtext' }, h('strong', {}, label(r)), h('span', { class: 'cs-tile__muted' }, [r.startedAt ? `started ${timeAgo(r.startedAt)}` : '', r.what || ''].filter(Boolean).join(' · ')))))))
+      : h('p', { class: 'cs-tile__quiet' }, 'Nothing is running. Chats and Claude Code teams show here while they work.'),
+    runs.length > max ? h('div', { class: 'cs-tile__sub' }, `and ${runs.length - max} more`) : null];
+}
+
+const RENDER = { running: runningTile, status: statusTile, spend: spendTile, workflow: workflowTile, inbox: inboxTile, project: projectTile, overview: overviewTile, chat: chatTile, notices: noticesTile };
 
 /** Draw one tile into a fresh element. */
 export function renderTile(tile, ctx) {
@@ -194,6 +266,7 @@ export function createTileData({ openApp }) {
   const ctx = {
     stats: null,
     usage: null,
+    notices: null,
     pulse: (id) => pulses.get(id || ctx.defaultProject()) || null,
     chat: (tile) => chats.get(tile) || null,
     defaultProject: () => state.recent.find((p) => p.exists)?.id || state.projects.find((p) => p.exists)?.id || null,
@@ -201,11 +274,18 @@ export function createTileData({ openApp }) {
     openApp,
     setProject: () => {},
     setNode: () => {},
+    redraw: () => {},
+    /** Mark some notices read (ids), or all (null), then draw again. */
+    async readNotices(ids) {
+      try { ctx.notices = await api.readNotices(ids || undefined); } catch { /* the next refresh shows the truth */ }
+      ctx.redraw();
+    },
     async refresh(tiles, { usage = false, skipUsage = false } = {}) {
       const ids = new Set(tiles.filter((t) => KINDS[t.kind]?.project && t.kind !== 'chat').map((t) => t.projectId || ctx.defaultProject()).filter(Boolean));
       const jobs = [api.stats().then((s) => { ctx.stats = s; }).catch(() => {})];
       for (const id of ids) jobs.push(api.pulse(id).then((p) => pulses.set(id, p)).catch(() => {}));
       for (const t of tiles.filter((x) => x.kind === 'chat')) jobs.push(api.widgetChat(t.projectId || ctx.defaultProject(), t.nodeId || 'main', t.size).then((c) => chats.set(t, c)).catch(() => {}));
+      if (tiles.some((t) => t.kind === 'notices')) jobs.push(api.notices(20).then((n) => { ctx.notices = n; }).catch(() => {}));
       if (!skipUsage && (usage || !ctx.usage) && tiles.some((t) => t.kind === 'spend')) jobs.push(api.usage(30).then((u) => { ctx.usage = u; }).catch(() => {}));
       await Promise.all(jobs);
     },

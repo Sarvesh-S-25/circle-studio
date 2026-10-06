@@ -57,6 +57,29 @@ async function codex(m) {
   if (m.method === 'thread/start' || m.method === 'thread/resume') return reply({ thread: { id: m.params.threadId || 'thr-1' } });
   if (m.method === 'turn/start') {
     reply({ turn: { id: 'turn-1' } });
+    const text = m.params.input?.[0]?.text ?? '';
+    const ids = { threadId: m.params.threadId, turnId: 'turn-1', startedAtMs: Date.now() };
+    if (text.startsWith('edit')) {
+      // as the real app-server (0.154.0 schema): the paths and diff come in item/started; the approval names none
+      const changes = (process.env.FAKE_CODEX_FILES || 'a.txt').split(',').map((p) => ({ path: p, kind: { type: 'update', move_path: null }, diff: `@@\n-old ${p}\n+new ${p}` }));
+      out({ method: 'item/started', params: { item: { id: 'item-2', type: 'fileChange', changes, status: 'inProgress' } } });
+      const res = await ask('item/fileChange/requestApproval', { ...ids, itemId: 'item-2', reason: null }, false);
+      out({ method: 'item/agentMessage/delta', params: { delta: res?.decision === 'accept' ? 'Edited.' : 'Not edited.' } });
+      out({ method: 'turn/completed', params: { threadId: m.params.threadId, turn: { id: 'turn-1', status: 'completed', items: [] } } });
+      return;
+    }
+    if (text.startsWith('signed out')) {
+      // as the real 0.154.0 does with no sign-in: a retrying 401 error, and the turn does not complete for a long time
+      out({ method: 'error', params: { error: { message: 'Reconnecting... 1/5', codexErrorInfo: { responseStreamDisconnected: { httpStatusCode: 401 } } }, willRetry: true, threadId: m.params.threadId, turnId: 'turn-1' } });
+      return;
+    }
+    if (text.startsWith('ask')) {
+      const questions = [{ id: 'q1', header: 'Colour', question: 'Which colour?', options: [{ label: 'Red', description: 'warm' }, { label: 'Blue', description: 'cool' }], isSecret: Boolean(process.env.FAKE_CODEX_SECRET) }];
+      const res = await ask('item/tool/requestUserInput', { ...ids, itemId: 'item-3', isBlocking: true, questions }, false);
+      out({ method: 'item/agentMessage/delta', params: { delta: `Got ${JSON.stringify(res?.answers ?? null)}` } });
+      out({ method: 'turn/completed', params: { threadId: m.params.threadId, turn: { id: 'turn-1', status: 'completed', items: [] } } });
+      return;
+    }
     out({ method: 'item/agentMessage/delta', params: { delta: 'Running it. ' } });
     out({ method: 'item/started', params: { item: { id: 'item-1', type: 'commandExecution', command } } });
     const res = await ask('item/commandExecution/requestApproval', { threadId: m.params.threadId, itemId: 'item-1', command, cwd: process.cwd() }, false);

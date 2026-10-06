@@ -292,3 +292,17 @@ test('scanner: separators, quotes, redirections, substitutions', () => {
   assert.ok(scanCommand('echo "a').error);
   assert.equal(scanCommand('echo a^&b').segments.length, 2);
 });
+
+test('a change to several files (a Codex patch) checks every file and is never remembered', () => {
+  const ok = evaluate({ tool: 'Edit', input: { file_path: path.join(ROOT, 'a.js'), files: [path.join(ROOT, 'a.js'), path.join(ROOT, 'b.js')], diff: '-x\n+y' } }, CTX);
+  assert.deepEqual([ok.verdict, ok.risk], ['ask', 'normal']);
+  assert.match(ok.title, /a\.js and 1 more/);
+  assert.match(ok.detail, /b\.js[\s\S]*\+y/, 'every file and the diff are shown');
+  const secret = evaluate({ tool: 'Edit', input: { file_path: path.join(ROOT, 'a.js'), files: [path.join(ROOT, 'a.js'), path.join(ROOT, '.env')] } }, CTX);
+  assert.equal(secret.verdict, 'deny', 'a secrets file second in the list is still caught');
+  const out = evaluate({ tool: 'Edit', input: { file_path: path.join(ROOT, 'a.js'), files: [path.join(ROOT, 'a.js'), path.join(os.tmpdir(), 'x.js')] } }, CTX);
+  assert.equal(out.risk, 'outside-project');
+  assert.equal(rememberRule('Edit', { file_path: 'a.js', files: ['a.js', 'b.js'] }), null);
+  const one = rememberRule('Edit', { file_path: 'a.js' });
+  assert.equal(ruleCovers(one, 'Edit', { file_path: 'a.js', files: ['a.js', 'b.js'] }), false, 'a file rule does not cover a patch that also touches others');
+});

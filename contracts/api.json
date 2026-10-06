@@ -465,6 +465,18 @@
       "doc": "The desktop widgets' tiles, ready to draw (text, rings, rows, bars), with the tokens.css palette for ?theme=dark|light."
     },
     {
+      "id": "notices.list",
+      "method": "GET",
+      "path": "/api/notices",
+      "doc": "What Circle Studio told you, newest first (?limit, at most 60): agents asking, team questions, long runs done or failed, updates, broken connections; with the unread count."
+    },
+    {
+      "id": "notices.read",
+      "method": "POST",
+      "path": "/api/notices/read",
+      "doc": "Mark notices read: {ids?: [id]}; without ids, all of them."
+    },
+    {
       "id": "widgets.chat",
       "method": "GET",
       "path": "/api/widgets/chat",

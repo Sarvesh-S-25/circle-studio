@@ -23,10 +23,11 @@ import { createChatFeed } from './lib/chatfeed.mjs';
 const WHERE = ['desktop', 'startmenu', 'startup'];
 export const WIDGET_SIZE = { width: 400, height: 660 };
 export const BOARD_SIZE = { width: 800, height: 700 };
-export const WIDGET_KINDS = ['status', 'spend', 'workflow', 'inbox', 'project', 'overview', 'chat'];
+export const WIDGET_KINDS = ['status', 'spend', 'workflow', 'inbox', 'project', 'overview', 'chat', 'notices', 'running'];
 // the tiles that show one project (switchable on the tile) and the sizes each kind comes in
 export const PROJECT_KINDS = ['status', 'workflow', 'project', 'chat'];
-const KIND_SIZES = { chat: ['m', 'l'], workflow: ['m', 'l'], project: ['m', 'l'], overview: ['m', 'l'] };
+// every kind comes small, medium and large; a kind limited to some sizes is listed here
+const KIND_SIZES = {};
 const NODE_RE = /^(main|node:[A-Za-z0-9_-]{1,60}|run:[A-Za-z0-9 _.-]{1,80})$/;
 // a popped-out tile's window: the tile plus the window frame
 const TILE_WINDOW = { s: { width: 230, height: 270 }, m: { width: 420, height: 270 }, l: { width: 420, height: 460 } };
@@ -225,13 +226,20 @@ export function buildDesktopHandlers(app) {
         projects: recent.map((p) => ({ id: p.id, name: p.name })),
         locked: settings.get().widgetsLocked === true,
         pulseOf: (id) => { try { return id ? pulseOf(id) : null; } catch { return null; } },
-        stats: tiles.some((t) => t.kind === 'overview') ? computeStats(app) : null,
+        stats: tiles.some((t) => (t.kind === 'overview' || t.kind === 'running') && t.desktop !== false) ? computeStats(app) : null,
         pending: app.inbox.list({ status: 'pending' }),
         alerts: app.listAlerts('open'),
+        notices: app.notices.list(20),
         nameOf: (id) => { try { return projects.get(id).name; } catch { return id; } },
         palette: readPalette(config.appRoot, query.get('theme') === 'light' ? 'light' : 'dark'),
         defaultProject: recent[0]?.id || null,
       });
+    },
+    'notices.list': ({ query }) => app.notices.list(Number(query.get('limit')) || 60),
+    'notices.read': ({ body }) => {
+      const ids = body?.ids === undefined ? null : Array.isArray(body.ids) && body.ids.every((x) => typeof x === 'string' && /^[a-f0-9]{12}$/.test(x)) ? body.ids : null;
+      if (body?.ids !== undefined && !ids) throw badRequest('ids must be a list of notice ids, or left out for all.');
+      return { changed: app.notices.markRead(ids), ...app.notices.list(60) };
     },
     'desktop.widgets': async ({ body }) => {
       const host = desktopWidgets(config);
