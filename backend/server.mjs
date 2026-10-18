@@ -233,8 +233,10 @@ async function main() {
     console.log(`Circle Studio is running at ${url}`);
     console.log(`Data folder: ${config.dataDir}`);
     if (process.argv.includes('--open')) openBrowser(url);
-    // the desktop widgets come back with the server once the human has put them on the desktop
-    if (app.settings.get().desktopWidgets && process.platform === 'win32') desktopWidgets(config).start();
+    // the desktop host comes back with the server: the tiles once the human has put them on the desktop, and the
+    // cards that ask on the desktop (on unless turned off in Settings). CIRCLE_NO_OPEN=1 (tests, previews) starts neither.
+    const st = app.settings.get();
+    if ((st.desktopWidgets || st.desktopAsks !== false) && process.platform === 'win32' && process.env.CIRCLE_NO_OPEN !== '1') desktopWidgets(config).start();
   });
   const shutdown = async () => {
     await Promise.all([app.sessions.stopAll(), app.claude.stopAll()]).catch(() => {});

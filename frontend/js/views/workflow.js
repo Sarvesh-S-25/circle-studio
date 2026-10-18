@@ -252,7 +252,6 @@ export async function mount(el, pctx) {
     input.addEventListener('input', () => { on(input.value); savePlanSoon(); });
     return h('div', { class: 'cs-field' }, h('label', { class: 'cs-field__label', for: id }, label), input, hint ? h('span', { class: 'cs-field__hint' }, hint) : null);
   };
-  const sw = (label, checked, on, hint) => h('label', { class: 'cs-switch' }, h('input', { class: 'cs-switch__input', type: 'checkbox', checked: checked || undefined, onchange: (e) => on(e.target.checked) }), h('span', { class: 'cs-switch__track' }), h('span', {}, label, hint ? h('span', { class: 'cs-soft cs-small' }, ` ${hint}`) : null));
 
   const b = plan.brief;
   const briefEl = h('details', { class: 'cs-card cs-plan__brief' },
@@ -272,16 +271,27 @@ export async function mount(el, pctx) {
       field('Existing code', 'b-code', b.existingCode, (v) => { b.existingCode = v; }),
       field('Anything else', 'b-else', b.anythingElse, (v) => { b.anythingElse = v; }, { area: true })));
 
-  const optionsEl = h('div', { class: 'cs-card cs-stack cs-stack--tight' });
+  // The project's rules, closed by default: one line says what is chosen; open it to change. The lanes are toggle
+  // buttons in a row and the two rules are checkboxes (a switch belongs in a list row, not a row of options).
+  const LANES = [['frontend', 'Frontend'], ['backend', 'Backend'], ['contract', 'Shared contract'], ['migrations', 'Migrations']];
+  const optionsEl = h('details', { class: 'cs-card cs-rules' });
+  let rulesOpen = false;
+  optionsEl.addEventListener('toggle', () => { rulesOpen = optionsEl.open; });
   function drawOptions() {
     const set = (apply) => { const w = graph.getWorkflow(); apply(w); graph.setWorkflow(w); markDirty(w); drawOptions(); };
     const w = current;
-    const lane = (k, label) => sw(label, w.lanes[k], (v) => set((x) => { x.lanes[k] = v; }));
+    const on = LANES.filter(([k]) => w.lanes[k]).map(([, label]) => label);
+    const said = [on.length ? `Builds: ${on.join(', ').toLowerCase()}` : 'No lanes', w.flags.localOnly ? 'stays on this PC' : 'can be hosted', w.flags.humanDoesGit ? 'you do git yourself' : 'agents may use git'].join(' · ');
+    const check = (label, checked, fn, hint) => h('label', { class: 'cs-check' }, h('input', { type: 'checkbox', checked: checked || undefined, onchange: (e) => fn(e.target.checked) }), h('span', {}, label, hint ? h('span', { class: 'cs-soft cs-small' }, ` ${hint}`) : null));
+    optionsEl.open = rulesOpen;
     optionsEl.replaceChildren(
-      h('div', { class: 'cs-row cs-row--wrap' }, h('span', { class: 'cs-eyebrow' }, 'Lanes'), lane('frontend', 'Frontend'), lane('backend', 'Backend'), lane('contract', 'Shared contract'), lane('migrations', 'Migrations')),
-      h('div', { class: 'cs-row cs-row--wrap' },
-        sw('Local only', w.flags.localOnly, (v) => set((x) => { x.flags.localOnly = v; }), '(no hosting)'),
-        sw('Human does git', w.flags.humanDoesGit, (v) => set((x) => { x.flags.humanDoesGit = v; }), '(push.md + .gitignore)')));
+      h('summary', { class: 'cs-rules__sum' }, h('span', { class: 'cs-rules__chev', 'aria-hidden': 'true' }, icon('chevron-right', 's')), h('span', { class: 'cs-h3' }, 'Project rules'), h('span', { class: 'cs-soft cs-small' }, said)),
+      h('div', { class: 'cs-stack cs-stack--tight cs-rules__body' },
+        h('div', { class: 'cs-row cs-row--wrap', role: 'group', 'aria-label': 'Lanes the team builds in' }, h('span', { class: 'cs-eyebrow' }, 'Lanes'),
+          LANES.map(([k, label]) => h('button', { class: 'cs-chipbtn', type: 'button', 'aria-pressed': String(Boolean(w.lanes[k])), onclick: () => set((x) => { x.lanes[k] = !x.lanes[k]; }) }, w.lanes[k] ? icon('check', 's') : null, label))),
+        h('div', { class: 'cs-row cs-row--wrap' },
+          check('Local only', w.flags.localOnly, (v) => set((x) => { x.flags.localOnly = v; }), 'no hosting'),
+          check('You do git yourself', w.flags.humanDoesGit, (v) => set((x) => { x.flags.humanDoesGit = v; }), 'agents write push.md and .gitignore, never push'))));
   }
 
   const pinsEl = h('section', { class: 'cs-stack cs-stack--tight', 'aria-labelledby': 'pins-h' });

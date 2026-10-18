@@ -37,22 +37,34 @@ function spendTile(t, ctx) {
   };
 }
 
+/**
+ * Where a project's workflow is: how many stages are done (a count, not a guess), the stage now and who works on it,
+ * and what comes next. Small: the count in a ring. Medium: the track and the stage now. Large: every stage with its
+ * people.
+ */
 function workflowTile(t, ctx) {
   const pu = ctx.pulseOf(t.projectId);
   if (!pu) return { title: 'Workflow', empty: 'No project yet.' };
   const wf = pu.workflow;
-  if (!wf || !wf.stages.length) return { title: pu.project.name, empty: 'No workflow yet.', url: `#/projects/${pu.project.id}/workflow` };
-  const cur = wf.stages.find((s) => s.state === 'waiting' || s.state === 'working');
-  if (t.size === 's') {
-    const done = wf.stages.filter((s) => s.state === 'done').length;
-    return { title: pu.project.name, big: `${done}/${wf.stages.length}`, bigState: cur?.state === 'waiting' ? 'waiting' : 'idle', sub: cur ? `${cur.title}: ${STATE_WORD[cur.state].toLowerCase()}` : 'stages done', url: `#/projects/${pu.project.id}/workflow` };
-  }
+  const url = `#/projects/${pu.project.id}/workflow`;
+  if (!wf || !wf.stages.length) return { title: pu.project.name, empty: 'No workflow yet. Open it to draw one.', url };
+  const stages = wf.stages;
+  const done = stages.filter((s) => s.state === 'done').length;
+  const i = stages.findIndex((s) => s.state === 'waiting' || s.state === 'working');
+  const cur = i >= 0 ? stages[i] : null;
+  const next = stages[i >= 0 ? i + 1 : done] || null;
+  const now = cur ? `${cur.title}: ${STATE_WORD[cur.state].toLowerCase()}` : done === stages.length ? 'Every stage is done' : 'Nothing running';
+  const progress = { done, total: stages.length, pct: Math.round((done / stages.length) * 100), state: cur?.state || (done === stages.length ? 'done' : 'idle') };
+  if (t.size === 's') return { title: pu.project.name, progress, sub: now, url };
+  const people = (cur?.who || []).filter((a) => a.state !== 'idle').slice(0, 3).map((a) => ({ title: a.title, sub: a.detail || STATE_WORD[a.state], state: a.state }));
   return {
     title: pu.project.name,
-    steps: wf.stages.slice(0, t.size === 'l' ? 8 : 6).map((s, i) => ({ n: i + 1, label: s.title, state: s.state })),
-    sub: cur ? `${cur.title}: ${STATE_WORD[cur.state].toLowerCase()}` : `${plural(wf.stages.length, 'stage')} · ${plural(wf.agents, 'agent')} · v${wf.version}`,
-    items: t.size === 'l' ? (pu.agents || []).filter((a) => a.state === 'working' || a.state === 'waiting').slice(0, 4).map((a) => ({ title: a.title, sub: a.detail || STATE_WORD[a.state], state: a.state })) : [],
-    url: `#/projects/${pu.project.id}/workflow`,
+    progress,
+    now: { title: cur ? cur.title : now, word: cur ? STATE_WORD[cur.state] : '', state: cur?.state || 'idle', n: i >= 0 ? i + 1 : null },
+    next: next && next !== cur ? `Next: ${next.title}${next.checkpoint ? ' (you check it first)' : ''}` : '',
+    stages: t.size === 'l' ? stages.slice(0, 9).map((s, k) => ({ n: k + 1, title: s.title, state: s.state, who: (s.who || []).filter((a) => a.state !== 'idle').map((a) => a.title).slice(0, 2).join(', ') || plural(s.agents, 'agent') })) : null,
+    items: t.size === 'm' ? people.slice(0, 2) : [],
+    url,
   };
 }
 
@@ -117,13 +129,15 @@ function chatTile(t, ctx) {
   const name = c.project?.name || 'Chat';
   if (t.size === 's') {
     const last = (c.messages || []).at(-1);
-    return { title: name, sub: last ? `${last.who}: ${last.text}` : c.empty || 'Nothing said yet.', empty: null, url: c.project ? `#/projects/${c.project.id}/chat` : '#/' };
+    return { title: name, sub: last ? `${last.who}: ${last.text}` : c.empty || 'Nothing said yet.', empty: null, url: c.project ? `#/projects/${c.project.id}/chat` : '#/', chatWindow: c.project?.id || null };
   }
   return {
     title: name,
     chat: { selected: c.selected, threads: (c.threads || []).map((x) => ({ id: x.id, label: x.label, on: x.id === c.selected })), messages: c.messages || [], heading: c.title || null },
     empty: c.empty || null,
     url: c.project ? `#/projects/${c.project.id}/chat` : '#/',
+    chatWindow: c.project?.id || null, // a click opens the project's chat window, to reply on the desktop
+    engine: c.engine || null,
   };
 }
 
@@ -137,37 +151,92 @@ function noticesTile(t, ctx) {
   if (t.size === 's') return { title: 'Notifications', big: String(unread), bigState: unread ? 'waiting' : 'idle', sub: notices[0]?.title || 'Nothing new.', url: notices[0]?.url || '#/' };
   return {
     title: unread ? `Notifications · ${unread} new` : 'Notifications',
-    items: notices.slice(0, t.size === 'm' ? 2 : 6).map((n) => ({ title: n.title, sub: [ago(n.at, now), n.body].filter(Boolean).join(' · '), state: n.read ? 'idle' : NOTICE_STATE[n.kind] })),
+    items: notices.slice(0, t.size === 'm' ? 2 : 5).map((n) => ({ title: n.title, sub: [ago(n.at, now), n.body].filter(Boolean).join(' · '), state: n.read ? 'idle' : NOTICE_STATE[n.kind] })),
     empty: notices.length ? null : 'Nothing yet. When an agent asks, finishes a long run or fails, it shows here.',
     url: notices[0]?.url || '#/',
   };
 }
 
-/** What works right now, in every project: chats in Circle Studio and Claude Code teams that are active. */
+const clock = (iso) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const forHow = (iso, now) => { const m = Math.max(0, Math.round((now - Date.parse(iso)) / 60_000)); return m < 1 ? 'just started' : m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60} min`; };
+const RUN_WHAT = { chat: 'chat', team: 'team', terminal: 'Claude Code in a terminal' };
+export const runLabel = (r) => (r.source === 'team' ? `${r.name}: ${r.agent || 'team'}` : `${r.name}: ${RUN_WHAT[r.kind] || r.kind || 'run'}`);
+
+/** What works right now, where and since when: chats here, Claude Code teams, Claude Code in a terminal. */
 function runningTile(t, ctx) {
   const s = ctx.stats;
   if (!s) return { title: 'Running now', empty: 'Loading...' };
   const now = ctx.now();
   const runs = s.running.slice().sort((a, b) => Date.parse(a.startedAt || 0) - Date.parse(b.startedAt || 0));
-  const label = (r) => (r.source === 'team' ? `${r.name}: ${r.agent || 'team'}` : `${r.name}: ${r.kind === 'chat' ? 'chat' : r.kind || 'run'}`);
-  if (t.size === 's') return { title: 'Running now', big: String(runs.length), bigState: 'idle', sub: runs[0] ? label(runs[0]) : 'Nothing is running.', url: runs[0]?.projectId ? `#/projects/${runs[0].projectId}/workflow` : '#/' };
+  const url = (r) => (r?.projectId ? `#/projects/${r.projectId}/${r.source === 'circle' ? 'chat' : 'workflow'}` : '#/');
+  if (t.size === 's') return { title: 'Running now', big: String(runs.length), bigState: runs.length ? 'working' : 'idle', sub: runs[0] ? runLabel(runs[0]) : 'Nothing is running.', url: url(runs[0]) };
+  // large: what finished or failed earlier today, under what runs now
+  const today = new Date(now).toDateString();
+  const earlier = t.size === 'l' ? (ctx.notices?.notices || []).filter((n) => (n.kind === 'done' || n.kind === 'error') && new Date(n.at).toDateString() === today).slice(0, 3)
+    .map((n) => ({ title: n.title, sub: `${clock(n.at)}${n.body ? ` · ${n.body}` : ''}`, state: n.kind === 'error' ? 'danger' : 'done' })) : [];
   return {
     title: runs.length ? `Running now · ${runs.length}` : 'Running now',
-    items: runs.slice(0, t.size === 'm' ? 2 : 6).map((r) => ({ title: label(r), sub: [r.startedAt ? (ago(r.startedAt, now) === 'now' ? 'just started' : `for ${ago(r.startedAt, now)}`) : '', r.what || ''].filter(Boolean).join(' · '), state: 'working' })),
-    empty: runs.length ? null : 'Nothing is running.',
-    url: '#/',
+    items: [...runs.slice(0, t.size === 'm' ? 2 : 4).map((r) => ({ title: runLabel(r), sub: [r.startedAt ? `since ${clock(r.startedAt)} · ${forHow(r.startedAt, now)}` : '', r.what || ''].filter(Boolean).join(' · '), state: 'working' })), ...earlier],
+    empty: runs.length || earlier.length ? null : 'Nothing is running. Chats, teams and Claude Code in a terminal show here while they work.',
+    url: url(runs[0]),
   };
 }
 
-const BUILD = { running: runningTile, status: statusTile, spend: spendTile, workflow: workflowTile, inbox: inboxTile, project: projectTile, overview: overviewTile, chat: chatTile, notices: noticesTile };
+/**
+ * The activity ring: one ring per project with something going on, turning while it works, amber while it waits for
+ * you, a full blue ring when it has just finished. Small: the one that needs you most. Words go with every colour.
+ */
+function pulseTile(t, ctx) {
+  const s = ctx.stats;
+  if (!s) return { title: 'Activity', empty: 'Loading...' };
+  const now = ctx.now();
+  const recent = (ctx.notices?.notices || []).filter((n) => n.kind === 'done' && now - Date.parse(n.at) < 15 * 60_000);
+  const rings = s.projects.filter((p) => p.exists).map((p) => {
+    const wait = ctx.pending.filter((r) => r.projectId === p.id).length + ctx.alerts.filter((a) => a.projectId === p.id).length;
+    const runs = s.running.filter((r) => r.projectId === p.id);
+    const fin = recent.find((n) => n.projectId === p.id);
+    const state = wait ? 'waiting' : runs.length ? 'working' : fin ? 'done' : 'idle';
+    const since = runs.map((r) => r.startedAt).filter(Boolean).sort()[0];
+    const word = wait ? `${wait} waiting for you` : runs.length ? (since && forHow(since, now) !== 'just started' ? `Working · ${forHow(since, now)}` : 'Working') : fin ? `Done at ${clock(fin.at)}` : 'Quiet';
+    return { id: p.id, label: initials(p.name), name: p.name, state, word, what: runs[0] ? runLabel(runs[0]).split(': ')[1] : '', url: wait ? '#/inbox' : `#/projects/${p.id}/${runs[0]?.source === 'circle' ? 'chat' : 'workflow'}` };
+  }).sort((a, b) => ORDER[a.state] - ORDER[b.state]);
+  const busy = rings.filter((r) => r.state !== 'idle');
+  const shown = (busy.length ? busy : rings).slice(0, t.size === 's' ? 1 : t.size === 'm' ? 3 : 6);
+  if (!shown.length) return { title: 'Activity', empty: 'No project yet.', url: '#/' };
+  const working = rings.filter((r) => r.state === 'working').length;
+  const waiting = rings.filter((r) => r.state === 'waiting').length;
+  return {
+    title: 'Activity',
+    activity: shown,
+    // one ring says it all under itself; several get a line adding them up
+    sub: shown.length > 1 ? [working ? `${working} working` : '', waiting ? `${waiting} waiting for you` : ''].filter(Boolean).join(' · ') || 'All quiet' : '',
+    url: shown[0].url,
+  };
+}
+
+/** Your Claude Code mods: how many are on, and where. A click opens the Mods page (make one, add a ready-made one). */
+function modsTile(t, ctx) {
+  const m = ctx.mods;
+  if (!m) return { title: 'Mods', empty: 'Reading your mods...', url: '#/mods' };
+  const on = m.filter((x) => x.group !== 'off');
+  if (t.size === 's') return { title: 'Mods', big: String(on.length), bigState: 'idle', sub: m.length ? `on, of ${m.length} installed` : 'None yet. Click to make one.', url: '#/mods' };
+  return {
+    title: on.length ? `Mods · ${on.length} on` : 'Mods',
+    items: m.slice(0, t.size === 'm' ? 2 : 5).map((x) => ({ title: x.name, sub: [x.isMod ? 'Mod' : 'Plugin', x.group === 'general' ? 'everywhere' : x.group === 'project' ? (x.onIn?.length ? `in ${x.onIn.map((p) => p.name).join(', ')}` : 'some projects') : 'off'].join(' · '), state: x.group === 'off' ? 'idle' : 'done' })),
+    empty: m.length ? null : 'No mods yet. Add a ready-made one, or ask Claude to make one.',
+    url: '#/mods',
+  };
+}
+
+const BUILD = { pulse: pulseTile, mods: modsTile, running: runningTile, status: statusTile, spend: spendTile, workflow: workflowTile, inbox: inboxTile, project: projectTile, overview: overviewTile, chat: chatTile, notices: noticesTile };
 const PROJECT_KINDS = new Set(['status', 'workflow', 'project', 'chat']);
 
 /**
  * The tiles that are shown on the desktop. Each has a key for its saved place that stays the same when the tile is
  * switched to another project, its index on the board (to switch it), and for project tiles the project it shows.
  */
-export function buildFeed({ tiles, pulseOf, usage, stats, pending, alerts, nameOf, palette, defaultProject, chats = new Map(), projects = [], locked = false, notices = null, now = Date.now() }) {
-  const ctx = { pulseOf: (id) => pulseOf(id || defaultProject), usage, stats, pending, alerts, nameOf, chatAt: (t) => chats.get(tiles.indexOf(t)) || null, notices, now: () => now };
+export function buildFeed({ tiles, pulseOf, usage, stats, pending, alerts, nameOf, palette, defaultProject, chats = new Map(), projects = [], locked = false, notices = null, mods = null, asks = true, now = Date.now() }) {
+  const ctx = { pulseOf: (id) => pulseOf(id || defaultProject), usage, stats, pending, alerts, nameOf, chatAt: (t) => chats.get(tiles.indexOf(t)) || null, notices, mods, now: () => now };
   const seen = new Map();
   const out = [];
   tiles.forEach((t, index) => {
@@ -180,5 +249,5 @@ export function buildFeed({ tiles, pulseOf, usage, stats, pending, alerts, nameO
     const pick = PROJECT_KINDS.has(t.kind) ? { projectId: t.projectId || defaultProject || null, canPick: projects.length > 1 } : {};
     out.push({ key: `${base}:${n}`, oldKey: `${base}:${t.projectId || '-'}:${n}`, index, kind: t.kind, size: t.size, ...pick, ...body });
   });
-  return { at: new Date().toISOString(), palette, projects, locked, tiles: out };
+  return { at: new Date().toISOString(), palette, projects, locked, asks, tiles: out };
 }

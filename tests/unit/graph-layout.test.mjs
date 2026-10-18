@@ -88,3 +88,24 @@ test('fmtTokens and uniqueId', () => {
   const wf = { nodes: [{ id: 'new-stage' }, { id: 'new-stage-2' }] };
   assert.deepEqual([uniqueId(wf, 'New Stage'), uniqueId(wf, 'Fresh one!'), uniqueId(wf, '***')], ['new-stage-3', 'fresh-one', 'node']);
 });
+
+test('a wrapped flow goes around the rows, and agents hang off their stage on branch lines', async () => {
+  const { branchPaths, AGENT_INDENT, nodeWidth } = await import('../../frontend/js/components/graph/layout.js');
+  const auto = tidy(seed);
+  const pos = placed(seed, auto);
+  const box = (id) => boxOf(seed.nodes.find((n) => n.id === id), pos[id]);
+  // the edge into the first stage of the second row runs along the gap above that row, never across the agents
+  const wrapFrom = seed.edges.find((e) => pos[e.to].y > pos[e.from].y + 50 && pos[e.to].x < pos[e.from].x);
+  assert.ok(wrapFrom, 'the seed flow wraps');
+  const g = edgeGeometry(box(wrapFrom.from), box(wrapFrom.to));
+  assert.match(g.d, /^M[\d.]+ [\d.]+ L/);
+  assert.ok(g.mid.y < box(wrapFrom.to).y && g.mid.y > box(wrapFrom.from).y, 'the marker sits in the gap between rows');
+  // agents are indented under their stage and narrower than it; one trunk per sub-column plus a branch per agent
+  const kids = seed.nodes.filter((n) => n.parent === 'build');
+  for (const k of kids) assert.ok(pos[k.id].x >= pos.build.x + AGENT_INDENT);
+  assert.ok(nodeWidth(kids[0]) < nodeWidth(seed.nodes.find((n) => n.id === 'build')));
+  const paths = branchPaths(box('build'), kids.map((k) => box(k.id)));
+  const columns = new Set(kids.map((k) => pos[k.id].x)).size;
+  assert.equal(paths.length, kids.length + columns);
+  assert.ok(paths.every((d) => /^M[\d.]+ [\d.]+/.test(d) && !/NaN/.test(d)));
+});

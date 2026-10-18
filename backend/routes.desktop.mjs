@@ -17,13 +17,14 @@ import { providerUsage } from './lib/usage.mjs';
 import { folderKey } from './lib/cchistory.mjs';
 import os from 'node:os';
 import { applyUpdate, appVersion } from './lib/updater.mjs';
-import { spawn } from 'node:child_process';
+import { uiFingerprint } from './lib/codeversion.mjs';
 import { createChatFeed } from './lib/chatfeed.mjs';
+import { allMods } from './lib/mods.mjs';
 
 const WHERE = ['desktop', 'startmenu', 'startup'];
 export const WIDGET_SIZE = { width: 400, height: 660 };
 export const BOARD_SIZE = { width: 800, height: 700 };
-export const WIDGET_KINDS = ['status', 'spend', 'workflow', 'inbox', 'project', 'overview', 'chat', 'notices', 'running'];
+export const WIDGET_KINDS = ['pulse', 'status', 'spend', 'workflow', 'inbox', 'project', 'overview', 'chat', 'notices', 'running', 'mods'];
 // the tiles that show one project (switchable on the tile) and the sizes each kind comes in
 export const PROJECT_KINDS = ['status', 'workflow', 'project', 'chat'];
 // every kind comes small, medium and large; a kind limited to some sizes is listed here
@@ -61,7 +62,11 @@ export function buildDesktopHandlers(app) {
       const stateOf = (ids) => { const st = agents.filter((a) => ids.includes(a.id)).map((a) => a.state); return st.includes('waiting') ? 'waiting' : st.includes('working') ? 'working' : st.length && st.every((x) => x === 'done') ? 'done' : 'idle'; };
       workflow = {
         version: wf.version,
-        stages: stages.map((s) => { const kids = wf.nodes.filter((n) => n.kind === 'agent' && n.parent === s.id).map((n) => n.id); return { id: s.id, title: s.title, agents: kids.length, checkpoint: s.gate?.on ? (s.gate.by || 'you') : null, state: stateOf(kids) }; }),
+        stages: stages.map((s) => {
+          const kids = wf.nodes.filter((n) => n.kind === 'agent' && n.parent === s.id);
+          const who = kids.map((n) => { const a = agents.find((x) => x.id === n.id); return { title: n.title || n.id, state: a?.state || 'idle', detail: a?.detail || '' }; });
+          return { id: s.id, title: s.title, agents: kids.length, who, checkpoint: s.gate?.on ? (s.gate.by || 'you') : null, state: stateOf(kids.map((n) => n.id)) };
+        }),
         agents: wf.nodes.filter((n) => n.kind === 'agent').length,
       };
     }
@@ -136,11 +141,13 @@ export function buildDesktopHandlers(app) {
       const patch = {};
       if (body?.desktopAlerts !== undefined) patch.desktopAlerts = body.desktopAlerts === true;
       if (body?.desktopWidgets !== undefined) patch.desktopWidgets = body.desktopWidgets === true;
+      if (body?.desktopAsks !== undefined) patch.desktopAsks = body.desktopAsks === true; // approvals and questions as cards on the desktop
       if (body?.widgetsLocked !== undefined) patch.widgetsLocked = body.widgetsLocked === true; // tiles cannot be dragged
       if (body?.updates?.check !== undefined) {
         if (!['daily', 'off'].includes(body.updates.check)) throw badRequest('updates.check must be daily or off.');
         patch.updates = { ...settings.get().updates, check: body.updates.check };
       }
+      if (body?.updates?.autoRestart !== undefined) patch.updates = { ...settings.get().updates, ...patch.updates, autoRestart: body.updates.autoRestart === true };
       if (body?.widgets !== undefined) {
         if (!Array.isArray(body.widgets) || body.widgets.length > 16) throw badRequest('widgets must be a list of at most 16.');
         patch.widgets = body.widgets.map((w) => {
@@ -170,20 +177,21 @@ export function buildDesktopHandlers(app) {
       writeShortcut({ lnk, appRoot: config.appRoot, args, icon: icon(), description: project ? `${project.name}: Circle Studio widget` : where === 'startup' ? 'Start Circle Studio in the background' : 'Open Circle Studio' });
       return { path: lnk, shortcuts: shortcuts(project) };
     },
-    'app.update.get': async ({ query }) => ({ version: appVersion(config.appRoot), update: query.get('check') === '1' ? await app.updates.check({ force: true }) : app.updates.last, check: settings.get().updates.check }),
+    // Which code this server runs and which screens are on disk: open windows ask every minute, cheaply, to offer a
+    // restart (newer server code) or a reload (newer screens), or to reload after the server restarted by itself.
+    'app.code': () => ({ code: app.codeAtStart, stale: app.isStale(), ui: uiFingerprint(config.appRoot), restarting: app.restart.pending, busy: app.busyCount(), autoRestart: settings.get().updates?.autoRestart !== false }),
+    // Restart now into the newer code (the banner's button). A chat that is running stops.
+    'app.restart': () => {
+      if (!app.isStale()) return { restarting: false, reason: 'Circle Studio already runs the newest code.' };
+      return { restarting: app.restartIntoNewCode() };
+    },
+    'app.update.get': async ({ query }) => ({ version: appVersion(config.appRoot), update: query.get('check') === '1' ? await app.updates.check({ force: true }) : app.updates.last, check: settings.get().updates.check, autoRestart: settings.get().updates.autoRestart !== false }),
     'app.update.apply': async () => {
       const r = await (app.overrides?.applyUpdate || applyUpdate)(config.appRoot);
       if (!r.ok) throw badRequest(r.message);
       app.updates.last = null;
       // The launcher sees that the code on disk is newer than this server, stops it and starts the new one.
-      // Through wscript, so the launcher is not a child of this process (stopping this one must not stop it).
-      if (app.overrides?.restart) app.overrides.restart();
-      else if (process.platform === 'win32') setTimeout(() => {
-        const child = spawn('wscript.exe', [path.join(config.appRoot, 'scripts', 'launch.vbs'), '--background'], { detached: true, stdio: 'ignore', windowsHide: true });
-        child.on('error', () => {});
-        child.unref();
-      }, 500);
-      return { ...r, restarting: process.platform === 'win32' || Boolean(app.overrides?.restart) };
+      return { ...r, restarting: app.restartIntoNewCode() };
     },
     'desktop.status': ({ query }) => {
       const id = query.get('projectId');
@@ -213,7 +221,9 @@ export function buildDesktopHandlers(app) {
     // git, the team's numbers and the last Claude Code conversation in the folder.
     // What the native desktop widgets draw (scripts/widgets/desktop-widgets.ps1 asks every 15 seconds).
     'widgets.feed': async ({ query }) => {
-      const tiles = settings.get().widgets || [];
+      // the host also runs only to ask on the desktop: then it draws no tiles
+      const tiles = settings.get().desktopWidgets === false && query.get('asks') === '1' ? [] : settings.get().widgets || [];
+      const shown = (kind) => tiles.some((t) => t.kind === kind && t.desktop !== false);
       const usage = tiles.some((t) => t.kind === 'spend' && t.desktop !== false) ? await usageOf(30).catch(() => null) : null;
       const recent = projects.list().filter((p) => p.exists);
       // the chat tiles' messages are read first (Claude Code conversations are files on this PC)
@@ -226,7 +236,9 @@ export function buildDesktopHandlers(app) {
         projects: recent.map((p) => ({ id: p.id, name: p.name })),
         locked: settings.get().widgetsLocked === true,
         pulseOf: (id) => { try { return id ? pulseOf(id) : null; } catch { return null; } },
-        stats: tiles.some((t) => (t.kind === 'overview' || t.kind === 'running') && t.desktop !== false) ? computeStats(app) : null,
+        stats: shown('overview') || shown('running') || shown('pulse') ? computeStats(app) : null,
+        mods: shown('mods') ? (() => { try { return allMods({ claudeHome: config.claudeHome, projects: projects.list() }); } catch { return []; } })() : null,
+        asks: settings.get().desktopAsks !== false,
         pending: app.inbox.list({ status: 'pending' }),
         alerts: app.listAlerts('open'),
         notices: app.notices.list(20),
@@ -244,10 +256,27 @@ export function buildDesktopHandlers(app) {
     'desktop.widgets': async ({ body }) => {
       const host = desktopWidgets(config);
       const action = body?.action;
-      if (action === 'start') { await settings.set({ desktopWidgets: true }); return host.start(); }
-      if (action === 'stop') { await settings.set({ desktopWidgets: false }); return host.stop(); }
-      if (action === 'status' || action === undefined) return host.status();
-      throw badRequest('action must be start, stop or status.');
+      // one host draws both the tiles and the cards that ask: `running` is "the tiles are on the desktop",
+      // `asking` is "an agent's question would pop up on the desktop"
+      // the hotkey that brings every tile to the front, as the host registered it (another app may hold the first choice)
+      const hotkey = () => { try { return fs.readFileSync(path.join(config.dataDir, 'desktop-widgets.hotkey'), 'utf8').trim().slice(0, 40) || null; } catch { return null; } };
+      const say = (st) => ({ ...st, host: st.running, running: st.running && settings.get().desktopWidgets === true, asking: st.running && settings.get().desktopAsks !== false, hotkey: st.running ? hotkey() : null });
+      if (action === 'start') { await settings.set({ desktopWidgets: true }); return say(host.start()); }
+      if (action === 'stop') {
+        await settings.set({ desktopWidgets: false });
+        // the cards that ask stay: the host keeps running with no tiles (they go at its next refresh)
+        if (settings.get().desktopAsks !== false && host.status().running) return say(host.status());
+        return say(host.stop());
+      }
+      // asks on the desktop turned on or off in Settings: start the host for them, or stop it when no tiles need it
+      if (action === 'asks') {
+        await settings.set({ desktopAsks: body?.on === true });
+        if (body?.on === true) return say(host.start());
+        if (!settings.get().desktopWidgets) return say(host.stop());
+        return say(host.status());
+      }
+      if (action === 'status' || action === undefined) return say(host.status());
+      throw badRequest('action must be start, stop, asks or status.');
     },
     'projects.pulse': ({ params }) => pulseOf(params.id),
     'usage.providers': ({ query }) => usageOf(Number(query.get('days')) || 30, query.get('fresh') === '1'),

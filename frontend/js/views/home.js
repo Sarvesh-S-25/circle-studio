@@ -2,7 +2,7 @@
 // workflow, git, the last Claude Code conversation, 30 days of use, and the team's numbers when it has them.
 import { api } from '../api.js';
 import { h, icon, sigil, statusPill, timeAgo, plural } from '../dom.js';
-import { state, subscribe } from '../state.js';
+import { state, subscribe, pref, setPref } from '../state.js';
 import { openNewProject } from '../components/newproject.js';
 import { openFolder, browseForFolder } from '../components/openfolder.js';
 import { askPermissions } from '../components/permissions.js';
@@ -14,6 +14,27 @@ import { widgetMenu, openGitPanel } from '../components/gitpanel.js';
 const usd = (n) => (n >= 100 ? `$${Math.round(n)}` : n >= 0.01 ? `$${n.toFixed(2)}` : n > 0 ? 'under $0.01' : '$0');
 const greeting = () => { const hr = new Date().getHours(); return hr < 5 ? 'Working late' : hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening'; };
 
+/**
+ * Circle Studio on the desktop, offered once on Home to anyone who has not put it there: tiles that show what runs and
+ * what needs you, and cards that ask right on the desktop. One click; "Not now" hides the offer for good.
+ */
+async function offerDesktop(box) {
+  if (pref('home-desk-offer', '') === 'no') return;
+  let st;
+  try { st = await api.desktopWidgets('status'); } catch { return; }
+  if (st.platform !== 'win32' || st.running) return;
+  const put = async () => {
+    try { await api.desktopWidgets('start'); toast('Circle Studio is on your desktop. Drag a tile to move it; Ctrl+Alt+C opens the overlay with every tile and a command box.', { kind: 'ok', ms: 7000 }); box.replaceChildren(); } catch (e) { toast(e.message, { kind: 'danger' }); }
+  };
+  box.replaceChildren(h('section', { class: 'cs-card cs-row cs-row--wrap cs-home__desk', 'aria-label': 'Circle Studio on your desktop' },
+    h('span', { class: 'cs-home__deskicon', 'aria-hidden': 'true' }, icon('pin', 'm')),
+    h('div', { class: 'cs-grow cs-stack cs-stack--tight' },
+      h('strong', {}, 'Keep Circle Studio on your desktop'),
+      h('span', { class: 'cs-soft cs-small' }, 'Small tiles show what is running and what needs you while you do something else. When an agent asks, a card pops up there to answer. Ctrl+Alt+C dims the screen and opens them all with a box to type commands, like the Xbox Game Bar.')),
+    h('button', { class: 'cs-btn cs-btn--quiet', type: 'button', onclick: () => { setPref('home-desk-offer', 'no'); box.replaceChildren(); } }, 'Not now'),
+    h('button', { class: 'cs-btn cs-btn--primary', type: 'button', onclick: put }, icon('pin', 's'), 'Put it on my desktop')));
+}
+
 export async function mount(el) {
   const pathInput = h('input', { class: 'cs-input', id: 'home-path', placeholder: 'or paste a folder path, then Enter', autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Folder path' });
   pathInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); openFolder(pathInput.value); } });
@@ -23,6 +44,8 @@ export async function mount(el) {
   const runningEl = h('section', { class: 'cs-stack cs-stack--tight', 'aria-labelledby': 'h-running' });
   const projectsEl = h('section', { class: 'cs-stack', 'aria-labelledby': 'h-projects' });
   const claudeEl = h('div', { class: 'cs-home__claude' });
+  const deskEl = h('div', {});
+  offerDesktop(deskEl);
   let stats = null;
   const pulses = new Map(); // project id -> /pulse answer
   const costs = new Map(); // project id -> 30-day usage from /cost
@@ -174,7 +197,7 @@ export async function mount(el) {
 
   el.append(h('div', { class: 'cs-stack cs-stack--loose cs-home' },
     h('header', { class: 'cs-home__hero' }, h('h1', { class: 'cs-home__hello', id: 'main-title' }, greeting()), summary, claudeEl),
-    tiles, needsEl, runningEl, projectsEl));
+    deskEl, tiles, needsEl, runningEl, projectsEl));
   await load();
   loadDetails();
   const off = subscribe(() => { if (alive) drawTop(); });

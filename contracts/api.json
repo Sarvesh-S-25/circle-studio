@@ -3,6 +3,18 @@
   "version": 1,
   "routes": [
     {
+      "id": "app.code",
+      "method": "GET",
+      "path": "/api/code",
+      "doc": "Which code this server runs, whether newer code is on disk (stale), the screens on disk (ui), and whether it restarts by itself. Open windows ask every minute."
+    },
+    {
+      "id": "app.restart",
+      "method": "POST",
+      "path": "/api/restart",
+      "doc": "Restart now into the newer code on disk, through the launcher. A running chat stops."
+    },
+    {
       "id": "app.health",
       "method": "GET",
       "path": "/api/health",
@@ -507,6 +519,36 @@
       "doc": "Claude reads the failed test, the server config (names only) and its code, and answers: cause, steps, safe commands, a config fix (as an mcp-server-set op for a project .mcp.json) and advice for the codebase."
     },
     {
+      "id": "mods.list",
+      "method": "GET",
+      "path": "/api/mods",
+      "doc": "Claude Code mods and plugins: what each changes (chat look, prompt and context, tool checks, skills...), sorted into on for every project, only this project (?projectId=) or off; without a project, the whole PC with the projects that turn each on or off."
+    },
+    {
+      "id": "mods.general",
+      "method": "POST",
+      "path": "/api/mods/general",
+      "doc": "Turn a mod on or off for every project, through claude plugin enable|disable --scope user."
+    },
+    {
+      "id": "mods.starters",
+      "method": "GET",
+      "path": "/api/mods/starters",
+      "doc": "Circle Studio's ready-made mods (a tiny game while Claude works, a line after each turn on context and tests): what each does and changes. Added to a project with the mod-add op."
+    },
+    {
+      "id": "mods.check",
+      "method": "POST",
+      "path": "/api/mods/check",
+      "doc": "Check a mod as Claude Code loads it: claude plugin validate, then claude plugin test when it has tests. Plain result: ok, problems, warnings, hooks, tests passed and failed."
+    },
+    {
+      "id": "mods.details",
+      "method": "POST",
+      "path": "/api/mods/details",
+      "doc": "What a mod brings and its context cost, from claude plugin details."
+    },
+    {
       "id": "connections.manage",
       "method": "GET",
       "path": "/api/connections/manage",
@@ -523,6 +565,18 @@
       "method": "POST",
       "path": "/api/connections/apply",
       "doc": "Run a previewed fix (~/.claude.json backed up first and put back on failure), then test the servers it touched. Project .mcp.json changes come back as ops to review."
+    },
+    {
+      "id": "overlay.feed",
+      "method": "GET",
+      "path": "/api/overlay",
+      "doc": "What the overlay (Ctrl+Alt+C) shows for one project (?projectId=, ?theme=light|dark): what waits (numbered for allow/answer), what runs, the workflow drawn small, spending, git (read only), this PC, the chat and the answer coming in for a command, the last notifications, and the palette."
+    },
+    {
+      "id": "overlay.command",
+      "method": "POST",
+      "path": "/api/overlay/command",
+      "doc": "Run one line typed into the overlay ({ text, projectId }): help, project, open, chat, ask, run <agent>, stop, waiting, allow, deny, answer, running, workflow, usage, git, pc, mods, mod check, hide. A sentence goes to the main chat. Returns { command, projectId, open, chatWindow, hide, say: { title, lines, tone } }."
     }
   ]
 }

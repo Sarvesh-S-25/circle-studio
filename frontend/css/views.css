@@ -250,3 +250,51 @@ a.cs-tile:hover { border-color: var(--c-accent); }
 .cs-cxm__ok > svg { color: var(--c-ok); }
 .cs-cxm__bad > svg { color: var(--c-danger); }
 .cs-cxm__key { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); border: var(--bw) solid var(--c-line); border-radius: var(--r-m); }
+
+/* Mods: Claude Code mods and plugins, sorted by where they are on and what they change */
+.cs-mods__filters { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.cs-mods__filter {
+  display: inline-flex; align-items: center; gap: var(--sp-2); min-block-size: var(--tap); padding: 0 var(--sp-3);
+  border: var(--bw) solid var(--c-line); border-radius: var(--r-pill); background: var(--c-surface); color: var(--c-text);
+  font: inherit; font-size: var(--fs-s); cursor: pointer; transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.cs-mods__filter:hover { border-color: var(--c-accent); }
+.cs-mods__filter:focus-visible { outline: var(--bw-strong) solid var(--c-focus); outline-offset: var(--bw-strong); }
+.cs-mods__filter[aria-pressed="true"] { background: var(--c-accent); border-color: var(--c-accent); color: var(--c-on-accent); }
+.cs-mods__count { font-size: var(--fs-xs); opacity: 0.8; }
+.cs-mods__grouphead { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.cs-mods__grid { display: grid; gap: var(--sp-3); grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--w-m)), 1fr)); }
+.cs-mods__card {
+  display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); min-width: 0;
+  background: var(--c-surface); border: var(--bw) solid var(--c-line); border-radius: var(--r-l);
+  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-med) var(--ease);
+}
+.cs-mods__card:hover { border-color: var(--c-line-strong); box-shadow: var(--sh-1); }
+.cs-mods__card--mod { border-inline-start: var(--bw-strong) solid var(--c-accent); }
+.cs-mods__top { display: flex; align-items: center; gap: var(--sp-3); }
+.cs-mods__icon { flex: none; display: inline-flex; align-items: center; justify-content: center; width: var(--sp-6); height: var(--sp-6); border-radius: var(--r-m); background: var(--c-sunken); color: var(--c-text-soft); }
+.cs-mods__icon--mod { background: var(--c-accent-soft); color: var(--c-accent); }
+.cs-mods__name { display: grid; min-width: 0; flex: 1 1 auto; }
+.cs-mods__name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-mods__desc { margin: 0; color: var(--c-text-soft); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.cs-mods__cats { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.cs-mods__cat { padding: 0 var(--sp-2); border-radius: var(--r-pill); font-size: var(--fs-xs); line-height: var(--lh-normal); background: var(--c-sunken); color: var(--c-text-soft); border: var(--bw) solid var(--c-line); }
+.cs-mods__cat--look { background: var(--c-accent-soft); color: var(--c-accent); border-color: transparent; }
+.cs-mods__cat--context { background: var(--c-info-soft); color: var(--c-info); border-color: transparent; }
+.cs-mods__cat--checks { background: var(--c-gate-soft); color: var(--c-gate); border-color: transparent; }
+.cs-mods__where { margin: 0; }
+.cs-mods__actions { display: flex; flex-wrap: wrap; gap: var(--sp-1); margin-top: auto; padding-top: var(--sp-1); }
+.cs-mods__details { white-space: pre-wrap; overflow-wrap: anywhere; max-block-size: 60vh; overflow: auto; padding: var(--sp-3); background: var(--c-code-bg); border-radius: var(--r-m); margin: 0; }
+
+/* mods: make your own (ready-made mods, or ask Claude) */
+.cs-mods__starters { display: grid; gap: var(--sp-3); grid-template-columns: repeat(auto-fill, minmax(var(--w-s), 1fr)); }
+.cs-mods__starter { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); border: var(--bw) solid var(--c-line); border-radius: var(--r-l); background: var(--c-surface); }
+.cs-mods__starter .cs-mods__actions { margin-block-start: auto; }
+
+/* Home: the offer to keep Circle Studio on the desktop */
+.cs-home__desk { align-items: center; }
+.cs-home__deskicon { display: inline-grid; place-items: center; inline-size: var(--sp-8); block-size: var(--sp-8); border-radius: var(--r-pill); background: var(--c-accent-soft); color: var(--c-accent); flex: none; }
+.cs-mods__make .cs-select { inline-size: auto; max-inline-size: var(--w-s); }
+
+/* the Widgets page command box: help keeps its columns */
+.cs-cmdhelp { white-space: pre-wrap; }

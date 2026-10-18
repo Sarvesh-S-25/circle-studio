@@ -5,6 +5,10 @@ import path from 'node:path';
 import { inspectTeam, readProjectText, P } from './team.mjs';
 import { listAdrs, readBoard, describeFreeze, quickAttention } from './health.mjs';
 import { redact } from './secrets.mjs';
+import { listConversations } from './cchistory.mjs';
+
+// A Claude Code conversation written to this recently is one you are running in a terminal now.
+const TERMINAL_LIVE_MS = 2 * 60_000;
 
 const DAYS = 14;
 const LIVE_MS = 10 * 60 * 1000;
@@ -97,6 +101,14 @@ export function computeStats(app, now = Date.now()) {
     ...app.sessions.active().map((r) => ({ source: 'circle', kind: r.kind, projectId: r.projectId, name: r.projectId ? names.get(r.projectId) || r.projectId : 'Advisor', startedAt: r.startedAt })),
     ...projects.filter((p) => p.activity?.live).map((p) => ({ source: 'team', kind: 'team', projectId: p.id, name: p.name, agent: p.activity.last.agent, what: p.activity.last.summary || p.activity.last.event, startedAt: p.activity.lastAt })),
   ];
+  // Claude Code in a terminal: a conversation in the folder written to in the last two minutes (and not one of ours)
+  const claudeHome = app.config?.claudeHome;
+  for (const p of claudeHome ? app.projects.list() : []) {
+    if (!p.exists || running.some((r) => r.projectId === p.id)) continue;
+    let c;
+    try { c = listConversations(claudeHome, p.path, { limit: 1 }).conversations[0]; } catch { continue; }
+    if (c?.lastAt && now - Date.parse(c.lastAt) < TERMINAL_LIVE_MS) running.push({ source: 'claude-code', kind: 'terminal', projectId: p.id, name: p.name, what: c.title ? redact(String(c.title)).slice(0, 80) : '', startedAt: c.startedAt || c.lastAt });
+  }
   return {
     generatedAt: new Date(now).toISOString(),
     totals: {

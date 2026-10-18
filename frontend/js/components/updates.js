@@ -53,7 +53,8 @@ export function updateSection() {
       h('div', { class: 'cs-row cs-row--wrap' },
         up?.available && up.canUpdate ? h('button', { class: 'cs-btn cs-btn--primary', type: 'button', onclick: runUpdate }, icon('download', 's'), 'Update and restart') : null,
         h('button', { class: 'cs-btn', type: 'button', onclick: () => draw(true) }, icon('refresh', 's'), 'Check now'),
-        h('label', { class: 'cs-switch' }, h('input', { class: 'cs-switch__input', type: 'checkbox', checked: u.check !== 'off' || undefined, onchange: async (e) => { await api.saveSettings({ updates: { check: e.target.checked ? 'daily' : 'off' } }); draw(); } }), h('span', { class: 'cs-switch__track' }), h('span', {}, 'Check once a day'))),
+        h('label', { class: 'cs-switch' }, h('input', { class: 'cs-switch__input', type: 'checkbox', checked: u.check !== 'off' || undefined, onchange: async (e) => { await api.saveSettings({ updates: { check: e.target.checked ? 'daily' : 'off' } }); draw(); } }), h('span', { class: 'cs-switch__track' }), h('span', {}, 'Check once a day')),
+        h('label', { class: 'cs-switch', title: 'When newer code is on this PC (after an update), Circle Studio restarts into it once nothing is running or waiting for you, and open windows reload. Off: a banner offers Restart now.' }, h('input', { class: 'cs-switch__input', type: 'checkbox', checked: u.autoRestart !== false || undefined, onchange: async (e) => { await api.saveSettings({ updates: { autoRestart: e.target.checked } }); draw(); } }), h('span', { class: 'cs-switch__track' }), h('span', {}, 'Restart by itself when nothing is running'))),
       h('p', { class: 'cs-soft cs-small' }, 'The check only reads the remote. The update runs only when you press it, and only moves forward: if you changed files in the app\'s folder it says so and waits for you.'));
   }
   draw();

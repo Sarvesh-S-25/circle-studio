@@ -73,6 +73,10 @@ export async function mount(el) {
         if (on) { const p = await enableAlerts(); if (p === 'denied') { toast('Notifications are blocked for this window. Allow them in the site settings.', { kind: 'warn' }); } }
         drawDesktop();
       }, `A Windows notification when this window is in the background, and when no Circle Studio window is open at all. ${permNote}`),
+      sc ? sw('Ask me on the desktop', s.settings.desktopAsks !== false, async (on) => {
+        try { await api.desktopWidgets('asks', { on }); toast(on ? 'An agent\'s question now pops up on your desktop as a card you answer there.' : 'Questions no longer pop up on the desktop.', { kind: 'ok' }); } catch (e) { toast(e.message, { kind: 'danger' }); }
+        drawDesktop();
+      }, 'When an agent asks to run something or has a question, a card appears at the bottom right of your screen, above other windows, with Allow and Deny (or the answers to pick). No need to open the Inbox.') : null,
       sc ? sw('Start Circle Studio when I sign in to Windows', sc.startup, async (on) => {
         try { await api.shortcut({ where: 'startup', remove: !on }); toast(on ? 'Circle Studio starts at sign-in, in the background (no window).' : 'It no longer starts at sign-in.', { kind: 'ok' }); } catch (e) { toast(e.message, { kind: 'danger' }); }
         drawDesktop();
@@ -94,7 +98,7 @@ export async function mount(el) {
         drawDesktop();
       };
       row.replaceChildren(h('strong', {}, 'Desktop widgets'),
-        h('span', { class: 'cs-soft cs-small' }, 'Rounded tiles that sit on your desktop, like phone and Mac widgets: rings for every agent (green working, amber waiting for you, blue done, grey idle), spending by provider, a workflow, what waits for you. Drag one to move it, click it to open Circle Studio there, right-click to keep them above windows or close them. They come back whenever Circle Studio runs.'),
+        h('span', { class: 'cs-soft cs-small' }, 'Rounded tiles that sit on your desktop, like phone and Mac widgets: an activity ring per project (it turns while it works), what runs and since when, what waits for you, a workflow, a chat. Drag one to move it, click it to open Circle Studio there, right-click for options. Ctrl+Alt+C opens the overlay, like the Xbox Game Bar: the screen dims, every tile comes forward with what waits, what runs, the workflow, this PC and spending, and you type commands (help lists them). Esc or the same keys put it all back. They come back whenever Circle Studio runs.'),
         h('div', { class: 'cs-row cs-row--wrap' },
           st.running ? h('span', { class: 'cs-pill cs-pill--ok' }, icon('check', 's'), 'On the desktop') : null,
           h('button', { class: `cs-btn cs-btn--small ${st.running ? '' : 'cs-btn--primary'}`, type: 'button', onclick: () => toggle(!st.running) }, icon(st.running ? 'close' : 'pin', 's'), st.running ? 'Take them off the desktop' : 'Show widgets on the desktop'),

@@ -8,9 +8,11 @@ import { initRequests, openRequest, engineName } from './components/requests.js'
 import { initAlerts } from './components/alerts.js';
 import { barSeries } from './components/charts.js';
 import { mountBoard, mountSingleTile } from './components/board.js';
+import { watchFreshness } from './components/freshness.js';
 
 const id = new URLSearchParams(location.search).get('p') || '';
 const root = document.getElementById('app');
+watchFreshness(document.body); // reloads by itself after Circle Studio restarted into a newer version
 const appUrl = (hash = '') => `/${hash}`;
 const POLL_MS = 15_000;
 

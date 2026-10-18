@@ -10,7 +10,9 @@ import { buildEngineHandlers } from './routes.engines.mjs';
 import { buildWorkflowHandlers } from './routes.workflow.mjs';
 import { buildDesktopHandlers } from './routes.desktop.mjs';
 import { buildConnectionHandlers } from './routes.connections.mjs';
+import { buildModHandlers } from './routes.mods.mjs';
 import { buildCatalogHandlers } from './routes.catalog.mjs';
+import { buildOverlayHandlers } from './routes.overlay.mjs';
 import { LIMITS } from './lib/skills.mjs';
 import { computeStats } from './lib/stats.mjs';
 import { codeFingerprint } from './lib/codeversion.mjs';
@@ -32,11 +34,12 @@ function decodeFiles(list) {
 export function buildHandlers(app) {
   const { projects, library, chats, claude, github, changes, config } = app;
 
-  return {
+  const handlers = {
     ...buildEngineHandlers(app),
     ...buildWorkflowHandlers(app),
     ...buildDesktopHandlers(app),
     ...buildConnectionHandlers(app),
+    ...buildModHandlers(app),
     ...buildCatalogHandlers(app),
 
     'app.health': async () => {
@@ -166,4 +169,6 @@ export function buildHandlers(app) {
     'changes.apply': async ({ body }) => changes.apply(str(body?.id, 'id', 60)),
 
   };
+  // the overlay runs its commands through the handlers above
+  return Object.assign(handlers, buildOverlayHandlers(app, handlers));
 }

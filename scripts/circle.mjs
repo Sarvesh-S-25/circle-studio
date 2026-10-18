@@ -8,6 +8,8 @@
 //   node scripts/circle.mjs widget <project id>
 //   node scripts/circle.mjs update [--check]
 //   node scripts/circle.mjs doctor
+//   node scripts/circle.mjs mods [project] [--json]    mods and plugins: for every project, one project, or off
+//   node scripts/circle.mjs chat <project> [--engine e] [--agent id] <message>   chat from this terminal
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline/promises';
@@ -98,6 +100,16 @@ async function serverHealth() {
   } catch { return null; }
 }
 
+/** Your projects, from Circle Studio's own list (data/registry.json). */
+function readRegistry() {
+  try { return (JSON.parse(fs.readFileSync(path.join(config.dataDir, 'registry.json'), 'utf8')).projects || []).filter((p) => fs.existsSync(p.path)); } catch { return []; }
+}
+/** A project by id, name (any case) or folder path. */
+function findProject(list, want) {
+  const w = String(want).toLowerCase();
+  return list.find((p) => p.id === want) || list.find((p) => p.name.toLowerCase() === w) || list.find((p) => path.resolve(p.path).toLowerCase() === path.resolve(want).toLowerCase()) || null;
+}
+
 const commands = {
   async install() {
     say(c.b(`Circle Studio ${appVersion(config.appRoot)}: installing for ${process.env.USERNAME || 'you'} on this PC\n`));
@@ -181,6 +193,80 @@ const commands = {
     return 0;
   },
 
+  /** Mods and plugins: for every project, only one project, or off. Reads the files directly: no server needed. */
+  async mods() {
+    const { allMods, projectMods, CATEGORIES } = await import('../backend/lib/mods.mjs');
+    const projects = readRegistry();
+    const want = argv.slice(1).find((a) => !a.startsWith('--'));
+    const project = want ? findProject(projects, want) : null;
+    if (want && !project) { say(`No project "${want}". Known: ${projects.map((p) => p.name).join(', ') || 'none yet'}`); return 1; }
+    const mods = project ? projectMods({ claudeHome: config.claudeHome, root: project.path }) : allMods({ claudeHome: config.claudeHome, projects });
+    if (flag('--json')) { say(JSON.stringify(mods, null, 2)); return 0; }
+    say(c.b(project ? `Mods and plugins in ${project.name}` : 'Mods and plugins on this PC'));
+    if (!mods.length) { say(c.dim('  None yet. In Claude Code, type /plugin to browse and install one.')); return 0; }
+    const groups = project ? [['general', 'For every project'], ['project', `Only ${project.name}`], ['off', 'Off here']] : [['general', 'For every project'], ['project', 'Only some projects'], ['off', 'Not on anywhere']];
+    for (const [g, title] of groups) {
+      const list = mods.filter((m) => m.group === g);
+      say(`\n${c.b(title)} ${c.dim(`(${list.length})`)}`);
+      if (!list.length) say(c.dim('  none'));
+      for (const m of list) {
+        const cats = m.categories.map((k) => CATEGORIES[k]?.label || k).join(', ');
+        const where = project ? '' : [m.onIn?.length ? `on in ${m.onIn.map((p) => p.name).join(', ')}` : '', m.offIn?.length ? `off in ${m.offIn.map((p) => p.name).join(', ')}` : ''].filter(Boolean).join('; ');
+        say(`  ${m.isMod ? c.ok('mod   ') : c.dim('plugin')} ${c.b(m.id)}${cats ? `  ${c.dim(cats)}` : ''}${where ? `  ${c.warn(where)}` : ''}`);
+      }
+    }
+    say(c.dim('\nChange one: claude plugin enable|disable <name@source> --scope user (every project) or --scope project (run in the project folder).'));
+    return 0;
+  },
+
+  /** Chat with an engine in a project from this terminal. Approvals and questions pop up in Circle Studio, as always. */
+  async chat() {
+    const rest = argv.slice(1);
+    const opt = (name) => { const i = rest.indexOf(name); if (i < 0) return null; const v = rest[i + 1]; rest.splice(i, 2); return v; };
+    const engine = opt('--engine') || 'claude';
+    const agent = opt('--agent');
+    const model = opt('--model');
+    const [want, ...words] = rest;
+    const message = words.join(' ').trim();
+    if (!want || !message) { say('Use: npm run chat -- <project> [--engine claude|codex|gemini|copilot] [--agent <agent id>] [--model <model>] <message>'); return 1; }
+    const project = findProject(readRegistry(), want);
+    if (!project) { say(`No project "${want}". Open it in Circle Studio once first.`); return 1; }
+    if (!(await serverHealth())) {
+      say(c.dim('Starting Circle Studio in the background...'));
+      launcher('--background');
+      for (let i = 0; i < 30 && !(await serverHealth()); i++) await new Promise((r) => setTimeout(r, 500));
+      if (!(await serverHealth())) { say(c.bad('Circle Studio did not start. Try: npm run doctor')); return 1; }
+    }
+    const names = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini', copilot: 'Copilot' };
+    say(c.dim(`${project.name} · ${agent ? `agent ${agent} · ` : ''}${names[engine] || engine} answers. Approvals and questions open in Circle Studio.`));
+    const res = await fetch(`http://127.0.0.1:${config.port}/api/chat`, { method: 'POST', headers: { 'X-Circle': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ projectId: project.id, nodeId: agent || undefined, engine, model: model || undefined, message }) });
+    if (!String(res.headers.get('content-type')).startsWith('text/event-stream')) {
+      const j = await res.json().catch(() => null);
+      say(c.bad(j?.error?.message || `The server answered ${res.status}.`));
+      return 1;
+    }
+    let failed = false;
+    let buf = '';
+    const dec = new TextDecoder();
+    for await (const chunk of res.body) {
+      buf += dec.decode(chunk, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const block = buf.slice(0, i); buf = buf.slice(i + 2);
+        const ev = /^event: (.*)$/m.exec(block)?.[1];
+        const data = /^data: (.*)$/m.exec(block)?.[1];
+        if (!ev || !data) continue;
+        let d; try { d = JSON.parse(data); } catch { continue; }
+        if (ev === 'text') process.stdout.write(d.delta || '');
+        else if (ev === 'tool' && d.status !== 'end') process.stdout.write(c.dim(`\n[${d.summary || d.name}]\n`));
+        else if (ev === 'notice') say(c.warn(`\n${d.message}`));
+        else if (ev === 'error') { failed = true; say(c.bad(`\n${d.message}`)); }
+        else if (ev === 'done') say(c.dim(`\n\n${d.models?.length ? `answered by ${d.models.join(', ')}` : 'done'}${d.ms ? ` in ${(d.ms / 1000).toFixed(1)} s` : ''}`));
+      }
+    }
+    return failed ? 1 : 0;
+  },
+
   help() {
     say(`Circle Studio ${appVersion(config.appRoot)}
 
@@ -193,6 +279,9 @@ const commands = {
   npm run update       update from the git remote (only when this folder has no changes of yours)
   npm run doctor       check Node, the engines, git, shortcuts and updates
   npm run uninstall    remove the shortcuts (your data stays)
+  npm run mods -- [project]        Claude Code mods and plugins: for every project, only one, or off
+  npm run chat -- <project> [--engine codex] [--agent <id>] <message>
+                       chat in a project from this terminal (approvals open in Circle Studio)
 `);
     return 0;
   },

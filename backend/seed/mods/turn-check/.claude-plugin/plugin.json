@@ -1,0 +1,7 @@
+{
+  "name": "turn-check",
+  "version": "0.1.0",
+  "description": "After each turn, a line above the prompt: how full the context is, how long the turn took, which files changed and whether tests ran after the change. Warns once when the context passes 70%.",
+  "author": { "name": "Circle Studio" },
+  "types": "./types/index.d.ts"
+}

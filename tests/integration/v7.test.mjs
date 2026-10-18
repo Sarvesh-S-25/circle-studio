@@ -83,7 +83,9 @@ test('desktop widgets: the feed draws every tile from tokens.css colours, and th
   assert.equal(feed.tiles[0].rings[1].label, 'MS');
   assert.equal(feed.tiles[1].big, '$1.2k');
   assert.deepEqual(feed.tiles[1].bars, [33, 100]);
-  assert.equal(feed.tiles[2].sub, 'Build: working');
+  assert.equal(feed.tiles[2].now.title, 'Build', 'the stage now, by name');
+  assert.equal(feed.tiles[2].now.state, 'working');
+  assert.equal(feed.tiles[2].progress.done, 1);
   assert.equal(feed.tiles[3].big, '1');
   assert.match(feed.palette.ok, /^#[0-9a-f]{6}$/i);
   const cmd = hostCommand({ appRoot: 'C:/app', port: 4380, dataDir: 'C:/app/data' });

@@ -6,9 +6,17 @@ import { pref, setPref, state, subscribe } from '../state.js';
 import { openModal, toast } from './overlay.js';
 
 /** Change this id when there is something new to tell. */
-export const RELEASE = '2026-10-05-notifications';
+export const RELEASE = '2026-10-18-overlay';
 
 const CHANGES = [
+  ['pin', 'Ctrl+Alt+C now opens an overlay, like the Xbox Game Bar',
+    'Press Ctrl+Alt+C anywhere: the screen dims, your desktop tiles come forward, and panels show what waits for you (with Allow and Deny), what runs, your workflow drawn small, the chat, this PC (processor, memory, the time), spending, git and notifications. Type in the box at the bottom: help lists everything. A sentence goes to the project\'s chat and the answer streams in; allow 1, deny 1 and answer 1 2 handle what waits; run planner write the plan gives one agent work; project, open inbox, chat, stop, pc, usage, git, mods and mod check do what they say. Drag a panel to move it. Esc or the same keys put it all back.'],
+  ['pin', 'Work from your desktop: answer agents there, Ctrl+Alt+C, an activity ring',
+    'When an agent wants to run something or has a question, a card now pops up at the bottom right of your screen with Allow and Deny (or the answers to pick): no need to open the Inbox. Press Ctrl+Alt+C anywhere to bring every Circle Studio tile in front of your windows, and again to put them back. New tiles: Activity (a ring per project that turns while it works and pulses amber while it waits for you) and Mods. Running now says where and since when, including Claude Code in a terminal. The Workflow tile counts stages done and names the one now; the Chat window shows whole messages, formatted. Settings, Desktop: "Ask me on the desktop".'],
+  ['sparkle', 'Make your own mods, and check them',
+    'Mods, Make your own: add a ready-made mod to a project (waiting-game, a tiny game while Claude works; turn-check, a line after each turn on how full the context is and whether tests ran after a change), or describe one and Claude builds it in the project, every file asked first. Check loads any mod the way Claude Code will and runs its tests. A project\'s rules (lanes, local only, you do git) now sit behind one line instead of six switches.'],
+  ['sparkle', 'Mods, a new workflow graph, and chat from a widget',
+    'Mods (in the menu, and a tab in each project): your Claude Code mods and plugins, sorted into For every project, Only this project and Off, with what each changes (chat look, prompt and context, tool checks, skills, tools...). Turn one on or off for one project (you see the change to .claude/settings.json first) or for every project. Workflow: stages are numbered on one line, agents hang off their stage, a hovered card lights up what it is linked to, Tidy glides into place, and a map in the corner moves you around a big team. The Chat widget now has a box to reply and shows which engine answers; on the desktop, click the Chat tile to open a small chat window. From a terminal: npm run mods, npm run chat. And after an update, Circle Studio restarts into the new version by itself once nothing is running (Settings, Updates), or a banner offers Restart now or Later.'],
   ['bell', 'Notifications, Running now, and small tiles',
     'Widgets, Edit tiles, Add: Notifications keeps what Circle Studio told you (an agent asking, a long run finished or failed, a team question, an update, a broken connection), even while a window was open; tap one to go there, or Mark all read. Running now shows what works right now in every project, and for how long. Every tile now also comes small. In Workflow, an agent\'s Helper has "Write only the helper files": it adds the Haiku helper without rewriting your agent files.'],
   ['library', 'Helpers on the graph, and Patterns to explore',
@@ -17,12 +25,6 @@ const CHANGES = [
     'Widgets, Edit tiles, Add, Chat (medium or large): a project\'s main chat and its agents\' chats; tap one to read it, tap the title to open it and reply. Every project tile switches project from its title (on the desktop, click the name with the arrow, or right-click). Lock in place (right-click, or the Widgets page) keeps the tiles where they are. Desktop widgets started before an update now restart on their own, so a tap reuses your Circle Studio window instead of opening another.'],
   ['sparkle', "Let's begin, for people new to it",
     "The first time, Circle Studio asks which AI tools you use (Claude Code, Codex, Gemini, Copilot), shows which are ready, and gives the exact install and sign-in steps, with a button that runs them in a terminal. Sign in to GitHub there too (optional; Circle Studio never sees your token). Open it any time from the AI tools line at the bottom of the menu."],
-  ['key', 'Keys in the menu, tools in each project',
-    'Keys (where Connections was): paste an API key once. Each project has a Connections tab: the tools its agents can use, including what your Claude Code plugins bring, whether each works, and buttons to give a key, add a tool or remove one. Adding something the project already has (for example from a plugin) is flagged before anything changes.'],
-  ['skill', 'Skills found for you',
-    'In the Workflow helper, "Find skills" works out what your agents lack, searches GitHub, and suggests a few skills with what each does and which agent it is for. Tick the ones you want: they go to your library and to their agents. Paste a GitHub link and it shows what is in it.'],
-  ['widgets', 'One window, and Widgets in the menu',
-    'Opening Circle Studio while it is already open brings that window to the front instead of opening another one; the same goes for the widget board and each project\'s widget, and for clicks on the desktop widgets. Widgets now has its own page in the menu, below Connections: choose and arrange your tiles there, and put them on the desktop or take them off.'],
 ];
 
 export function openWhatsNew() {
@@ -69,8 +71,8 @@ export function checkForNews() {
     if (warned || !s.health) return;
     warned = true;
     off();
-    // an older server does not report its code at all; a current one says whether newer code is on disk
-    if (s.health.stale === true || s.health.code === undefined) {
+    // an older server does not report its code at all (newer code on disk is offered by the banner, freshness.js)
+    if (s.health.code === undefined) {
       toast('Circle Studio was updated, but this window still talks to the old version. Close this window and open Circle Studio again from the desktop to finish.', { kind: 'warn', ms: 0 });
     }
   });

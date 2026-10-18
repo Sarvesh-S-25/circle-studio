@@ -14,7 +14,10 @@ function block(css, selector) {
   return '';
 }
 
-/** { bg, surface, raised, sunken, line, lineStrong, text, soft, accent, onAccent, gate, ok, warn, info, danger } as #rrggbb. */
+// rgb(r g b / a) as #aarrggbb (the overlay's dimmed screen, --c-scrim)
+const argb = (v) => { const m = /rgb\((\d+)\s+(\d+)\s+(\d+)\s*\/\s*([\d.]+)\)/.exec(v || ''); if (!m) return null; const h = (n) => Math.round(Number(n)).toString(16).padStart(2, '0'); return `#${h(Number(m[4]) * 255)}${h(m[1])}${h(m[2])}${h(m[3])}`; };
+
+/** { bg, surface, raised, sunken, line, lineStrong, text, soft, accent, onAccent, gate, ok, warn, info, danger } as #rrggbb, scrim as #aarrggbb. */
 export function readPalette(appRoot, theme = 'dark') {
   const css = fs.readFileSync(path.join(appRoot, 'frontend', 'css', 'tokens.css'), 'utf8');
   const light = block(css, ':root');
@@ -24,5 +27,6 @@ export function readPalette(appRoot, theme = 'dark') {
     bg: get('bg'), surface: get('surface'), raised: get('surface-raised'), sunken: get('sunken'), line: get('line'), lineStrong: get('line-strong'),
     text: get('text'), soft: get('text-soft'), accent: get('accent'), onAccent: get('on-accent'), gate: get('gate'),
     ok: get('ok'), warn: get('warn'), info: get('info'), danger: get('danger'),
+    scrim: argb((/--c-scrim:\s*(rgb\([^)]*\))/.exec(chosen) || [])[1]),
   };
 }

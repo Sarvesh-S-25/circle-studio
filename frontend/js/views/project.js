@@ -1,4 +1,4 @@
-// A project: header, tabs (Plan, Team, Skills, Health, Chat) and the side inspector.
+// A project: header, tabs (Workflow, Team, Skills, Connections, Mods, Health, Cost, Chat) and the side inspector.
 import { api } from '../api.js';
 import { h, icon, sigil, copyText, statusPill } from '../dom.js';
 import { refreshProjects, refreshShell } from '../state.js';
@@ -6,12 +6,13 @@ import { confirmDialog, toast } from '../components/overlay.js';
 import { askPermissions, permissionSummary } from '../components/permissions.js';
 import { gitChip, widgetMenu } from '../components/gitpanel.js';
 
-const TABS = [['workflow', 'Workflow', 'plan'], ['team', 'Team', 'team'], ['skills', 'Skills', 'skill'], ['connections', 'Connections', 'link'], ['health', 'Health', 'health'], ['cost', 'Cost', 'cost'], ['chat', 'Chat', 'chat']];
+const TABS = [['workflow', 'Workflow', 'plan'], ['team', 'Team', 'team'], ['skills', 'Skills', 'skill'], ['connections', 'Connections', 'link'], ['mods', 'Mods', 'sparkle'], ['health', 'Health', 'health'], ['cost', 'Cost', 'cost'], ['chat', 'Chat', 'chat']];
 const MODULES = {
   workflow: () => import('./workflow.js'),
   team: () => import('./team.js'),
   skills: () => import('./pskills.js'),
   connections: () => import('./connections.js'),
+  mods: () => import('./mods.js'),
   health: () => import('./health.js'),
   cost: () => import('./cost.js'),
   chat: () => import('./chat.js'),

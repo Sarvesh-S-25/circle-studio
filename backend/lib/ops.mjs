@@ -15,6 +15,8 @@ import { ENGINE_IDS } from './workflow.mjs';
 import { renderProject, skillTargets, GEMINI_SKILLS_NOTE, CONDENSE, condenseHookEntry, condenseConfigText, condenseAgents, readerText, READER_ID } from './render.mjs';
 import { GI_START, GI_END } from './gitblock.mjs';
 import { answerAlertText } from './alerts.mjs';
+import { PLUGIN_ID_RE } from './mods.mjs';
+import { starterFiles, STARTER_RE } from './modstarters.mjs';
 
 const LANES = ['frontend', 'backend', 'both', 'all'];
 
@@ -671,6 +673,48 @@ function opHelpersWrite(ws, op, env) {
   if (missing) env.warn(`${missing} agent${missing === 1 ? ' has' : 's have'} a Haiku reader but no agent file yet. Use Review and write files once to create ${missing === 1 ? 'it' : 'them'}.`);
 }
 
+/* ---- mods and plugins: on or off for this project only -------------------------------------------- */
+
+/**
+ * Turn a Claude Code mod or plugin on or off in this project only (.claude/settings.json, enabledPlugins), or drop the
+ * project's own setting so the general one applies again (value null). Every other byte of the file stays.
+ */
+function opModSet(ws, op, env) {
+  const id = op.plugin;
+  if (typeof id !== 'string' || !PLUGIN_ID_RE.test(id)) throw badRequest('Say which mod: its name@source, as Claude Code lists it.');
+  if (op.value !== true && op.value !== false && op.value !== null) throw badRequest('value must be true, false or null.');
+  const rel = '.claude/settings.json';
+  const raw = ws.read(rel);
+  if (raw == null) {
+    if (op.value === null) return;
+    ws.write(rel, `${JSON.stringify({ enabledPlugins: { [id]: op.value } }, null, 2)}\n`);
+  } else {
+    const cur = readJson(ws, rel, '.claude/settings.json');
+    if (cur.enabledPlugins != null && (typeof cur.enabledPlugins !== 'object' || Array.isArray(cur.enabledPlugins))) throw conflict('enabledPlugins in .claude/settings.json is not an object. Fix it by hand first.');
+    if (op.value === null) { if (cur.enabledPlugins && id in cur.enabledPlugins) unpatchJson(ws, rel, ['enabledPlugins', id]); } else patchJson(ws, rel, ['enabledPlugins', id], op.value);
+  }
+  const local = readTextIfExists(resolveInside(env.root, '.claude/settings.local.json'));
+  if (local && local.includes(`"${id}"`)) env.warn(`.claude/settings.local.json also names ${id}, and it wins over this file on this PC.`);
+  env.warn('Claude Code reads this when a session starts: start a new one (or run /reload-plugins) to see the change.');
+}
+
+/**
+ * Add one of Circle Studio's ready-made mods to this project: its folder goes to .claude/skills/<name>/, where Claude
+ * Code loads it by itself in this project only. A folder of that name with other content is not overwritten unless
+ * asked (overwrite: true).
+ */
+function opModAdd(ws, op, env) {
+  if (typeof op.starter !== 'string' || !STARTER_RE.test(op.starter)) throw badRequest('Say which ready-made mod: its name.');
+  const files = starterFiles(op.starter);
+  if (!files) throw notFound(`There is no ready-made mod called "${op.starter}".`);
+  const writes = files.map((x) => ({ rel: `.claude/skills/${op.starter}/${x.path}`, content: x.text }));
+  const changes = clashes(ws, writes);
+  if (changes.length && op.overwrite !== true) throw conflict(`This project already has a .claude/skills/${op.starter} folder with other content (${changes.length} file${changes.length === 1 ? '' : 's'}). Choose "replace" to overwrite it.`, { files: changes.slice(0, 20) });
+  for (const w of writes) ws.write(w.rel, w.content);
+  env.warn('Claude Code loads it in new sessions in this folder (or after /reload-plugins). Turn it off any time on the Mods tab.');
+  env.warn('Mods run inside Claude Code: open this folder in a terminal (claude) or your IDE to use it.');
+}
+
 /* ---- registry --------------------------------------------------------------------------------- */
 
 function opSyncAgents(ws, op, env) {
@@ -701,6 +745,8 @@ export const OPS = {
   'mcp-server-add': opMcpServerAdd,
   'mcp-server-remove': opMcpServerRemove,
   'freeze-set': opFreezeSet,
+  'mod-set': opModSet,
+  'mod-add': opModAdd,
 };
 
 export function runOps(ws, ops, env) {

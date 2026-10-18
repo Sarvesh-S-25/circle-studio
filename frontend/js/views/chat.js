@@ -31,6 +31,12 @@ export function mountChat(el, { project, nodeId = null, engine: forcedEngine } =
 
   const transcript = h('div', { class: 'cs-chat__log', role: 'log', 'aria-live': 'polite', 'aria-label': 'Conversation' });
   const input = h('textarea', { class: 'cs-textarea', rows: 3, placeholder: nodeId ? 'Talk to this agent' : 'Ask about this project, or tell it what to do', 'aria-label': 'Your message' });
+  // a message another screen prepared (Mods: "Make a mod with Claude"): put in the box for you to read and send
+  if (!nodeId) {
+    let ready = null;
+    try { ready = sessionStorage.getItem(`circle:prefill:${project.id}`); sessionStorage.removeItem(`circle:prefill:${project.id}`); } catch { /* storage off */ }
+    if (ready) { input.value = ready; input.rows = 8; requestAnimationFrame(() => input.focus()); }
+  }
   const sendBtn = h('button', { class: 'cs-btn cs-btn--primary', type: 'button' }, icon('send', 's'), 'Send');
   const stopBtn = h('button', { class: 'cs-btn', type: 'button', hidden: true }, icon('stop', 's'), 'Stop');
   const notice = h('div', { class: 'cs-stack cs-stack--tight' });

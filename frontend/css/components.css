@@ -307,3 +307,25 @@ button.cs-chip:hover { background: var(--c-sunken); }
 .cs-inspector::before { content: ''; position: absolute; inset-block: 0; inset-inline-start: 0; inline-size: var(--sp-2); cursor: col-resize; }
 .cs-inspector:hover::before { background: linear-gradient(to right, var(--c-accent-soft), transparent); }
 .cs-inspector[data-resizing] { user-select: none; }
+
+/* a newer Circle Studio on this PC: Restart now / Reload / Later (freshness.js) */
+.cs-fresh { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; padding: var(--sp-2) var(--sp-4); background: var(--c-info-soft); color: var(--c-text); border-block-end: var(--bw) solid var(--c-line); font-size: var(--fs-s); }
+.cs-fresh[hidden] { display: none; }
+.cs-fresh--warn { background: var(--c-warn-soft); }
+.cs-fresh__icon { display: inline-flex; color: var(--c-info); }
+.cs-fresh--warn .cs-fresh__icon { color: var(--c-warn); }
+.cs-fresh__text { min-width: 0; }
+
+/* a button that stays pressed (a toggle outside a list): pressed is filled and ticked, not only coloured */
+.cs-chipbtn { display: inline-flex; align-items: center; gap: var(--sp-1); min-block-size: var(--sp-6); padding: 0 var(--sp-3); border: var(--bw) solid var(--c-line-strong); border-radius: var(--r-pill); background: transparent; color: var(--c-text); font: inherit; font-size: var(--fs-s); cursor: pointer; }
+.cs-chipbtn:hover { border-color: var(--c-accent); }
+.cs-chipbtn[aria-pressed="true"] { background: var(--c-accent-soft); border-color: var(--c-accent); color: var(--c-text); font-weight: var(--fw-semibold); }
+.cs-chipbtn:focus-visible { outline: var(--bw-strong) solid var(--c-focus); outline-offset: var(--bw); }
+
+/* project rules: closed, one line of what is chosen */
+.cs-rules__sum { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-1) var(--sp-3); cursor: pointer; }
+.cs-rules__body { margin-block-start: var(--sp-3); }
+.cs-rules__sum { list-style: none; }
+.cs-rules__sum::-webkit-details-marker { display: none; }
+.cs-rules__chev { display: inline-flex; align-self: center; color: var(--c-text-soft); transition: transform var(--dur-med) var(--ease); }
+.cs-rules[open] .cs-rules__chev { transform: rotate(90deg); }

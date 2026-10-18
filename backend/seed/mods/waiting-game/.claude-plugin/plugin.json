@@ -1,0 +1,9 @@
+{
+  "name": "waiting-game",
+  "version": "0.1.0",
+  "description": "A tiny game while Claude works: catch the dot inside the ring. Opens when you send a prompt; /waiting-game opens it any time.",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "Circle Studio"
+  }
+}

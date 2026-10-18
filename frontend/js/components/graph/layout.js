@@ -1,14 +1,18 @@
 // Pure geometry for the workflow graph: no DOM, so tests import it directly.
 // A workflow is { nodes:[{id,kind,parent?,position?}], edges:[{from,to}] } (docs/spec.md).
 
-export const NODE_W = 236;
-export const SIZES = { human: 96, stage: 136, agent: 136 };
-const GAP_X = 176; // room on the arrow between two columns for a checkpoint marker and its label
-const GAP_Y = 20;
-const PAD = 32;
-const ROW_GAP = 72;
+export const NODE_W = 220;
+export const SIZES = { human: 72, stage: 72, agent: 64 };
+/* An agent hangs off its stage on a branch line: it is drawn narrower and indented, so the stage's trunk shows. */
+export const AGENT_INDENT = 22;
+const WIDTHS = { human: 188, stage: NODE_W, agent: NODE_W - AGENT_INDENT };
+const GAP_X = 168; // room on the arrow between two columns for a checkpoint marker and its label
+const GAP_Y = 14;
+const PAD = 56; // room on the left for the line that brings a wrapped flow into its next row
+const ROW_GAP = 88;
 
 export const nodeHeight = (n) => SIZES[n.kind] || SIZES.agent;
+export const nodeWidth = (n) => WIDTHS[n.kind] || WIDTHS.agent;
 export const childrenOf = (wf, id) => wf.nodes.filter((n) => n.parent === id);
 const hasParent = (wf, n) => n.kind === 'agent' && n.parent && wf.nodes.some((p) => p.id === n.parent && p.id !== n.id);
 
@@ -65,7 +69,7 @@ export function tidy(wf, { maxRowWidth = 6 * (NODE_W + GAP_X) } = {}) {
     for (const n of col) {
       pos[n.id] = { x, y };
       childrenOf(wf, n.id).forEach((kid, i) => {
-        pos[kid.id] = { x: x + Math.floor(i / KIDS_PER_COLUMN) * (NODE_W + GAP_Y), y: y + nodeHeight(n) + GAP_Y + (i % KIDS_PER_COLUMN) * (nodeHeight(kid) + GAP_Y) };
+        pos[kid.id] = { x: x + AGENT_INDENT + Math.floor(i / KIDS_PER_COLUMN) * (NODE_W + GAP_Y), y: y + nodeHeight(n) + GAP_Y + (i % KIDS_PER_COLUMN) * (nodeHeight(kid) + GAP_Y) };
       });
       y += blockHeight(wf, n) + GAP_Y;
     }
@@ -78,7 +82,7 @@ export function tidy(wf, { maxRowWidth = 6 * (NODE_W + GAP_X) } = {}) {
 /** Where a node is: its own saved position, else the automatic one. */
 export const placed = (wf, auto) => Object.fromEntries(wf.nodes.map((n) => [n.id, n.position || auto[n.id] || { x: PAD, y: PAD }]));
 
-export const boxOf = (n, p) => ({ x: p.x, y: p.y, w: NODE_W, h: nodeHeight(n) });
+export const boxOf = (n, p) => ({ x: p.x, y: p.y, w: nodeWidth(n), h: nodeHeight(n) });
 
 /* Helpers: a small node beside an agent (its Haiku reader), joined by a dashed line. Not a step of the flow: it works
    inside that agent's turn. It sits in the gap to the right of the card, or hangs off the card's corner when another
@@ -107,6 +111,7 @@ export function bounds(wf, positions) {
 /** A curved connector between two boxes: `d` for an SVG path, `mid` for its label, `end`/`angle` for nothing else to compute. */
 export function edgeGeometry(a, b) {
   let s; let e; let d;
+  if (b.x + b.w <= a.x && b.y >= a.y + a.h) return wrapGeometry(a, b);
   if (b.x >= a.x + a.w + 24) {
     s = { x: a.x + a.w, y: a.y + a.h / 2 };
     e = { x: b.x, y: b.y + b.h / 2 };
@@ -124,6 +129,47 @@ export function edgeGeometry(a, b) {
     d = `M${s.x} ${s.y} C${s.x - k} ${s.y} ${e.x + k} ${e.y} ${e.x} ${e.y}`;
   }
   return { d, start: s, end: e, mid: { x: (s.x + e.x) / 2, y: (s.y + e.y) / 2 } };
+}
+
+/* A flow that wraps into the next row: out of the right side, down into the gap above the row, back along that gap,
+   then down into the left side of the next card. Rounded corners; it never crosses the agents hanging below. */
+const CORNER = 14;
+function wrapGeometry(a, b) {
+  const s = { x: a.x + a.w, y: a.y + a.h / 2 };
+  const e = { x: b.x, y: b.y + b.h / 2 };
+  const right = s.x + 32;
+  const left = e.x - 32;
+  const gap = b.y - ROW_GAP / 2;
+  const r = CORNER;
+  const d = [
+    `M${s.x} ${s.y}`, `L${right - r} ${s.y}`, `Q${right} ${s.y} ${right} ${s.y + r}`,
+    `L${right} ${gap - r}`, `Q${right} ${gap} ${right - r} ${gap}`,
+    `L${left + r} ${gap}`, `Q${left} ${gap} ${left} ${gap + r}`,
+    `L${left} ${e.y - r}`, `Q${left} ${e.y} ${left + r} ${e.y}`, `L${e.x} ${e.y}`,
+  ].join(' ');
+  return { d, start: s, end: e, mid: { x: (right + left) / 2, y: gap } };
+}
+
+/**
+ * The branch lines from a stage to the agents under it: one trunk down the stage's left edge, one short branch into
+ * each agent. Agents in a second sub-column get their own trunk. Returns SVG path strings.
+ */
+export function branchPaths(stageBox, kidBoxes) {
+  const paths = [];
+  const trunks = new Map();
+  for (const k of kidBoxes) {
+    const tx = k.x - AGENT_INDENT / 2;
+    const y = k.y + k.h / 2;
+    trunks.set(tx, Math.max(trunks.get(tx) ?? 0, y));
+    paths.push(`M${tx} ${y - 8} Q${tx} ${y} ${tx + 8} ${y} L${k.x} ${y}`);
+  }
+  const first = stageBox.x + AGENT_INDENT / 2;
+  const below = stageBox.y + stageBox.h;
+  for (const [tx, bottom] of trunks) {
+    // a second sub-column: a short run along the gap under the stage, then its own trunk
+    paths.unshift(tx <= first + 1 ? `M${tx} ${below} L${tx} ${bottom - 8}` : `M${first} ${below} L${first} ${below + 7} L${tx - 8} ${below + 7} Q${tx} ${below + 7} ${tx} ${below + 15} L${tx} ${bottom - 8}`);
+  }
+  return paths;
 }
 
 /**

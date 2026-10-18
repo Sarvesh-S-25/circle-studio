@@ -5,6 +5,7 @@ import { initRequests } from './components/requests.js';
 import { initAlerts } from './components/alerts.js';
 import { checkForNews, RELEASE } from './components/whatsnew.js';
 import { loadUpdateState } from './components/updates.js';
+import { watchFreshness } from './components/freshness.js';
 import { toggleGuide } from './components/guide.js';
 import { initPanelSize } from './components/panelsize.js';
 import { buildRail } from './components/rail.js';
@@ -23,9 +24,10 @@ const VIEWS = {
   keys: () => import('./views/keys.js'),
   start: () => import('./views/start.js'),
   widgets: () => import('./views/widgets.js'),
+  mods: () => import('./views/mods.js'),
 };
 
-const TABS = ['workflow', 'team', 'skills', 'connections', 'health', 'cost', 'chat'];
+const TABS = ['workflow', 'team', 'skills', 'connections', 'mods', 'health', 'cost', 'chat'];
 
 function parseRoute(hash) {
   const parts = (hash || '#/').replace(/^#\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
@@ -43,6 +45,7 @@ function parseRoute(hash) {
   if (parts[0] === 'connections' && parts[1]) return { view: 'project', params: { id: parts[1], tab: 'connections' } };
   if (parts[0] === 'connections') return { view: 'keys', params: { advanced: true } };
   if (parts[0] === 'widgets') return { view: 'widgets', params: {} };
+  if (parts[0] === 'mods') return { view: 'mods', params: {} };
   return { view: 'home', params: {} };
 }
 
@@ -56,6 +59,7 @@ const topbar = h('div', { class: 'cs-topbar' },
 const content = h('div', { class: 'cs-content' });
 const app = h('div', { class: 'cs-app', 'data-rail': 'closed' }, rail.el, h('div', { class: 'cs-rail-scrim', onclick: () => toggleRail(false) }), main);
 main.append(topbar, content);
+watchFreshness(main); // newer Circle Studio on this PC: Restart now / Reload / Later
 root.append(app);
 
 function toggleRail(open) {
@@ -99,7 +103,7 @@ document.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') { e.preventDefault(); toggleRail(); return; }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'j') { e.preventDefault(); toggleGuide(); return; }
   if (modalOpen()) return;
-  if (e.altKey && /^[1-7]$/.test(e.key)) {
+  if (e.altKey && /^[1-8]$/.test(e.key)) {
     const id = /^#\/projects\/([^/]+)/.exec(location.hash)?.[1] || state.recent[0]?.id;
     if (id) { e.preventDefault(); location.hash = `#/projects/${id}/${TABS[Number(e.key) - 1]}`; }
     return;

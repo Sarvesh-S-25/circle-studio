@@ -7,9 +7,9 @@ import { spawn, spawnSync } from 'node:child_process';
 import { redact } from './secrets.mjs';
 
 export const DEFAULT_SETTINGS = {
-  desktopAlerts: true, desktopWidgets: false, widgetsLocked: false, github: {}, updates: { check: 'daily', lastCheck: null },
+  desktopAlerts: true, desktopWidgets: false, desktopAsks: true, widgetsLocked: false, github: {}, updates: { check: 'daily', lastCheck: null, autoRestart: true },
   // the widget board: tiles in order (kind, size s/m/l, the project for project tiles)
-  widgets: [{ kind: 'spend', size: 'm', projectId: null }, { kind: 'inbox', size: 's', projectId: null }, { kind: 'status', size: 's', projectId: null }, { kind: 'workflow', size: 'm', projectId: null }],
+  widgets: [{ kind: 'pulse', size: 's', projectId: null }, { kind: 'inbox', size: 's', projectId: null }, { kind: 'running', size: 'm', projectId: null }, { kind: 'workflow', size: 'm', projectId: null }, { kind: 'chat', size: 'm', projectId: null }],
 };
 
 export class Settings {

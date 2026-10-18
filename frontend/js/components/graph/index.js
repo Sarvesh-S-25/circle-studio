@@ -3,11 +3,11 @@
 //   versions  the semantic-version history of the workflow, compare and restore
 // mountGraph(el, { workflow, mode, projectId, modes, versions, head, onChange(wf), onOpenNode(node), onRestore(version) })
 //   -> { getWorkflow, setWorkflow, setMode, setLive, setVersions, select, tidy, refresh, destroy }
-import { h, icon } from '../../dom.js';
+import { h, icon, plural } from '../../dom.js';
 import { state } from '../../state.js';
 import { confirmDialog, openMenu, toast } from '../overlay.js';
 import { svg } from './svg.js';
-import { NODE_W, boxOf, bounds, checkpointPoint, edgeGeometry, fmtTokens, neighbour, nodeHeight, placed, tidy, uniqueId, hasHelper, helperBox } from './layout.js';
+import { boxOf, bounds, checkpointPoint, edgeGeometry, fmtTokens, neighbour, placed, tidy, uniqueId, hasHelper, helperBox, layers, branchPaths } from './layout.js';
 import { renderVersions } from './versions.js';
 
 const MODES = [['edit', 'Workflow'], ['live', 'Live'], ['versions', 'Versions']];
@@ -60,6 +60,7 @@ export function mountGraph(el, opts) {
     world.style.setProperty('--gx', `${S.panX}px`);
     world.style.setProperty('--gy', `${S.panY}px`);
     world.style.setProperty('--gz', String(S.zoom));
+    if (S.wf.nodes.length) drawMap();
   }
 
   function fit() {
@@ -92,42 +93,80 @@ export function mountGraph(el, opts) {
   }
 
   /* ---- drawing ----------------------------------------------------------------------------------- */
-  function nodeEl(n) {
+  /** Stages numbered in the order the work flows (column, then top to bottom). */
+  function stageNumbers() {
+    const L = layers(S.wf);
+    const stages = S.wf.nodes.filter((n) => n.kind === 'stage' && L.has(n.id));
+    stages.sort((a, b) => (L.get(a.id) - L.get(b.id)) || (S.pos[a.id].y - S.pos[b.id].y));
+    return new Map(stages.map((n, i) => [n.id, i + 1]));
+  }
+  const initials = (t) => String(t || '?').split(/[\s_-]+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '?';
+  const ENGINE_TONES = new Set(['claude', 'codex', 'gemini', 'copilot']);
+
+  function nodeEl(n, i, numbers) {
     const b = box(n);
     const st = S.mode === 'live' ? statusOf(n) : null;
     const kids = S.wf.nodes.filter((k) => k.parent === n.id);
-    const chips = [];
-    if (n.kind === 'agent') {
-      if (n.engine) chips.push(h('span', { class: 'cs-gchip cs-gchip--engine', title: 'Engine' }, n.engine));
-      if (n.model) chips.push(h('span', { class: 'cs-gchip', title: 'Model' }, n.model));
-      if (n.optional) chips.push(h('span', { class: 'cs-gchip cs-gchip--quiet' }, 'optional'));
-      const asks = (n.consult || []).filter((e) => e !== n.engine);
-      if (asks.length) chips.push(h('span', { class: 'cs-gchip cs-gchip--quiet', title: `May ask ${asks.join(', ')} for a second opinion` }, `asks ${asks.join(', ')}`));
-    }
-    if (n.kind === 'stage') {
-      chips.push(h('span', { class: 'cs-gchip cs-gchip--quiet' }, `${kids.length} agent${kids.length === 1 ? '' : 's'}`));
-    }
-    const skills = n.skills?.length ? h('div', { class: 'cs-gnode__skills' }, `skills: ${n.skills.slice(0, 3).join(', ')}${n.skills.length > 3 ? ` +${n.skills.length - 3}` : ''}`) : null;
     const run = st?.run;
-    const live = st ? h('div', { class: 'cs-gnode__live' },
-      h('span', { class: `cs-gdot cs-gdot--${st.key}`, 'aria-hidden': 'true' }), h('span', {}, STATUS_WORD[st.key]),
-      run && (run.tokens?.input || run.tokens?.output) ? h('span', { class: 'cs-gnode__tok cs-mono' }, `${fmtTokens((run.tokens?.input || 0) + (run.tokens?.output || 0))} tok`) : null,
-      run && run.contextPct != null ? h('span', { class: 'cs-gctx', title: `Context ${run.contextPct}%`, style: { '--ctx': `${run.contextPct}%` } }, h('span', { class: 'cs-gctx__fill' })) : null,
-      run && run.contextPct != null ? h('span', { class: 'cs-soft cs-small' }, `${run.contextPct}%`) : null) : null;
-    const el2 = h('div', {
-      class: ['cs-gnode', `cs-gnode--${n.kind}`, st && `cs-gnode--${st.key}`, false],
+    const tok = run && (run.tokens?.input || run.tokens?.output) ? `${fmtTokens((run.tokens?.input || 0) + (run.tokens?.output || 0))} tok` : '';
+    let lead; let title; let meta; let tip;
+    if (n.kind === 'stage') {
+      lead = h('span', { class: 'cs-gnode__num', 'aria-hidden': 'true' }, String(numbers.get(n.id) || '·'));
+      const gate = n.gate?.on ? (n.gate.by === 'engine' ? 'an engine checks' : 'you decide') : 'goes straight on';
+      meta = `${plural(kids.length, 'agent')} · ${gate}`;
+      tip = n.notes || '';
+    } else if (n.kind === 'human') {
+      lead = h('span', { class: 'cs-gnode__av cs-gnode__av--you', 'aria-hidden': 'true' }, icon('chat', 's'));
+      meta = n.does || 'Decides at checkpoints';
+    } else {
+      const tone = ENGINE_TONES.has(n.engine) ? n.engine : 'other';
+      lead = h('span', { class: ['cs-gnode__av', `cs-gnode__av--${tone}`], 'aria-hidden': 'true' }, initials(n.title || n.id));
+      const asks = (n.consult || []).filter((e) => e !== n.engine);
+      meta = st && (tok || run?.contextPct != null) ? [tok, run?.contextPct != null ? `context ${run.contextPct}%` : ''].filter(Boolean).join(' · ')
+        : [n.engine, n.model, n.optional ? 'optional' : ''].filter(Boolean).join(' · ') || 'no engine yet';
+      tip = [n.does, asks.length ? `May ask ${asks.join(', ')} for a second opinion.` : '', n.skills?.length ? `Skills: ${n.skills.join(', ')}` : ''].filter(Boolean).join('\n');
+    }
+    title = n.title || n.id;
+    return h('div', {
+      class: ['cs-gnode', `cs-gnode--${n.kind}`, st && `cs-gnode--${st.key}`],
       role: 'button', tabindex: '0', dataset: { id: n.id },
-      style: { '--x': `${b.x}px`, '--y': `${b.y}px`, '--w': `${b.w}px`, '--h': `${b.h}px` },
-      'aria-label': `${n.kind} ${n.title}${st ? `, ${STATUS_WORD[st.key]}` : ''}`,
+      style: { '--x': `${b.x}px`, '--y': `${b.y}px`, '--w': `${b.w}px`, '--h': `${b.h}px`, '--i': String(Math.min(i, 24)) },
+      title: tip || null,
+      'aria-label': `${n.kind} ${title}, ${meta}${st ? `, ${STATUS_WORD[st.key]}` : ''}`,
       'aria-pressed': S.sel === n.id ? 'true' : 'false',
     },
-    h('div', { class: 'cs-gnode__head' }, icon(KIND_ICON[n.kind] || 'agent', 's'), h('span', { class: 'cs-gnode__title' }, n.title || n.id)),
-    n.kind !== 'human' ? h('div', { class: 'cs-gnode__chips' }, chips) : h('div', { class: 'cs-gnode__does cs-soft cs-small' }, n.does || 'Decides at every checkpoint that waits for you'),
-    n.kind === 'agent' && n.does ? h('div', { class: 'cs-gnode__does cs-soft cs-small' }, n.does) : null,
-    skills, live,
-    editing() ? h('button', { class: 'cs-gnode__handle', type: 'button', tabindex: '-1', 'aria-label': `Link ${n.title} to another node`, title: 'Drag from here to another card to link them (or select the card and press C)', onpointerdown: (e) => startConnect(e, n) }) : null);
-    return el2;
+    lead,
+    h('span', { class: 'cs-gnode__text' },
+      h('span', { class: 'cs-gnode__title' }, title),
+      h('span', { class: 'cs-gnode__meta' }, meta)),
+    st ? h('span', { class: `cs-gdot cs-gdot--${st.key} cs-gnode__state`, title: STATUS_WORD[st.key], 'aria-hidden': 'true' }) : null,
+    n.skills?.length && n.kind === 'agent' && !st ? h('span', { class: 'cs-gnode__badge', title: `Skills: ${n.skills.join(', ')}` }, icon('skill', 's'), String(n.skills.length)) : null,
+    run && run.contextPct != null ? h('span', { class: 'cs-gctx', title: `Context ${run.contextPct}%`, style: { '--ctx': `${run.contextPct}%` } }, h('span', { class: 'cs-gctx__fill' })) : null,
+    editing() ? h('button', { class: 'cs-gnode__handle', type: 'button', tabindex: '-1', 'aria-label': `Link ${title} to another node`, title: 'Drag from here to another card to link them (or select the card and press C)', onpointerdown: (e) => startConnect(e, n) }) : null);
   }
+
+  /* ---- focus: hovering or selecting a node lights up what it is linked to and dims the rest ---------- */
+  function nearOf(id) {
+    const n = nodeById(id);
+    if (!n) return null;
+    const near = new Set([id]);
+    if (n.parent) near.add(n.parent);
+    for (const k of S.wf.nodes) if (k.parent === id) near.add(k.id);
+    for (const e of S.wf.edges) { if (e.from === id) near.add(e.to); if (e.to === id) near.add(e.from); }
+    return near;
+  }
+  function highlight(id) {
+    const near = id ? nearOf(id) : null;
+    root.classList.toggle('cs-graph--focus', Boolean(near));
+    for (const x of nodesHost.querySelectorAll('.cs-gnode')) x.toggleAttribute('data-near', Boolean(near?.has(x.dataset.id)));
+    for (const p of edgesSvg.querySelectorAll('[data-from]')) p.classList.toggle('cs-gedge--near', Boolean(near) && (p.dataset.from === id || p.dataset.to === id));
+    const stage = id && (nodeById(id)?.kind === 'stage' ? id : nodeById(id)?.parent);
+    for (const p of edgesSvg.querySelectorAll('.cs-gbranch')) p.classList.toggle('cs-gbranch--near', Boolean(stage) && p.dataset.stage === stage);
+  }
+  nodesHost.addEventListener('pointerover', (e) => { const id = e.target.closest?.('.cs-gnode')?.dataset.id; if (id && !S.connecting) highlight(id); });
+  nodesHost.addEventListener('pointerleave', () => highlight(S.sel));
+  nodesHost.addEventListener('focusin', (e) => { const id = e.target.closest?.('.cs-gnode')?.dataset.id; if (id) highlight(id); });
+  nodesHost.addEventListener('focusout', () => highlight(S.sel));
 
   function drawEdges() {
     let edgeTools = null;
@@ -136,6 +175,19 @@ export function mountGraph(el, opts) {
     edgesSvg.setAttribute('width', String(Math.max(b.x + b.w, 1) + 400));
     edgesSvg.setAttribute('height', String(Math.max(b.y + b.h, 1) + 400));
     edgesSvg.append(svg('defs', {}, svg('marker', { id: 'cs-garrow', viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: 'auto-start-reverse' }, svg('path', { d: 'M0 0 L10 5 L0 10 z', class: 'cs-garrow' }))));
+    // the branch lines from each stage to the agents under it
+    for (const st of S.wf.nodes.filter((n) => n.kind === 'stage')) {
+      const sb = box(st);
+      const kids = S.wf.nodes.filter((k) => k.parent === st.id && k.kind === 'agent');
+      const under = [];
+      for (const k of kids) {
+        const kb = box(k);
+        if (kb.y > sb.y + sb.h && kb.x >= sb.x) under.push(kb);
+        else edgesSvg.append(svg('path', { d: edgeGeometry(sb, kb).d, class: 'cs-gbranch', 'data-stage': st.id }));
+      }
+      for (const d of branchPaths(sb, under)) edgesSvg.append(svg('path', { d, class: 'cs-gbranch', 'data-stage': st.id }));
+    }
+    const liveIds = new Set((S.live?.runs || []).filter((r) => r.status === 'active').map((r) => r.nodeId));
     for (const e of S.wf.edges) {
       const a = nodeById(e.from);
       const c = nodeById(e.to);
@@ -144,7 +196,8 @@ export function mountGraph(el, opts) {
       const dashed = a.kind === 'agent' || c.kind === 'agent';
       const key = `${e.from}>${e.to}`;
       const picked = S.edgeSel === key;
-      edgesSvg.append(svg('path', { d: g.d, class: ['cs-gedge', dashed && 'cs-gedge--dashed', picked && 'cs-gedge--picked'].filter(Boolean).join(' '), 'marker-end': 'url(#cs-garrow)', 'data-from': e.from, 'data-to': e.to }));
+      const flowing = S.mode === 'live' && liveIds.has(e.to);
+      edgesSvg.append(svg('path', { d: g.d, class: ['cs-gedge', dashed && 'cs-gedge--dashed', picked && 'cs-gedge--picked', flowing && 'cs-gedge--live'].filter(Boolean).join(' '), 'marker-end': 'url(#cs-garrow)', 'data-from': e.from, 'data-to': e.to }));
       if (editing()) edgesSvg.append(svg('path', { d: g.d, class: 'cs-gedge__hit', 'data-edge': key }));
       if (picked) edgeTools = { key, a, c, mid: g.mid };
       if (e.label) {
@@ -174,7 +227,45 @@ export function mountGraph(el, opts) {
         h('button', { class: 'cs-btn cs-btn--small cs-btn--danger', type: 'button', onclick: () => removeEdge(key) }, icon('trash', 's'), 'Remove link'),
         h('button', { class: 'cs-btn cs-btn--small cs-btn--quiet cs-btn--icon', type: 'button', 'aria-label': 'Close', onclick: () => { S.edgeSel = null; drawEdges(); } }, icon('close', 's'))));
     }
+    const lit = document.activeElement?.closest?.('.cs-gnode')?.dataset.id || S.sel;
+    if (lit) highlight(lit);
+    drawMap();
   }
+
+  /* ---- the map: the whole graph in miniature, with the part in view; click or drag it to move there ---- */
+  const MAP_W = 168;
+  const MAP_H = 104;
+  const map = svg('svg', { class: 'cs-gmap', width: MAP_W, height: MAP_H, viewBox: `0 0 ${MAP_W} ${MAP_H}`, 'aria-hidden': 'true' });
+  root.querySelector('.cs-graph__stage').append(map);
+  let mapScale = 1; let mapB = { x: 0, y: 0 };
+  function drawMap() {
+    const b = bounds(S.wf, S.pos);
+    const roomy = b.w * S.zoom <= canvas.clientWidth && b.h * S.zoom <= canvas.clientHeight;
+    map.classList.toggle('cs-gmap--idle', roomy || S.mode === 'versions' || !S.wf.nodes.length);
+    mapScale = Math.min(MAP_W / b.w, MAP_H / b.h);
+    mapB = b;
+    const tx = (x) => (x - b.x) * mapScale;
+    const ty = (y) => (y - b.y) * mapScale;
+    map.replaceChildren(...S.wf.nodes.map((n) => { const nb = box(n); return svg('rect', { x: tx(nb.x), y: ty(nb.y), width: Math.max(2, nb.w * mapScale), height: Math.max(2, nb.h * mapScale), rx: 2, class: `cs-gmap__node cs-gmap__node--${n.kind}` }); }),
+      svg('rect', { x: tx(-S.panX / S.zoom), y: ty(-S.panY / S.zoom), width: (canvas.clientWidth / S.zoom) * mapScale, height: (canvas.clientHeight / S.zoom) * mapScale, rx: 3, class: 'cs-gmap__view' }));
+  }
+  map.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const go = (ev) => {
+      const r = map.getBoundingClientRect();
+      const k = MAP_W / Math.max(1, r.width); // the map is drawn smaller on narrow screens
+      const wx = mapB.x + ((ev.clientX - r.left) * k) / mapScale;
+      const wy = mapB.y + ((ev.clientY - r.top) * k) / mapScale;
+      S.panX = canvas.clientWidth / 2 - wx * S.zoom;
+      S.panY = canvas.clientHeight / 2 - wy * S.zoom;
+      applyView();
+    };
+    go(e);
+    const up = () => { window.removeEventListener('pointermove', go); window.removeEventListener('pointerup', up); };
+    window.addEventListener('pointermove', go);
+    window.addEventListener('pointerup', up);
+  });
 
   /* ---- checkpoints: what happens when a stage is done, drawn on the arrow that leaves it ------------- */
   const ENGINE_NAME = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini', copilot: 'Copilot' };
@@ -220,7 +311,9 @@ export function mountGraph(el, opts) {
     const focused = document.activeElement?.closest?.('.cs-gnode')?.dataset.id;
     const checks = S.mode === 'versions' ? [] : S.wf.nodes.filter((n) => n.kind === 'stage' && n.gate?.on).map(checkpointEl);
     const helpers = S.mode === 'versions' ? [] : S.wf.nodes.filter(hasHelper).map(helperEl);
-    nodesHost.replaceChildren(...S.wf.nodes.map(nodeEl), ...checks, ...helpers);
+    const numbers = stageNumbers();
+    nodesHost.replaceChildren(...S.wf.nodes.map((n, i) => nodeEl(n, i, numbers)), ...checks, ...helpers);
+    highlight(S.sel);
     if (focused) nodesHost.querySelector(`[data-id="${CSS.escape(focused)}"]`)?.focus({ preventScroll: true });
   }
 
@@ -274,25 +367,61 @@ export function mountGraph(el, opts) {
   /* ---- editing ----------------------------------------------------------------------------------- */
   function commit() { opts.onChange?.(structuredClone(S.wf)); }
 
-  function tidyAll() { for (const n of S.wf.nodes) delete n.position; draw(); requestAnimationFrame(fit); commit(); }
+  /** Tidy glides every node to its new place (unless the person asked for less motion), then fits the view. */
+  function tidyAll() {
+    const from = structuredClone(S.pos);
+    for (const n of S.wf.nodes) delete n.position;
+    draw();
+    commit();
+    const to = structuredClone(S.pos);
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) { requestAnimationFrame(fit); return; }
+    const t0 = performance.now();
+    const ms = 360;
+    const step = (now) => {
+      const k = Math.min(1, (now - t0) / ms);
+      const e = 1 - (1 - k) ** 3;
+      for (const n of S.wf.nodes) {
+        const a = from[n.id] || to[n.id];
+        const b = to[n.id];
+        S.pos[n.id] = { x: a.x + (b.x - a.x) * e, y: a.y + (b.y - a.y) * e };
+      }
+      placeAll();
+      if (k < 1) requestAnimationFrame(step); else { S.pos = to; placeAll(); fit(); }
+    };
+    requestAnimationFrame(step);
+  }
+
+  /** Move the drawn nodes, markers and helpers to S.pos without rebuilding them. */
+  function placeAll() {
+    for (const x of nodesHost.querySelectorAll('.cs-gnode')) {
+      const n = nodeById(x.dataset.id);
+      if (!n) continue;
+      x.style.setProperty('--x', `${S.pos[n.id].x}px`);
+      x.style.setProperty('--y', `${S.pos[n.id].y}px`);
+    }
+    for (const m of nodesHost.querySelectorAll('.cs-gcheck')) {
+      const st = nodeById(m.dataset.stage);
+      if (!st) continue;
+      const next = nextStageOf(st);
+      const p = checkpointPoint(box(st), next ? box(next) : null);
+      m.style.setProperty('--x', `${p.x}px`);
+      m.style.setProperty('--y', `${p.y}px`);
+    }
+    for (const m of nodesHost.querySelectorAll('.cs-ghelper')) {
+      const n = nodeById(m.dataset.helper);
+      if (!n) continue;
+      const hb = helperOf(n);
+      m.style.setProperty('--x', `${hb.x}px`);
+      m.style.setProperty('--y', `${hb.y}px`);
+    }
+    drawEdges();
+  }
 
   function moveNode(id, x, y) {
     const n = nodeById(id);
     n.position = { x: Math.round(x), y: Math.round(y) };
     S.pos[id] = n.position;
-    const b = box(n);
-    const elx = nodesHost.querySelector(`[data-id="${CSS.escape(id)}"]`);
-    elx?.style.setProperty('--x', `${b.x}px`);
-    elx?.style.setProperty('--y', `${b.y}px`);
-    drawEdges();
-    for (const m of nodesHost.querySelectorAll('.cs-gcheck')) {
-      const st = nodeById(m.dataset.stage);
-      const next = st && nextStageOf(st);
-      if (!st) continue;
-      const p = checkpointPoint(box(st), next ? box(next) : null);
-      m.style.setProperty('--x', `${p.x}px`);
-      m.style.setProperty('--y', `${p.y}px`);
-    }
+    placeAll();
   }
 
   function addNode(kind) {
@@ -403,6 +532,7 @@ export function mountGraph(el, opts) {
   function select(id, { open = true } = {}) {
     S.sel = id;
     nodesHost.querySelectorAll('.cs-gnode').forEach((x) => { x.setAttribute('aria-pressed', String(x.dataset.id === id)); });
+    highlight(id);
     if (open) opts.onOpenNode?.(id ? nodeById(id) : null);
   }
   const focusNode = (id) => requestAnimationFrame(() => nodesHost.querySelector(`[data-id="${CSS.escape(id)}"]`)?.focus({ preventScroll: true }));
@@ -497,6 +627,8 @@ export function mountGraph(el, opts) {
   const onEngines = () => { if (S.mode === 'live') drawNodes(); };
   window.addEventListener('circle:engines', onEngines);
 
+  root.classList.add('cs-graph--enter'); // nodes rise in once, on the first draw only
+  setTimeout(() => root.classList.remove('cs-graph--enter'), 900);
   draw();
   requestAnimationFrame(() => { fit(); S.fitted = true; });
 

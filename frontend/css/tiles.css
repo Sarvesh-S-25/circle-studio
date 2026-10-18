@@ -121,9 +121,9 @@
 .cs-tile--m .cs-tile__msg { flex-direction: row; gap: var(--sp-1); align-items: baseline; }
 .cs-tile--m .cs-tile__who { flex: none; }
 .cs-tile--m .cs-tile__said { display: block; min-inline-size: 0; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
-.cs-tile--m .cs-tile__msg:nth-last-child(n+3) { display: none; } /* medium: the last two, whole */
+.cs-tile--m .cs-tile__msg:nth-last-child(n+2) { display: none; } /* medium: the newest one, whole (the chat window has the rest) */
 .cs-tile--l .cs-tile__said { -webkit-line-clamp: 2; }
-.cs-tile--l .cs-tile__msg:nth-last-child(n+5) { display: none; } /* large: the last four, whole */
+.cs-tile--l .cs-tile__msg:nth-last-child(n+4) { display: none; } /* large: the last three, whole */
 .cs-tile__titlebtn { display: inline-flex; align-items: center; gap: var(--sp-1); min-inline-size: 0; padding: 0; border: 0; background: none; color: var(--c-text); font: inherit; font-size: var(--fs-s); font-weight: var(--fw-semibold); cursor: pointer; }
 .cs-tile__titlebtn:hover { color: var(--c-accent); }
 .cs-tile__ctl--on { background: var(--c-accent); border-color: var(--c-accent); color: var(--c-on-accent); }
@@ -135,3 +135,91 @@
 .cs-tile__linkbtn:hover { text-decoration: underline; }
 .cs-tile__row--read strong { font-weight: var(--fw-regular); color: var(--c-text-soft); }
 .cs-tile--s .cs-tile__sub { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; white-space: normal; overflow-wrap: anywhere; }
+
+/* replying from a chat tile: the engine that answers, a one-line box, send or stop */
+.cs-tile__compose { display: flex; align-items: center; gap: var(--sp-1); margin-block-start: auto; padding: var(--sp-1); border: var(--bw) solid var(--c-line); border-radius: var(--r-pill); background: var(--c-surface); }
+.cs-tile__compose:focus-within { border-color: var(--c-accent); box-shadow: 0 0 0 var(--bw-strong) var(--c-accent-soft); }
+.cs-tile__engine { flex: none; display: inline-flex; align-items: center; gap: var(--sp-1); padding: 0 var(--sp-2); min-block-size: var(--sp-5); border-radius: var(--r-pill); background: var(--c-accent-soft); color: var(--c-accent); font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold); border: 0; }
+.cs-tile__engine--pick { cursor: pointer; }
+.cs-tile__engine--pick:focus-visible, .cs-tile__send:focus-visible { outline: var(--bw-strong) solid var(--c-focus); outline-offset: var(--bw); }
+.cs-tile__enginedot { width: var(--sp-1); height: var(--sp-1); border-radius: var(--r-pill); background: currentColor; opacity: 0.5; }
+.cs-tile__enginedot--on { opacity: 1; animation: cs-tile-blink var(--dur-spin) var(--ease) infinite alternate; }
+@keyframes cs-tile-blink { to { opacity: 0.3; } }
+.cs-tile__input { flex: 1 1 auto; min-inline-size: 0; border: 0; background: transparent; color: var(--c-text); font: inherit; font-size: var(--fs-s); padding: var(--sp-1); outline: none; }
+.cs-tile__input::placeholder { color: var(--c-text-faint); }
+.cs-tile__send { flex: none; display: inline-flex; align-items: center; justify-content: center; width: var(--sp-6); height: var(--sp-6); border: 0; border-radius: var(--r-pill); background: var(--c-accent); color: var(--c-on-accent); cursor: pointer; }
+.cs-tile__send:hover { background: var(--c-accent-hover); }
+.cs-tile__msg--live .cs-tile__said { white-space: pre-wrap; }
+.cs-tile__msg--live { border: var(--bw) dashed var(--c-accent); }
+
+/* workflow: one segment per stage (a count you can read), the stage now, every stage in the large size */
+.cs-tile__stagebar { display: flex; align-items: center; gap: var(--sp-2); }
+.cs-tile__segs { display: flex; flex: 1; gap: var(--bw-strong); min-inline-size: 0; }
+.cs-tile__seg { flex: 1; block-size: var(--sp-1); border-radius: var(--r-pill); background: var(--c-sunken); }
+.cs-tile__seg--working { background: var(--c-ok); }
+.cs-tile__seg--waiting { background: var(--c-warn); }
+.cs-tile__seg--done { background: var(--c-info); }
+.cs-tile__now { display: flex; align-items: center; gap: var(--sp-2); min-inline-size: 0; padding: var(--sp-1); margin-inline: calc(var(--sp-1) * -1); border: 0; border-radius: var(--r-m); background: none; color: var(--c-text); font: inherit; font-size: var(--fs-m); text-align: start; cursor: pointer; }
+.cs-tile__now:hover { background: var(--c-hover); }
+.cs-tile__now strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--fw-semibold); }
+.cs-tile__stagelist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); flex: 1; min-block-size: 0; overflow: hidden; }
+.cs-tile__stagerow { display: flex; align-items: center; gap: var(--sp-2); min-inline-size: 0; color: var(--c-text); }
+.cs-tile__stagerow .cs-tile__stepdot { inline-size: var(--sp-5); block-size: var(--sp-5); flex: none; }
+.cs-tile__stagerow.cs-st--working .cs-tile__stepdot { border-color: var(--c-ok); background: var(--c-ok-soft); }
+.cs-tile__stagerow.cs-st--waiting .cs-tile__stepdot { border-color: var(--c-warn); background: var(--c-warn-soft); }
+.cs-tile__stagerow.cs-st--done .cs-tile__stepdot { border-color: var(--c-info); background: var(--c-info); color: var(--c-on-accent); }
+.cs-tile__stagerow.cs-st--idle strong { font-weight: var(--fw-regular); }
+.cs-tile__bigring { display: grid; place-items: center; flex: 1; padding: 0; border: 0; background: none; color: inherit; cursor: pointer; }
+.cs-tile__bigring .cs-ring__in { font-size: var(--fs-m); }
+
+/* activity: a ring per project; it turns while the project works and pulses while it waits for you */
+.cs-tile__pulses { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-2); flex: 1; align-content: center; }
+.cs-tile__pulses--one { display: flex; align-items: center; justify-content: center; }
+.cs-tile__pulse { display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); min-inline-size: 0; padding: var(--sp-1); border: 0; border-radius: var(--r-l); background: none; color: inherit; font: inherit; font-size: var(--fs-xs); text-align: center; cursor: pointer; }
+.cs-tile__pulse:hover { background: var(--c-hover); }
+.cs-tile__pulsetext { display: flex; flex-direction: column; min-inline-size: 0; max-inline-size: 100%; }
+.cs-tile__pulsetext > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-tile__pulse--one { gap: var(--sp-2); }
+.cs-tile__pulses--m .cs-tile__pulse--one, .cs-tile__pulses--l .cs-tile__pulse--one { flex-direction: row; gap: var(--sp-4); text-align: start; font-size: var(--fs-s); }
+.cs-tile__pulse--one .cs-tile__pulsetext strong { font-size: var(--fs-m); }
+.cs-ringbox--big { inline-size: calc(var(--sp-8) * 1.6); block-size: calc(var(--sp-8) * 1.6); }
+.cs-ringbox--big .cs-ring__in { font-size: var(--fs-m); }
+.cs-live { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; transform: rotate(-90deg); }
+.cs-live__arc { fill: none; stroke: var(--c-line-strong); stroke-width: 4.5; stroke-linecap: round; transform-box: fill-box; transform-origin: center; }
+.cs-live--working .cs-live__arc { stroke: var(--c-ok); }
+.cs-live--waiting .cs-live__arc { stroke: var(--c-warn); }
+.cs-live--done .cs-live__arc { stroke: var(--c-info); }
+@media (prefers-reduced-motion: no-preference) {
+  .cs-live--working .cs-live__arc { animation: cs-live-turn calc(var(--dur-spin) * 1.6) linear infinite; }
+  .cs-live--waiting .cs-live__arc { animation: cs-live-pulse calc(var(--dur-spin) * 1.1) var(--ease) infinite alternate; }
+}
+@keyframes cs-live-turn { to { transform: rotate(360deg); } }
+@keyframes cs-live-pulse { to { opacity: 0.4; } }
+
+/* chat: the speaker once per run of messages; the chat window shows whole messages and scrolls */
+.cs-tile__msg--cont { margin-block-start: calc(var(--sp-1) * -0.5); }
+.cs-tile__when { font-weight: var(--fw-regular); }
+.cs-tile__msgs--full { overflow-y: auto; justify-content: flex-start; gap: var(--sp-2); padding-inline-end: var(--sp-1); }
+.cs-tile__msgs--full > :first-child { margin-block-start: auto; }
+.cs-tile__msgs--full .cs-tile__msg { max-inline-size: 92%; padding: var(--sp-2) var(--sp-3); font-size: var(--fs-s); }
+.cs-tile__msgs--full .cs-tile__msg--cont { margin-block-start: calc(var(--sp-2) * -0.5); }
+.cs-tile__md { overflow-wrap: anywhere; }
+.cs-tile__md.cs-prose > :first-child, .cs-tile__md .cs-prose > :first-child { margin-block-start: 0; }
+.cs-tile__md .cs-prose > :last-child { margin-block-end: 0; }
+.cs-tile__md pre { max-inline-size: 100%; overflow-x: auto; }
+.cs-tile__tools { color: var(--c-text-soft); font-size: var(--fs-xs); }
+.cs-tile--l .cs-tile__msgs--full .cs-tile__msg:nth-last-child(n+5) { display: flex; } /* the window shows them all */
+.cs-tile--s .cs-ringbox--big { inline-size: calc(var(--sp-8) * 1.1); block-size: calc(var(--sp-8) * 1.1); }
+.cs-tile--s .cs-tile__pulse--one { gap: var(--sp-1); padding: 0; }
+.cs-tile__md .cs-prose { font-size: var(--fs-s); line-height: var(--lh-normal); }
+.cs-tile__bigring .cs-ringbox { inline-size: calc(var(--sp-8) * 1.2); block-size: calc(var(--sp-8) * 1.2); }
+.cs-tile--s .cs-tile__bigring { min-block-size: 0; }
+/* the large activity tile: bigger rings, two rows */
+.cs-tile__pulses--l { grid-template-columns: repeat(3, 1fr); align-content: space-evenly; }
+.cs-tile__pulses--l .cs-tile__pulse { font-size: var(--fs-s); }
+.cs-tile--s .cs-tile__pick { max-inline-size: 100%; }
+/* words under a ring wrap to two lines instead of being cut */
+.cs-tile__pulses:not(.cs-tile__pulses--one) .cs-tile__pulsetext > * { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.cs-tile__pulses--l .cs-ringbox--big { inline-size: calc(var(--sp-8) * 1.25); block-size: calc(var(--sp-8) * 1.25); }
+.cs-tile--s .cs-tile__bigring .cs-ringbox { inline-size: var(--sp-8); block-size: var(--sp-8); }
+.cs-tile--s .cs-tile__bigring .cs-ring__in { font-size: var(--fs-s); }

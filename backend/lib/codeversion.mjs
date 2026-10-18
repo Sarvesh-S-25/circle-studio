@@ -29,3 +29,25 @@ export function codeFingerprint(appRoot) {
   }
   return h.digest('hex').slice(0, 16);
 }
+
+/**
+ * A fingerprint of the screens (frontend/): an open window compares it with the one it loaded, to see that newer
+ * screens are on disk and a reload picks them up.
+ */
+export function uiFingerprint(appRoot) {
+  const files = [];
+  (function walkUi(dir) {
+    let entries = [];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const abs = path.join(dir, e.name);
+      if (e.isDirectory()) walkUi(abs);
+      else if (/\.(m?js|css|html|svg)$/.test(e.name)) files.push(abs);
+    }
+  })(path.join(appRoot, 'frontend'));
+  const h = crypto.createHash('sha256');
+  for (const f of files.sort()) {
+    try { const st = fs.statSync(f); h.update(`${path.relative(appRoot, f)}:${st.size}:${Math.round(st.mtimeMs)}\n`); } catch { /* gone */ }
+  }
+  return h.digest('hex').slice(0, 16);
+}

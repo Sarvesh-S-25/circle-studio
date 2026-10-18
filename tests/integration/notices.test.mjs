@@ -41,17 +41,29 @@ test('feed: Notifications and Running now tiles, and the small size of every kin
   const pulse = { project, agents: [{ title: 'qa', state: 'waiting' }, { title: 'dev', state: 'working' }], workflow: { stages: [{ title: 'Plan', state: 'done' }, { title: 'Build', state: 'waiting' }], agents: 2, version: '1.0.0' }, repo: { isRepo: true, branch: 'main', changed: 2 }, stats: { attention: [] } };
   const stats = { totals: { projects: 1 }, projects: [{ id: 'p1', name: 'Demo', exists: true }], running: [{ source: 'team', projectId: 'p1', name: 'Demo', agent: 'qa', what: 'Bash', startedAt: '2026-10-05T10:00:00Z' }] };
   const notices = { unread: 1, notices: [{ id: 'a1', at: '2026-10-05T10:05:00Z', kind: 'question', title: 'Demo: qa has a question', body: 'Which colour?', url: '#/inbox', read: false }] };
-  const kinds = ['status', 'spend', 'workflow', 'inbox', 'project', 'overview', 'chat', 'notices', 'running'];
+  const kinds = ['pulse', 'status', 'spend', 'workflow', 'inbox', 'project', 'overview', 'chat', 'notices', 'running', 'mods'];
+  const mods = [{ name: 'waiting-game', isMod: true, group: 'project', onIn: [{ id: 'p1', name: 'Demo' }] }, { name: 'tools', isMod: false, group: 'off' }];
   const tiles = kinds.flatMap((kind) => ['s', 'm', 'l'].map((size) => ({ kind, size, projectId: 'p1' })));
   const chats = new Map(tiles.map((t, i) => [i, { project, selected: 'main', threads: [{ id: 'main', label: 'Main' }], messages: [{ who: 'You', text: 'hi', mine: true }, { who: 'Claude', text: 'Hello there' }] }]));
-  const feed = buildFeed({ tiles, pulseOf: () => pulse, usage: null, stats, pending: [], alerts: [], nameOf: () => 'Demo', palette: {}, defaultProject: 'p1', chats, notices, now });
+  const feed = buildFeed({ tiles, pulseOf: () => pulse, usage: null, stats, pending: [], alerts: [], nameOf: () => 'Demo', palette: {}, defaultProject: 'p1', chats, notices, mods, now });
   for (const t of feed.tiles) assert.ok(!/Could not draw/.test(t.empty || ''), `${t.kind} ${t.size}: ${t.empty}`);
   const at = (kind, size) => feed.tiles.find((t) => t.kind === kind && t.size === size);
   assert.deepEqual([at('notices', 's').big, at('notices', 's').bigState], ['1', 'waiting']);
   assert.equal(at('notices', 'm').items[0].sub, '5 min · Which colour?');
   assert.equal(at('running', 'l').items[0].title, 'Demo: qa');
-  assert.match(at('running', 'l').items[0].sub, /^for 10 min · Bash$/);
-  assert.equal(at('workflow', 's').big, '1/2');
+  // where and since when: the clock time (in this PC's own format), for how long, what it does
+  assert.match(at('running', 'l').items[0].sub, /^since .+ · 10 min · Bash$/);
+  assert.deepEqual([at('workflow', 's').progress.done, at('workflow', 's').progress.total], [1, 2], 'a count of stages done, not a guess');
+  assert.equal(at('workflow', 'm').now.title, 'Build');
+  assert.equal(at('workflow', 'm').now.state, 'waiting');
+  assert.equal(at('workflow', 'l').stages.length, 2);
+  // the activity ring: one per project, turning while it works; one ring needs no line under it
+  assert.deepEqual(at('pulse', 's').activity.map((r) => [r.name, r.state]), [['Demo', 'working']]);
+  assert.match(at('pulse', 's').activity[0].word, /^Working · 10 min$/);
+  assert.equal(at('pulse', 's').sub, '');
+  // mods: how many are on, and where
+  assert.equal(at('mods', 's').big, '1');
+  assert.equal(at('mods', 'm').items[0].sub, 'Mod · in Demo');
   assert.equal(at('project', 's').sub, 'waiting for you');
   assert.equal(at('overview', 's').big, '1');
   assert.equal(at('chat', 's').sub, 'Claude: Hello there');

@@ -30,17 +30,19 @@ export async function mountSingleTile(root, { kind, size, projectId, openApp }) 
   const n = new URLSearchParams(location.search).get('n');
   const tile = { kind, size: KINDS[kind].sizes.includes(size) ? size : KINDS[kind].sizes[0], projectId: projectId || null, ...(n ? { nodeId: n } : {}) };
   const ctx = createTileData({ openApp });
+  ctx.solo = true;
   ctx.setProject = (t, id) => { t.projectId = id; delete t.nodeId; const u = new URL(location.href); u.searchParams.set('p', id); u.searchParams.delete('n'); history.replaceState(null, '', u); refresh(); };
   ctx.setNode = (t, id) => { t.nodeId = id; const u = new URL(location.href); u.searchParams.set('n', id); history.replaceState(null, '', u); refresh(); };
   const draw = () => root.replaceChildren(h('div', { class: 'cs-solo' }, renderTile(tile, ctx)));
   ctx.redraw = draw;
-  async function refresh(usage = false) { await ctx.refresh([tile], { usage, skipUsage: !usage && !ctx.usage && kind !== 'spend' }); draw(); }
+  async function refresh(usage = false, { timed = false } = {}) { if (timed && ctx.holding()) return; await ctx.refresh([tile], { usage, skipUsage: !usage && !ctx.usage && kind !== 'spend' }); draw(); }
+  ctx.reload = () => refresh();
   document.title = `${KINDS[kind].title} · Circle Studio`;
   draw();
   await loadShell();
   await refresh(true);
-  listen(() => refresh(), `tile:${kind}:${size}${projectId ? `:${projectId}` : ''}`);
-  setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, POLL_MS);
+  listen(() => refresh(false, { timed: true }), `tile:${kind}:${size}${projectId ? `:${projectId}` : ''}`);
+  setInterval(() => { if (document.visibilityState === 'visible') refresh(false, { timed: true }); }, POLL_MS);
   setInterval(() => refresh(true), USAGE_MS);
 }
 
@@ -108,7 +110,8 @@ export async function mountBoard(root, { openApp, embedded = false }) {
     root.replaceChildren(h('div', { class: embedded ? 'cs-stack' : 'cs-boardwrap' }, bar, grid));
   }
 
-  async function refresh(usage = false) { if (gone) return; await ctx.refresh(tiles, { usage }); draw(); }
+  async function refresh(usage = false, { timed = false } = {}) { if (gone || (timed && ctx.holding())) return; await ctx.refresh(tiles, { usage }); draw(); }
+  ctx.reload = () => refresh();
   ctx.redraw = () => draw();
   const destroy = () => { gone = true; timers.forEach(clearInterval); offs.forEach((f) => f()); };
 
@@ -122,10 +125,10 @@ export async function mountBoard(root, { openApp, embedded = false }) {
   refresh(true);
   if (embedded) {
     // the app already listens for requests: only redraw on its announcements, and stop when the page is left
-    const redraw = () => refresh();
+    const redraw = () => refresh(false, { timed: true });
     for (const ev of ['circle:requests', 'circle:alerts', 'circle:run', 'circle:notice']) { window.addEventListener(ev, redraw); offs.push(() => window.removeEventListener(ev, redraw)); }
-  } else listen(() => refresh(), 'board');
-  timers.push(setInterval(() => { if (document.visibilityState === 'visible' && !editing) refresh(); }, POLL_MS));
+  } else listen(() => refresh(false, { timed: true }), 'board');
+  timers.push(setInterval(() => { if (document.visibilityState === 'visible' && !editing) refresh(false, { timed: true }); }, POLL_MS));
   timers.push(setInterval(() => refresh(true), USAGE_MS));
   return { destroy };
 }
