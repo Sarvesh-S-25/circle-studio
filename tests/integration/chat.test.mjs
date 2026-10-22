@@ -55,16 +55,16 @@ test('chat: real protocol flags, clean environment, streamed events, transcript,
     assert.equal(after(run.args, '--input-format'), 'stream-json');
     assert.equal(after(run.args, '--permission-prompt-tool'), 'stdio');
     assert.equal(after(run.args, '--permission-mode'), 'default');
-    assert.match(after(run.args, '--tools'), /(^|,)Bash(,|$)/);
-    assert.match(after(run.args, '--tools'), /AskUserQuestion/);
+    assert.ok(!has(run.args, '--tools'), "all of Claude Code's own tools, as in a terminal");
     assert.ok(!has(run.args, '--permission-prompts') && !has(run.args, '--bare') && !has(run.args, '--dangerously-skip-permissions'));
     const settings = JSON.parse(after(run.args, '--settings'));
     assert.equal(settings.disableAllHooks, true);
-    assert.ok(['Bash', 'Edit', 'Write'].every((t) => settings.permissions.ask.includes(t)), 'every command and edit is sent to the app, even the ones the CLI would allow on its own');
+    assert.ok(['Bash', 'PowerShell', 'Edit', 'Write', 'WebFetch'].every((t) => settings.permissions.ask.includes(t)), 'every command and edit is sent to the app, even the ones the CLI would allow on its own');
     assert.equal(after(run.args, '--model'), 'haiku');
     assert.ok(run.args.includes('Read(.env)') && run.args.includes('Read(**/*.pem)'));
     assert.ok(!has(run.args, '--resume') && !has(run.args, '--setting-sources'));
-    assert.match(after(run.args, '--append-system-prompt'), /Every command and edit is shown to the human/);
+    assert.match(after(run.args, '--append-system-prompt'), /Every command and file change you make is shown to the human first/);
+    assert.doesNotMatch(after(run.args, '--append-system-prompt'), /Circle Studio's assistant|brief/, 'plain Claude Code: no persona, no house style');
 
     const stored = (await s.call('GET', `/api/projects/${id}/chat`)).json;
     assert.equal(stored.messages.length, 2);
@@ -171,7 +171,7 @@ test('a question comes back as a popup and the answer reaches the agent', async 
     assert.equal((await call({ decision: 'answer', answers: { 'Tabs or spaces?': '  ' } })).status, 400);
     assert.equal((await call({ decision: 'answer', answers: { 'Tabs or spaces?': 'Tabs' } })).json.request.status, 'answered');
     const r = await run;
-    assert.match(text(r), /You chose \{"Tabs or spaces\?":"Tabs"\}/);
+    assert.match(text(r), /Got it\. Tabs or spaces\? Tabs\./);
     assert.deepEqual((await s.call('GET', `/api/requests?status=answered&projectId=${id}`)).json.requests[0].answer, { 'Tabs or spaces?': 'Tabs' });
   }, { env: { FAKE_CLAUDE: 'question' } });
 });

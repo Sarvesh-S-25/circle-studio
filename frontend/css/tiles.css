@@ -67,6 +67,9 @@
 .cs-tile__provfill { display: block; block-size: 100%; inline-size: var(--pct, 0%); border-radius: var(--r-pill); background: currentColor; }
 .cs-tile__provval { font-variant-numeric: tabular-nums; }
 .cs-prov--claude { color: var(--c-gate); }
+.cs-lim--ok { color: var(--c-ok); }
+.cs-lim--warn { color: var(--c-warn); }
+.cs-lim--danger { color: var(--c-danger); }
 .cs-prov--codex { color: var(--c-info); }
 .cs-prov--gemini { color: var(--c-accent); }
 .cs-prov--copilot { color: var(--c-ok); }
@@ -113,6 +116,15 @@
 .cs-tile__thread { display: inline-flex; align-items: center; gap: var(--sp-1); max-inline-size: 100%; padding: var(--sp-1) var(--sp-2); border: var(--bw) solid var(--c-line); border-radius: var(--r-pill); background: transparent; color: var(--c-text-soft); font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-medium); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cs-tile__thread:hover { border-color: var(--c-accent); color: var(--c-text); }
 .cs-tile__thread[aria-pressed="true"] { background: var(--c-accent); border-color: var(--c-accent); color: var(--c-on-accent); }
+/* the main chat: what writing carries on, Earlier chats and New chat */
+.cs-tile__chatbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-3); min-inline-size: 0; }
+.cs-tile__chatnote { display: inline-flex; align-items: center; gap: var(--sp-1); flex: 1; min-inline-size: max-content; white-space: nowrap; }
+.cs-tile__chatbar .cs-tile__linkbtn { display: inline-flex; align-items: center; gap: var(--sp-1); }
+.cs-tile__chatbar .cs-tile__linkbtn:disabled { color: var(--c-text-soft); cursor: default; text-decoration: none; }
+.cs-tile__earlier { display: flex; flex-direction: column; gap: var(--sp-1); margin: 0; padding: 0; list-style: none; overflow-y: auto; min-block-size: 0; flex: 1; }
+.cs-tile__earlierbtn { display: flex; align-items: baseline; gap: var(--sp-2); inline-size: 100%; padding: var(--sp-2); border: var(--bw) solid var(--c-line); border-radius: var(--r-m); background: var(--c-surface); color: var(--c-text); font: inherit; font-size: var(--fs-s); text-align: start; cursor: pointer; }
+.cs-tile__earlierbtn:hover, .cs-tile__earlierbtn:focus-visible { border-color: var(--c-accent); }
+.cs-tile__earliertitle { flex: 1; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--fw-medium); }
 .cs-tile__msgs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); flex: 1; min-block-size: 0; overflow: hidden; justify-content: flex-end; }
 .cs-tile__msg { display: flex; flex-direction: column; max-inline-size: 88%; padding: var(--sp-1) var(--sp-2); border-radius: var(--r-l); background: var(--c-sunken); font-size: var(--fs-xs); }
 .cs-tile__msg--mine { align-self: flex-end; background: var(--c-accent-soft); }

@@ -20,11 +20,15 @@ import { applyUpdate, appVersion } from './lib/updater.mjs';
 import { uiFingerprint } from './lib/codeversion.mjs';
 import { createChatFeed } from './lib/chatfeed.mjs';
 import { allMods } from './lib/mods.mjs';
+import { tapState, setTap } from './lib/limits.mjs';
+import { permHookState, setPermHook } from './lib/permhook.mjs';
+import { redact } from './lib/secrets.mjs';
+import { projectChoices, OVERLAY_EXTRAS } from './lib/overlay.mjs';
 
 const WHERE = ['desktop', 'startmenu', 'startup'];
 export const WIDGET_SIZE = { width: 400, height: 660 };
 export const BOARD_SIZE = { width: 800, height: 700 };
-export const WIDGET_KINDS = ['pulse', 'status', 'spend', 'workflow', 'inbox', 'project', 'overview', 'chat', 'notices', 'running', 'mods'];
+export const WIDGET_KINDS = ['limits', 'pulse', 'status', 'spend', 'workflow', 'inbox', 'project', 'overview', 'chat', 'notices', 'running', 'mods'];
 // the tiles that show one project (switchable on the tile) and the sizes each kind comes in
 export const PROJECT_KINDS = ['status', 'workflow', 'project', 'chat'];
 // every kind comes small, medium and large; a kind limited to some sizes is listed here
@@ -102,6 +106,17 @@ export function buildDesktopHandlers(app) {
     return chatFeed.chatOf(p, { nodeId, size }).then((c) => ({ ...c, project: { id: p.id, name: p.name } }));
   };
   const defaultProject = () => projects.list().find((p) => p.exists)?.id || null;
+
+  // the status line tap works on your Claude Code settings; the test runner's Claude home is a temp folder
+  const tapCtx = () => ({ claudeHome: config.claudeHome, dataDir: config.dataDir, appRoot: config.appRoot });
+  const permHookNow = () => {
+    const t = permHookState({ ...tapCtx(), port: config.port });
+    return { on: t.on, canSet: t.canSet, why: t.why || null, before: t.before ? redact(JSON.stringify(t.before, null, 2)) : null, after: t.after ? redact(JSON.stringify(t.after, null, 2)) : null };
+  };
+  const limitsNow = () => {
+    const t = tapState(tapCtx());
+    return { limits: app.limits?.get() || null, tap: { on: t.on, canTap: t.canTap, why: t.why || null, own: t.own ? redact(t.own) : null, before: t.before ? redact(JSON.stringify(t.before, null, 2)) : null, after: t.after ? redact(JSON.stringify(t.after, null, 2)) : null } };
+  };
 
   return {
     // The Chat widget: the main chat and the agents' chats of one project; one shown at a time.
@@ -221,8 +236,10 @@ export function buildDesktopHandlers(app) {
     // git, the team's numbers and the last Claude Code conversation in the folder.
     // What the native desktop widgets draw (scripts/widgets/desktop-widgets.ps1 asks every 15 seconds).
     'widgets.feed': async ({ query }) => {
+      // the overlay asks for extra widgets by kind (extra=pulse,mods), drawn for the project it shows, instead of the board
+      const extra = query.get('extra') !== null ? String(query.get('extra')).split(',').filter((k) => OVERLAY_EXTRAS.some((x) => x.kind === k)).slice(0, 8) : null;
       // the host also runs only to ask on the desktop: then it draws no tiles
-      const tiles = settings.get().desktopWidgets === false && query.get('asks') === '1' ? [] : settings.get().widgets || [];
+      const tiles = extra ? extra.map((kind) => ({ kind, size: 'm', projectId: query.get('projectId') || null })) : settings.get().desktopWidgets === false && query.get('asks') === '1' ? [] : settings.get().widgets || [];
       const shown = (kind) => tiles.some((t) => t.kind === kind && t.desktop !== false);
       const usage = tiles.some((t) => t.kind === 'spend' && t.desktop !== false) ? await usageOf(30).catch(() => null) : null;
       const recent = projects.list().filter((p) => p.exists);
@@ -231,15 +248,19 @@ export function buildDesktopHandlers(app) {
       for (const [i, t] of tiles.entries()) {
         if (t.kind === 'chat' && t.desktop !== false) chats.set(i, await chatOf(t.projectId || recent[0]?.id, t.nodeId || 'main', t.size).catch((e) => ({ threads: [], messages: [], empty: `Could not read the chats: ${e.message}` })));
       }
+      const stats = shown('overview') || shown('running') || shown('pulse') || tiles.some((t) => PROJECT_KINDS.includes(t.kind)) ? computeStats(app) : null;
+      const pending = app.inbox.list({ status: 'pending' });
       return buildFeed({
         tiles, usage, chats,
-        projects: recent.map((p) => ({ id: p.id, name: p.name })),
+        // with what each is doing, for the project picker on a tile
+        projects: projectChoices(recent.map((p) => ({ id: p.id, name: p.name })), stats?.running || [], pending),
         locked: settings.get().widgetsLocked === true,
         pulseOf: (id) => { try { return id ? pulseOf(id) : null; } catch { return null; } },
-        stats: shown('overview') || shown('running') || shown('pulse') ? computeStats(app) : null,
+        stats,
         mods: shown('mods') ? (() => { try { return allMods({ claudeHome: config.claudeHome, projects: projects.list() }); } catch { return []; } })() : null,
         asks: settings.get().desktopAsks !== false,
-        pending: app.inbox.list({ status: 'pending' }),
+        limits: app.limits?.get() || null,
+        pending,
         alerts: app.listAlerts('open'),
         notices: app.notices.list(20),
         nameOf: (id) => { try { return projects.get(id).name; } catch { return id; } },
@@ -252,6 +273,21 @@ export function buildDesktopHandlers(app) {
       const ids = body?.ids === undefined ? null : Array.isArray(body.ids) && body.ids.every((x) => typeof x === 'string' && /^[a-f0-9]{12}$/.test(x)) ? body.ids : null;
       if (body?.ids !== undefined && !ids) throw badRequest('ids must be a list of notice ids, or left out for all.');
       return { changed: app.notices.markRead(ids), ...app.notices.list(60) };
+    },
+    // Your plan's 5-hour and weekly use (as Claude Code last said it), and whether your terminal's status line feeds it.
+    'limits.get': () => limitsNow(),
+    // Answering Claude Code's terminal requests on the desktop: the hook in your Claude Code settings, and its preview.
+    'permhook.get': () => permHookNow(),
+    'permhook.set': ({ body }) => {
+      if (typeof body?.on !== 'boolean') throw badRequest('Say on: true or false.');
+      try { setPermHook(body.on, { ...tapCtx(), port: config.port }); } catch (e) { throw e.status === 400 ? badRequest(e.message) : e; }
+      return permHookNow();
+    },
+    // Turn the status line tap on or off: ~/.claude/settings.json is backed up first, your own command is kept and run.
+    'limits.tap': ({ body }) => {
+      if (typeof body?.on !== 'boolean') throw badRequest('Say on: true or false.');
+      try { setTap(body.on, tapCtx()); } catch (e) { throw e.status === 400 ? badRequest(e.message) : e; }
+      return limitsNow();
     },
     'desktop.widgets': async ({ body }) => {
       const host = desktopWidgets(config);

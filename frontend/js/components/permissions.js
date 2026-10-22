@@ -6,11 +6,13 @@ const ROWS = [
   ['write', 'Change files', 'Only after you approve a diff.', 'edit'],
   ['run', 'Run its scripts', 'The project\'s own apply-models.mjs, after a model change. Chat commands are asked one by one.', 'terminal'],
   ['claude', 'Send text to Claude', 'Chat and the advisor, through your Claude login.', 'chat'],
+  ['autoEdits', 'Always allow edits by agents', 'An agent changes files inside this folder without asking each time. Commands still ask.', 'check'],
+  ['autoReadsOutside', 'Always allow reading outside', 'An agent reads files outside this folder without asking. Secrets and changes outside still never go ahead on their own.', 'check'],
 ];
 
-/** Resolves with { write, run, claude } or null when cancelled. */
+/** Resolves with { write, run, claude, autoEdits, autoReadsOutside } or null when cancelled. */
 export function askPermissions({ name, path, current, confirmLabel = 'Allow' }) {
-  const value = { write: true, run: true, claude: true, ...(current || {}) };
+  const value = { write: true, run: true, claude: true, autoEdits: false, autoReadsOutside: false, ...(current || {}) };
   const rows = ROWS.map(([key, title, hint, ic]) => h('label', { class: 'cs-perm' },
     h('input', { class: 'cs-switch__input', type: 'checkbox', checked: value[key] || undefined, onchange: (e) => { value[key] = e.target.checked; } }),
     h('span', { class: 'cs-switch__track' }), icon(ic, 's'),
@@ -32,4 +34,4 @@ export function askPermissions({ name, path, current, confirmLabel = 'Allow' }) 
   });
 }
 
-export const permissionSummary = (p) => [p.write && 'change files', p.run && 'run scripts', p.claude && 'Claude'].filter(Boolean);
+export const permissionSummary = (p) => [p.write && 'change files', p.run && 'run scripts', p.claude && 'Claude', p.autoEdits && 'edits without asking', p.autoReadsOutside && 'reading outside without asking'].filter(Boolean);

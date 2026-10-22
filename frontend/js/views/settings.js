@@ -3,7 +3,7 @@ import { h, icon, statusPill } from '../dom.js';
 import { applyTheme, pref, setPref, state, refreshEngines, refreshShell } from '../state.js';
 import { openShortcuts } from '../components/palette.js';
 import { openWhatsNew } from '../components/whatsnew.js';
-import { toast, confirmDialog } from '../components/overlay.js';
+import { toast, confirmDialog, openModal } from '../components/overlay.js';
 import { alertsPermission, enableAlerts } from '../components/notify.js';
 import { updateSection } from '../components/updates.js';
 
@@ -54,6 +54,60 @@ export async function mount(el) {
   drawEngines();
   refreshEngines(true).then(drawEngines).catch(() => {}); // a fresh look, without holding the page up (it asks every engine)
 
+  /* ---- Claude Code in a terminal or an editor asks on the desktop cards too -------------------------------- */
+  // Its PermissionRequest hook sends each request to Circle Studio; you answer on the card; Claude Code goes on. Shown
+  // before your Claude Code settings change, backed up, off again with the same switch.
+  function termAsksRow() {
+    const row = h('div', { class: 'cs-stack cs-stack--tight' }, h('span', { class: 'cs-soft cs-small' }, 'Checking your Claude Code settings...'));
+    const draw = async () => {
+      let st;
+      try { st = await api.permHook(); } catch (e) { row.replaceChildren(h('span', { class: 'cs-soft cs-small' }, e.message)); return; }
+      const set = async (on, box) => {
+        if (on) {
+          const ok = await new Promise((resolve) => openModal({
+            title: 'Answer Claude Code in your terminal from the desktop?',
+            body: h('div', { class: 'cs-stack' },
+              h('p', {}, 'When Claude Code in a terminal or an editor wants to run a command, change a file or asks you something, the card pops up on your desktop, like for chats here. Allow, Deny or answer there, and Claude Code goes on in the terminal.'),
+              h('p', { class: 'cs-soft cs-small' }, 'If Circle Studio is not running, or you press "In the terminal" on the card, Claude Code asks in the terminal as usual. It applies to Claude Code sessions started after this.'),
+              h('p', { class: 'cs-soft cs-small' }, 'In your Claude Code settings (~/.claude/settings.json), the PermissionRequest hooks change from:'),
+              h('pre', { class: 'cs-cmd' }, st.before || '[]'),
+              h('p', { class: 'cs-soft cs-small' }, 'to:'),
+              h('pre', { class: 'cs-cmd' }, st.after || ''),
+              h('p', { class: 'cs-soft cs-small' }, 'A copy of the file is kept first. Turn this switch off to remove it again.')),
+            actions: [{ label: 'Cancel', kind: 'quiet', onClick: (c) => c.close(false) }, { label: 'Turn on', kind: 'primary', onClick: (c) => c.close(true) }],
+            onClose: (v) => resolve(v === true),
+          }));
+          if (!ok) { box.checked = false; return; }
+        }
+        try { await api.setPermHook(on); toast(on ? 'On. Claude Code sessions you start from now ask on the desktop cards.' : 'Off. Claude Code asks in the terminal again.', { kind: 'ok' }); } catch (e) { toast(e.message, { kind: 'danger' }); }
+        draw();
+      };
+      // a sample request, as the hook sends it: the card pops up; your answer is said back here
+      const tryIt = async () => {
+        const folder = state.projects.find((p) => p.exists)?.path;
+        if (!folder) { toast('Add a project folder first (Home, Open a folder).', { kind: 'warn' }); return; }
+        let id;
+        try { ({ id } = await api.terminalAsk({ tool_name: 'Bash', tool_input: { command: 'echo "a test from Circle Studio Settings"' }, cwd: folder })); } catch (e) { toast(e.message, { kind: 'danger' }); return; }
+        toast('A sample request is on its card now (bottom right of your screen). Answer it there.', { kind: 'info' });
+        for (let i = 0; i < 24; i++) {
+          let r;
+          try { r = await api.terminalAskWait(id, 25); } catch { return; }
+          if (r.status === 'pending') continue;
+          const said = r.decision === 'allow' ? 'Allow: Claude Code would go ahead.' : r.decision === 'deny' ? 'Deny: Claude Code would be told no.' : 'In the terminal: Claude Code would ask there.';
+          toast(`You answered ${said}`, { kind: 'ok' });
+          return;
+        }
+      };
+      row.replaceChildren(st.canSet
+        ? h('div', { class: 'cs-stack cs-stack--tight' },
+          sw('Answer Claude Code in my terminal from the desktop', st.on, set, 'Claude Code running in a terminal or an editor asks on the same cards: Allow, Deny or the answers, without switching to the terminal.'),
+          h('div', {}, h('button', { class: 'cs-btn cs-btn--small', type: 'button', title: 'Send a harmless sample request to the cards, the way the terminal would', onclick: tryIt }, icon('play', 's'), 'Try it')))
+        : h('span', { class: 'cs-soft cs-small' }, st.why || 'Your Claude Code settings could not be read.'));
+    };
+    draw();
+    return row;
+  }
+
   /* ---- desktop: alerts, start at login, shortcuts ---------------------------------------------------- */
   const desk = h('div', { class: 'cs-stack' }, h('p', { class: 'cs-soft' }, 'Loading...'));
   const sw = (label, checked, on, hint) => h('div', { class: 'cs-stack cs-stack--tight' }, h('label', { class: 'cs-switch' }, h('input', { class: 'cs-switch__input', type: 'checkbox', checked: checked || undefined, onchange: (e) => on(e.target.checked, e.target) }), h('span', { class: 'cs-switch__track' }), h('span', {}, label)), hint ? h('span', { class: 'cs-soft cs-small' }, hint) : null);
@@ -77,6 +131,7 @@ export async function mount(el) {
         try { await api.desktopWidgets('asks', { on }); toast(on ? 'An agent\'s question now pops up on your desktop as a card you answer there.' : 'Questions no longer pop up on the desktop.', { kind: 'ok' }); } catch (e) { toast(e.message, { kind: 'danger' }); }
         drawDesktop();
       }, 'When an agent asks to run something or has a question, a card appears at the bottom right of your screen, above other windows, with Allow and Deny (or the answers to pick). No need to open the Inbox.') : null,
+      sc ? termAsksRow() : null,
       sc ? sw('Start Circle Studio when I sign in to Windows', sc.startup, async (on) => {
         try { await api.shortcut({ where: 'startup', remove: !on }); toast(on ? 'Circle Studio starts at sign-in, in the background (no window).' : 'It no longer starts at sign-in.', { kind: 'ok' }); } catch (e) { toast(e.message, { kind: 'danger' }); }
         drawDesktop();
@@ -98,7 +153,7 @@ export async function mount(el) {
         drawDesktop();
       };
       row.replaceChildren(h('strong', {}, 'Desktop widgets'),
-        h('span', { class: 'cs-soft cs-small' }, 'Rounded tiles that sit on your desktop, like phone and Mac widgets: an activity ring per project (it turns while it works), what runs and since when, what waits for you, a workflow, a chat. Drag one to move it, click it to open Circle Studio there, right-click for options. Ctrl+Alt+C opens the overlay, like the Xbox Game Bar: the screen dims, every tile comes forward with what waits, what runs, the workflow, this PC and spending, and you type commands (help lists them). Esc or the same keys put it all back. They come back whenever Circle Studio runs.'),
+        h('span', { class: 'cs-soft cs-small' }, 'Rounded tiles that sit on your desktop, like phone and Mac widgets: an activity ring per project (it turns while it works), what runs and since when, what waits for you, a workflow, a chat. Drag one to move it, click it to open Circle Studio there, right-click for options. Ctrl+Alt+C opens the overlay, like the Xbox Game Bar: the screen dims, panels you can drag show what waits, what runs, the workflow, this PC and spending, a bar switches projects, and you type commands (help lists them). Esc or the same keys put it all back. They come back whenever Circle Studio runs.'),
         h('div', { class: 'cs-row cs-row--wrap' },
           st.running ? h('span', { class: 'cs-pill cs-pill--ok' }, icon('check', 's'), 'On the desktop') : null,
           h('button', { class: `cs-btn cs-btn--small ${st.running ? '' : 'cs-btn--primary'}`, type: 'button', onclick: () => toggle(!st.running) }, icon(st.running ? 'close' : 'pin', 's'), st.running ? 'Take them off the desktop' : 'Show widgets on the desktop'),

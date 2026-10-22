@@ -48,7 +48,8 @@ export class Chats {
     return this.store.serial(`chat:${projectId}`, () => this.store.writeJson(`chats/${projectId}.json`, { version: 1, sessionId: linked.id, fork: true, linked, messages: [] }));
   }
 
+  /** A new chat: nothing said yet. `startedAt` lets the chat window show it instead of an older conversation. */
   reset(projectId) {
-    return this.store.serial(`chat:${projectId}`, () => this.store.writeJson(`chats/${projectId}.json`, { version: 1, sessionId: null, messages: [] }));
+    return this.store.serial(`chat:${projectId}`, () => this.store.writeJson(`chats/${projectId}.json`, { version: 1, sessionId: null, messages: [], startedAt: new Date().toISOString() }));
   }
 }

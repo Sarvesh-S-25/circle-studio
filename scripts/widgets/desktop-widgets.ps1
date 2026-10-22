@@ -29,11 +29,15 @@ public static class CsDesk {
   [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
   // Under every other window again (no move, no resize, no focus taken).
   public static void Bottom(IntPtr h) { SetWindowPos(h, new IntPtr(1), 0, 0, 0, 0, 0x13); }
+  [DllImport("kernel32.dll")] static extern IntPtr GetCurrentProcess();
+  [DllImport("kernel32.dll")] static extern bool SetProcessWorkingSetSize(IntPtr p, IntPtr min, IntPtr max);
+  // Hand the memory this process is not using back to Windows (it comes back by itself when it is needed).
+  public static void Trim() { SetProcessWorkingSetSize(GetCurrentProcess(), new IntPtr(-1), new IntPtr(-1)); }
 }
 '@
 
 # One hotkey for the whole desktop (Ctrl+Alt+C, C for Circle): the overlay (overlay.ps1, like the Xbox Game Bar) dims
-# the screen, brings every tile in front of it and opens a command box; the same keys put everything back. Registered with Windows, so it works from any app. When another app
+# the screen and opens its own panels and a command box (the tiles stay on the desktop); the same keys close it. Registered with Windows, so it works from any app. When another app
 # already holds it, the next free one of Ctrl+Alt+W and Win+Alt+C is taken; the one in use is written to
 # desktop-widgets.hotkey (the Widgets page shows it), and the right-click menu always has "Bring to front".
 Add-Type -ReferencedAssemblies PresentationCore, WindowsBase -TypeDefinition @'
@@ -68,13 +72,16 @@ $stateFile = Join-Path $DataDir 'desktop-widgets.json'
 $base = "http://127.0.0.1:$Port"
 
 # ---- saved places and options ----------------------------------------------------------------------------------
-$saved = @{ positions = @{}; onTop = $false; overlay = @{} }
+$saved = @{ positions = @{}; onTop = $false; overlay = @{ places = @{}; hidden = @(); extra = @() } }
 if (Test-Path $stateFile) {
   try {
     $j = Get-Content -Raw -Path $stateFile | ConvertFrom-Json
     if ($j.positions) { foreach ($p in $j.positions.PSObject.Properties) { $saved.positions[$p.Name] = @{ x = [double]$p.Value.x; y = [double]$p.Value.y } } }
     $saved.onTop = [bool]$j.onTop
-    if ($j.overlay) { foreach ($p in $j.overlay.PSObject.Properties) { $saved.overlay[$p.Name] = @{ x = [double]$p.Value.x; y = [double]$p.Value.y } } }
+    # the overlay: where each dragged panel was left, and the panels hidden from its Widgets menu
+    if ($j.overlay.places) { foreach ($p in $j.overlay.places.PSObject.Properties) { $saved.overlay.places[$p.Name] = @{ x = [double]$p.Value.x; y = [double]$p.Value.y } } }
+    if ($j.overlay.hidden) { $saved.overlay.hidden = @($j.overlay.hidden | ForEach-Object { [string]$_ }) }
+    if ($j.overlay.extra) { $saved.overlay.extra = @($j.overlay.extra | ForEach-Object { [string]$_ }) }
   } catch { }
 }
 function Save-State { ($saved | ConvertTo-Json -Depth 5) | Set-Content -Path $stateFile -Encoding UTF8 }
@@ -120,6 +127,8 @@ function Ring([string]$state, [double]$pct, [string]$label, [double]$d = 46) {
   [void]$g.Children.Add($track); [void]$g.Children.Add($arc); [void]$g.Children.Add($lab)
   return $g
 }
+
+function Glyph([int]$code, [double]$size = 12, [string]$hex = '', [string]$font = 'Segoe UI Symbol') { $t = Text ([string][char]$code) $size $hex; $t.FontFamily = New-Object System.Windows.Media.FontFamily($font); $t.VerticalAlignment = 'Center'; return $t }
 
 function Dot([string]$state) { $e = New-Object System.Windows.Shapes.Ellipse; $e.Width = 8; $e.Height = 8; $e.Fill = Brush (StateHex $state); $e.VerticalAlignment = 'Center'; $e.Margin = '0,0,8,0'; return $e }
 
@@ -261,15 +270,20 @@ function New-AskCard($r) {
   $card.Background = Brush $script:pal.raised; $card.BorderBrush = Brush $script:pal.warn
   $fx = New-Object System.Windows.Media.Effects.DropShadowEffect; $fx.BlurRadius = 22; $fx.ShadowDepth = 4; $fx.Opacity = 0.4; $card.Effect = $fx
   $sp = New-Object System.Windows.Controls.StackPanel
-  $who = $(if ($r.nodeId) { "$($r.nodeId)" } else { 'The agent' })
+  # who asks, by name: the workflow agent, else the engine (Claude, Codex, Copilot)
+  $engines = @{ claude = 'Claude'; codex = 'Codex'; copilot = 'Copilot'; gemini = 'Gemini' }
+  $who = $(if ($r.nodeId) { "$($r.nodeId)" } elseif ($engines.ContainsKey([string]$r.engine)) { $engines[[string]$r.engine] } else { 'The agent' })
   $isQ = $r.kind -eq 'question'
   $head = New-Object System.Windows.Controls.StackPanel; $head.Orientation = 'Horizontal'; $head.Margin = '0,0,0,6'
   [void]$head.Children.Add((Dot 'waiting'))
-  [void]$head.Children.Add((Text "$(Project-Name $r.projectId)  $([char]0x00B7)  $who $(if ($isQ) { 'asks' } else { 'wants to go ahead' })" 11 $script:pal.soft 'SemiBold'))
+  # from Claude Code in a terminal or an editor: the folder, and that it waits there
+  $place = $(if ($r.source -eq 'terminal') { "$([string]$r.folderName) $([char]0x00B7) your terminal" } else { Project-Name $r.projectId })
+  [void]$head.Children.Add((Text "$place  $([char]0x00B7)  $who $(if ($isQ) { 'asks' } else { 'wants to go ahead' })" 11 $script:pal.soft 'SemiBold'))
   [void]$sp.Children.Add($head)
   $q = $null
   if ($isQ) { $q = @($r.questions)[0] }
-  $title = Text $(if ($q) { $q.question } else { $r.title }) 14 '' 'SemiBold'; $title.TextWrapping = 'Wrap'; $title.TextTrimming = 'None'; $title.Margin = '0,0,0,8'
+  $nq = @($r.questions).Count
+  $title = Text $(if ($isQ -and $nq -gt 1) { "$nq questions" } elseif ($q) { $q.question } else { $r.title }) 14 '' 'SemiBold'; $title.TextWrapping = 'Wrap'; $title.TextTrimming = 'None'; $title.Margin = '0,0,0,8'
   [void]$sp.Children.Add($title)
   if (-not $isQ -and $r.detail) {
     $box = New-Object System.Windows.Controls.Border; $box.Background = Brush $script:pal.sunken; $box.CornerRadius = 8; $box.Padding = '10,6,10,6'; $box.Margin = '0,0,0,8'
@@ -278,38 +292,228 @@ function New-AskCard($r) {
     $box.Child = $cmd; [void]$sp.Children.Add($box)
   }
   if ($r.risk -eq 'outside-project') { $x = Text 'This reaches outside the project folder.' 12 $script:pal.warn 'SemiBold'; $x.Margin = '0,0,0,8'; $x.TextWrapping = 'Wrap'; [void]$sp.Children.Add($x) }
+  # a terminal's request is Claude Code's own; Circle Studio says when it would have refused it in its own chat
+  if ($r.risk -eq 'dangerous') { $x = Text ("Careful: Circle Studio would refuse this in its own chat. " + (@($r.reasons) -join ' ')) 12 $script:pal.danger 'SemiBold'; $x.Margin = '0,0,0,8'; $x.TextWrapping = 'Wrap'; [void]$sp.Children.Add($x) }
   $row = New-Object System.Windows.Controls.WrapPanel; $row.HorizontalAlignment = 'Right'
   $open = Btn 'Open' 'quiet'; $open.ToolTip = 'See it in Circle Studio'; $open.Tag = $r.id
+  # where it happens: the folder, and the terminal or editor Claude works in
+  $whereRow = New-Object System.Windows.Controls.WrapPanel; $whereRow.HorizontalAlignment = 'Left'; $whereRow.Margin = '0,0,0,6'
+  if ($r.source -eq 'terminal') {
+    # answer it in the terminal after all: the card goes and Claude Code asks there as usual
+    $tb = Btn 'In the terminal' 'quiet'; $tb.ToolTip = 'Answer it in the terminal instead'; $tb.Tag = [string]$r.id
+    $tb.Add_Click({ param($s, $e) $id = [string]$s.Tag; if ($script:asks.ContainsKey($id)) { $script:asks[$id].Content.IsEnabled = $false; $script:asks[$id].Content.Opacity = 0.6 }; Post-Json "/api/hooks/permission/$([Uri]::EscapeDataString($id))/release" @{} {} })
+    [void]$whereRow.Children.Add($tb)
+  }
+  $fromFolder = $(if ($r.source -eq 'terminal') { [string]$r.folder } else { '' })
+  [void]$whereRow.Children.Add((Where-Btn 'Folder' 'The folder in File Explorer' '/api/desktop/folder' ([string]$r.projectId) $fromFolder))
+  [void]$whereRow.Children.Add((Where-Btn 'Terminal' 'The terminal or editor where Claude works on this folder' '/api/desktop/terminal' ([string]$r.projectId) $fromFolder))
+  [void]$sp.Children.Add($whereRow)
   $open.Add_Click({ Open-App '#/inbox' })
-  $simple = $isQ -and @($r.questions).Count -eq 1 -and -not $q.multiSelect -and @($q.options).Count -ge 1 -and @($q.options).Count -le 4
   if (-not $isQ) {
     $deny = Btn 'Deny'; $deny.Tag = $r.id; $deny.Add_Click({ param($s, $e) Answer-Ask $s.Tag @{ decision = 'deny' } })
     $allow = Btn 'Allow' 'primary'; $allow.Tag = $r.id; $allow.Add_Click({ param($s, $e) Answer-Ask $s.Tag @{ decision = 'allow' } })
     [void]$row.Children.Add($open); [void]$row.Children.Add($deny); [void]$row.Children.Add($allow)
-  } elseif ($simple) {
-    # the answers to pick, one button each, then a line for something else
-    foreach ($o in @($q.options)) {
-      $b = Btn ([string]$o.label); $b.Margin = '0,0,0,6'; $b.HorizontalAlignment = 'Stretch'; $b.HorizontalContentAlignment = 'Left'
-      if ($o.description) { $b.ToolTip = [string]$o.description }
-      $b.Tag = @{ id = $r.id; q = [string]$q.question; a = [string]$o.label }
-      $b.Add_Click({ param($s, $e) Answer-Ask $s.Tag.id @{ decision = 'answer'; answers = @{ $s.Tag.q = $s.Tag.a } } })
-      [void]$sp.Children.Add($b)
+    # "allow from now on": only the choices the server says fit this request
+    $labels = @{ 'run' = 'Allow for this run'; 'edits' = 'Always allow edits here'; 'reads-outside' = 'Always allow reading outside' }
+    $tips = @{ 'run' = 'This kind of step goes ahead until this answer finishes'; 'edits' = 'Edits inside this project go ahead without asking. Turn it off in the project''s Permissions'; 'reads-outside' = 'Reading files outside this project goes ahead without asking. Turn it off in the project''s Permissions' }
+    $more = @(@($r.remember) | Where-Object { $_ -and $labels.ContainsKey([string]$_) })
+    if ($more.Count) {
+      $row2 = New-Object System.Windows.Controls.WrapPanel; $row2.HorizontalAlignment = 'Right'; $row2.Margin = '0,6,0,0'
+      foreach ($k in $more) {
+        $b = Btn $labels[[string]$k] 'quiet'; $b.ToolTip = $tips[[string]$k]; $b.Tag = @{ id = $r.id; k = [string]$k }
+        $b.Add_Click({ param($s, $e) Answer-Ask $s.Tag.id @{ decision = 'allow'; remember = $s.Tag.k } })
+        [void]$row2.Children.Add($b)
+      }
+      [void]$sp.Children.Add($row); $row = $row2
     }
-    $other = New-Object System.Windows.Controls.TextBox; $other.Margin = '0,2,0,8'; $other.Padding = '6,4,6,4'; $other.FontSize = 12
-    $other.Background = Brush $script:pal.sunken; $other.Foreground = Brush $script:pal.text; $other.BorderBrush = Brush $script:pal.line; $other.CaretBrush = Brush $script:pal.text
-    $other.ToolTip = 'Something else: type it and press Enter'
-    $other.Tag = @{ id = $r.id; q = [string]$q.question }
-    $other.Add_KeyDown({ param($s, $e) if ($e.Key -eq 'Return' -and $s.Text.Trim()) { Answer-Ask $s.Tag.id @{ decision = 'answer'; answers = @{ $s.Tag.q = $s.Text.Trim() } } } })
-    $hint = Text 'Or type something else and press Enter:' 11 $script:pal.soft; $hint.Margin = '0,4,0,2'
-    [void]$sp.Children.Add($hint); [void]$sp.Children.Add($other)
-    [void]$row.Children.Add($open)
+  } elseif ($nq -ge 1 -and $nq -le 4) {
+    Add-QuestionPicker $sp $row $r $open
   } else {
     $go = Btn 'Answer in Circle Studio' 'primary'; $go.Add_Click({ Open-App '#/inbox' })
     [void]$row.Children.Add($go)
   }
   [void]$sp.Children.Add($row)
+  if ($isQ) {
+    $sv = New-Object System.Windows.Controls.ScrollViewer; $sv.VerticalScrollBarVisibility = 'Auto'; $sv.Content = $sp
+    $sv.MaxHeight = [Math]::Floor([System.Windows.SystemParameters]::WorkArea.Height * 0.75)
+    $card.Child = $sv
+  } else { $card.Child = $sp }
+  $w.Content = $card
+  $w.Add_SourceInitialized({ param($sender, $e) [CsDesk]::Tool((New-Object System.Windows.Interop.WindowInteropHelper($sender)).Handle) })
+  return $w
+}
+
+# ---- questions on the card: every kind Claude asks (up to 4 questions, pick one or several, or your own words) ----
+# One question with one answer to pick: a click sends it. Otherwise you pick (the mark shows what is picked) and press
+# Send answers; a question left without an answer says so instead of sending.
+function Option-Content([string]$mark, $o) {
+  $p = New-Object System.Windows.Controls.StackPanel
+  $t = Text "$mark  $([string]$o.label)" 12 $script:pal.text 'SemiBold'; $t.TextWrapping = 'Wrap'; $t.TextTrimming = 'None'
+  [void]$p.Children.Add($t)
+  if ($o.description) { $d = Text ([string]$o.description) 11 $script:pal.soft; $d.TextWrapping = 'Wrap'; $d.TextTrimming = 'None'; $d.Margin = '18,1,0,0'; [void]$p.Children.Add($d) }
+  return $p
+}
+
+function Paint-Options($st, [int]$qi) {
+  $multi = [bool]$st.qs[$qi].multiSelect
+  foreach ($b in @($st.buttons[$qi])) {
+    $on = @($st.picked[$qi]) -contains $b.Tag.a
+    $mark = $(if ($multi) { if ($on) { [char]0x2611 } else { [char]0x2610 } } elseif ($st.fast) { [char]0x203A } elseif ($on) { [char]0x25C9 } else { [char]0x25CB })
+    $b.Content = Option-Content ([string]$mark) $b.Tag.o
+    $b.BorderBrush = Brush $(if ($on) { $script:pal.accent } else { $script:pal.line }); $b.BorderThickness = $(if ($on) { 2 } else { 1 })
+    [System.Windows.Automation.AutomationProperties]::SetName($b, "$([string]$b.Tag.a)$(if ($on) { ', picked' })")
+  }
+}
+
+function Collect-Answers($st) {
+  $answers = @{}
+  for ($i = 0; $i -lt $st.qs.Count; $i++) {
+    $q = $st.qs[$i]
+    $typed = $st.others[$i].Text.Trim()
+    $picked = @($st.picked[$i])
+    if ($q.multiSelect) {
+      $all = @($picked) + @($(if ($typed) { $typed }))
+      if (-not $all.Count) { return $null }
+      $answers[[string]$q.question] = ($all -join ', ')
+    } else {
+      $a = $(if ($typed) { $typed } elseif ($picked.Count) { $picked[0] } else { $null })
+      if (-not $a) { return $null }
+      $answers[[string]$q.question] = $a
+    }
+  }
+  return $answers
+}
+
+function Send-Answers($st) {
+  $a = Collect-Answers $st
+  if (-not $a) { $st.warn.Text = 'Answer every question first: pick an option or type your own.'; $st.warn.Visibility = 'Visible'; return }
+  Answer-Ask $st.id @{ decision = 'answer'; answers = $a }
+}
+
+function Pick-Option($t) {
+  $st = $t.st; $q = $st.qs[$t.i]
+  if ($st.fast) { Answer-Ask $st.id @{ decision = 'answer'; answers = @{ [string]$q.question = $t.a } }; return }
+  if ($q.multiSelect) {
+    if (@($st.picked[$t.i]) -contains $t.a) { $st.picked[$t.i] = @(@($st.picked[$t.i]) | Where-Object { $_ -ne $t.a }) } else { $st.picked[$t.i] = @(@($st.picked[$t.i]) + $t.a) }
+  } else { $st.picked[$t.i] = @($t.a) }
+  if ($st.warn) { $st.warn.Visibility = 'Collapsed' }
+  Paint-Options $st $t.i
+}
+
+function Add-QuestionPicker($sp, $row, $r, $open) {
+  $qs = @($r.questions)
+  $fast = $qs.Count -eq 1 -and -not $qs[0].multiSelect
+  $st = @{ id = [string]$r.id; qs = $qs; picked = @{}; buttons = @{}; others = @{}; fast = $fast; warn = $null }
+  for ($i = 0; $i -lt $qs.Count; $i++) {
+    $q = $qs[$i]; $st.picked[$i] = @(); $st.buttons[$i] = @()
+    if ($qs.Count -gt 1) {
+      $n = Text "$($i + 1) of $($qs.Count)$(if ($q.header) { '  ' + [char]0x00B7 + '  ' + [string]$q.header })" 11 $script:pal.soft 'SemiBold'; $n.Margin = $(if ($i) { '0,12,0,2' } else { '0,0,0,2' })
+      [void]$sp.Children.Add($n)
+      $qt = Text ([string]$q.question) 13 '' 'SemiBold'; $qt.TextWrapping = 'Wrap'; $qt.TextTrimming = 'None'; $qt.Margin = '0,0,0,6'
+      [void]$sp.Children.Add($qt)
+    }
+    $how = $(if ($q.multiSelect) { 'Pick one or more' } elseif ($fast) { 'Click an answer to send it' } else { 'Pick one' })
+    $h = Text $how 11 $script:pal.soft; $h.Margin = '0,0,0,4'; [void]$sp.Children.Add($h)
+    foreach ($o in @($q.options)) {
+      $b = Btn ''; $b.Margin = '0,0,0,6'; $b.HorizontalAlignment = 'Stretch'; $b.HorizontalContentAlignment = 'Left'; $b.Padding = '10,6,10,6'
+      $b.Tag = @{ st = $st; i = $i; a = [string]$o.label; o = $o }
+      $b.Add_Click({ param($s, $e) Pick-Option $s.Tag })
+      $st.buttons[$i] = @(@($st.buttons[$i]) + $b)
+      [void]$sp.Children.Add($b)
+    }
+    Paint-Options $st $i
+    $hint = Text $(if ($fast) { 'Or type your own answer and press Enter:' } else { 'Or type your own answer:' }) 11 $script:pal.soft; $hint.Margin = '0,2,0,2'
+    [void]$sp.Children.Add($hint)
+    $other = New-Object System.Windows.Controls.TextBox; $other.Margin = '0,0,0,6'; $other.Padding = '6,4,6,4'; $other.FontSize = 12; $other.TextWrapping = 'Wrap'
+    $other.Background = Brush $script:pal.sunken; $other.Foreground = Brush $script:pal.text; $other.BorderBrush = Brush $script:pal.line; $other.CaretBrush = Brush $script:pal.text
+    [System.Windows.Automation.AutomationProperties]::SetName($other, "Your own answer to: $([string]$q.question)")
+    $other.Tag = @{ st = $st; i = $i }
+    $other.Add_KeyDown({ param($s, $e)
+      if ($e.Key -ne 'Return' -or -not $s.Text.Trim()) { return }
+      $e.Handled = $true; $t = $s.Tag
+      if ($t.st.fast) { Answer-Ask $t.st.id @{ decision = 'answer'; answers = @{ [string]$t.st.qs[0].question = $s.Text.Trim() } } } else { Send-Answers $t.st }
+    })
+    $st.others[$i] = $other
+    [void]$sp.Children.Add($other)
+    if ($fast) {
+      # typed your own answer: Enter sends it, and so does this button (it shows once there is something to send)
+      $go = Btn 'Send' 'primary'; $go.Visibility = 'Collapsed'; $go.HorizontalAlignment = 'Right'; $go.Margin = '0,0,0,6'; $go.Tag = $other
+      [System.Windows.Automation.AutomationProperties]::SetName($go, 'Send your answer')
+      $go.Add_Click({ param($s, $e) $box = $s.Tag; $t = $box.Tag; if ($box.Text.Trim()) { Answer-Ask $t.st.id @{ decision = 'answer'; answers = @{ [string]$t.st.qs[0].question = $box.Text.Trim() } } } })
+      $other.Add_TextChanged({ param($s, $e) $s.Tag.send.Visibility = $(if ($s.Text.Trim()) { 'Visible' } else { 'Collapsed' }) })
+      $other.Tag.send = $go
+      [void]$sp.Children.Add($go)
+    }
+  }
+  [void]$row.Children.Add($open)
+  # not answering is an answer too: Claude is told and goes on without it
+  $skip = Btn 'Skip' 'quiet'; $skip.ToolTip = 'Do not answer; Claude is told you skipped it'; $skip.Tag = $st.id
+  $skip.Add_Click({ param($s, $e) Answer-Ask ([string]$s.Tag) @{ decision = 'deny'; note = 'Skipped on the desktop card.' } })
+  [void]$row.Children.Add($skip)
+  if (-not $fast) {
+    $st.warn = Text '' 11 $script:pal.warn; $st.warn.TextWrapping = 'Wrap'; $st.warn.Visibility = 'Collapsed'; $st.warn.Margin = '0,0,0,6'
+    [void]$sp.Children.Add($st.warn)
+    $send = Btn 'Send answers' 'primary'; $send.Tag = $st
+    $send.Add_Click({ param($s, $e) Send-Answers $s.Tag })
+    [void]$row.Children.Add($send)
+  }
+}
+
+# Folder and Terminal on a card: the project's folder in File Explorer; the terminal or editor where Claude works on it.
+function Where-Btn([string]$label, [string]$tip, [string]$path, [string]$projectId, [string]$folder = '') {
+  # a terminal's request names its folder (it may not be one of your projects); the rest name the project
+  $b = Btn $label 'quiet'; $b.ToolTip = $tip; $b.Tag = @{ path = $path; body = $(if ($folder) { @{ folder = $folder; mode = 'show' } } else { @{ projectId = $projectId } }) }
+  $b.Add_Click({ param($s, $e) Post-Json $s.Tag.path $s.Tag.body {} })
+  return $b
+}
+
+# An answer came back while you were not looking: a notification, nothing more. Who answered, the first lines, and
+# Open chat (the real Chat in Circle Studio, where you carry on). It closes by itself after 30 seconds; the
+# Notifications tile keeps it. Nothing on it is a secret: the server masks them.
+function Close-ReplyCard([string]$id) {
+  if ($script:asks.ContainsKey("r:$id")) { $script:asks["r:$id"].Close(); $script:asks.Remove("r:$id"); Place-Asks }
+  Post-Json '/api/desktop/replies/dismiss' @{ id = $id } {}
+}
+
+function New-ReplyCard($r, [string]$editor) {
+  $w = New-Object System.Windows.Window
+  $w.WindowStyle = 'None'; $w.AllowsTransparency = $true; $w.Background = [System.Windows.Media.Brushes]::Transparent
+  $w.ShowInTaskbar = $false; $w.ResizeMode = 'NoResize'; $w.ShowActivated = $false; $w.Topmost = $true
+  $w.Width = $ASK_W + 24; $w.SizeToContent = 'Height'
+  $w.Title = "Circle Studio - $($r.project) answered"
+  $card = New-Object System.Windows.Controls.Border
+  $card.Margin = '12'; $card.CornerRadius = 16; $card.Padding = '16,12,16,14'; $card.BorderThickness = 1
+  $card.Background = Brush $script:pal.raised; $card.BorderBrush = Brush $script:pal.line
+  $fx = New-Object System.Windows.Media.Effects.DropShadowEffect; $fx.BlurRadius = 22; $fx.ShadowDepth = 4; $fx.Opacity = 0.4; $card.Effect = $fx
+  $sp = New-Object System.Windows.Controls.StackPanel
+  # heading: who answered, and a close button
+  $head = New-Object System.Windows.Controls.DockPanel; $head.Margin = '0,0,0,6'
+  $x = Btn ([string][char]0x2715) 'quiet'; $x.Margin = '0'; $x.Padding = '6,0,6,0'; $x.MinHeight = 22; $x.ToolTip = 'Close'; $x.Tag = $r.id
+  $x.Add_Click({ param($s, $e) Close-ReplyCard ([string]$s.Tag) })
+  [System.Windows.Controls.DockPanel]::SetDock($x, 'Right'); [void]$head.Children.Add($x)
+  $hl = New-Object System.Windows.Controls.StackPanel; $hl.Orientation = 'Horizontal'
+  [void]$hl.Children.Add((Dot 'done'))
+  [void]$hl.Children.Add((Text "$($r.project)  $([char]0x00B7)  $($r.who) answered" 11 $script:pal.soft 'SemiBold'))
+  [void]$head.Children.Add($hl)
+  [void]$sp.Children.Add($head)
+  # the first lines of the answer; the whole of it is in the chat
+  $said = Text ([string]$r.text) 13; $said.TextWrapping = 'Wrap'; $said.TextTrimming = 'CharacterEllipsis'; $said.MaxHeight = 58; $said.Margin = '0,0,0,10'
+  [void]$sp.Children.Add($said)
+  $row = New-Object System.Windows.Controls.WrapPanel; $row.HorizontalAlignment = 'Right'
+  [void]$row.Children.Add((Where-Btn 'Folder' 'The project folder in File Explorer' '/api/desktop/folder' ([string]$r.projectId)))
+  [void]$row.Children.Add((Where-Btn 'Terminal' 'The terminal or editor where Claude works on this folder (a new one that carries the chat on, if none is open)' '/api/desktop/terminal' ([string]$r.projectId)))
+  $op = Btn 'Open chat' 'primary'; $op.ToolTip = 'The whole conversation, in Circle Studio'; $op.Tag = @{ p = [string]$r.projectId; id = [string]$r.id }
+  $op.Add_Click({ param($s, $e) $t = $s.Tag; Close-ReplyCard $t.id; Open-App ('chat:' + $t.p) })
+  [void]$row.Children.Add($op)
+  [void]$sp.Children.Add($row)
   $card.Child = $sp
   $w.Content = $card
+  # a notification: it goes by itself after 30 seconds, unless the mouse is on it
+  $timer = New-Object System.Windows.Threading.DispatcherTimer; $timer.Interval = [TimeSpan]::FromSeconds(30)
+  $timer.Tag = @{ w = $w; id = [string]$r.id }
+  $timer.Add_Tick({ param($s, $e) if ($s.Tag.w.IsMouseOver) { return }; $s.Stop(); Close-ReplyCard $s.Tag.id })
+  $w.Add_Closed({ param($s, $e) $timer.Stop() }.GetNewClosure())
+  $timer.Start()
   $w.Add_SourceInitialized({ param($sender, $e) [CsDesk]::Tool((New-Object System.Windows.Interop.WindowInteropHelper($sender)).Handle) })
   return $w
 }
@@ -330,7 +534,11 @@ function Refresh-Asks {
   if (-not $script:asksOn -or -not $script:pal) { foreach ($k in @($script:asks.Keys)) { $script:asks[$k].Close(); $script:asks.Remove($k) }; return }
   $list = @((Invoke-RestMethod -Uri "$base/api/requests?status=pending" -TimeoutSec 4).requests | Where-Object { $_ })
   $list = @($list | Sort-Object at | Select-Object -Last 3)
-  $ids = @($list | ForEach-Object { $_.id })
+  # answers that came back, as cards to reply on (keyed r:<id> beside the asks)
+  $rep = $null
+  try { $rep = Invoke-RestMethod -Uri "$base/api/desktop/replies" -TimeoutSec 4 } catch { }
+  $replies = @($(if ($rep) { $rep.replies } else { @() }) | Where-Object { $_ } | Sort-Object at | Select-Object -Last 2)
+  $ids = @($list | ForEach-Object { $_.id }) + @($replies | ForEach-Object { 'r:' + $_.id })
   foreach ($k in @($script:asks.Keys)) { if ($ids -notcontains $k) { $script:asks[$k].Close(); $script:asks.Remove($k) } }
   $added = $false
   foreach ($r in $list) {
@@ -338,7 +546,17 @@ function Refresh-Asks {
     $w = New-AskCard $r
     $w.Tag = @{ at = [string]$r.at }
     $script:asks[$r.id] = $w
-    if (-not $script:ovUp) { $w.Show() } # while the overlay is open, what waits is in its own panel
+    # shown even while the overlay is open, on top of it: you answer on the card wherever you are
+    $w.Show(); if ($script:ovUp) { $w.Topmost = $false; $w.Topmost = $true }
+    $added = $true
+  }
+  foreach ($r in $replies) {
+    $k = 'r:' + $r.id
+    if ($script:asks.ContainsKey($k)) { continue }
+    $w = New-ReplyCard $r ([string]$rep.editor)
+    $w.Tag = @{ at = [string]$r.at }
+    $script:asks[$k] = $w
+    if (-not $script:ovUp) { $w.Show() }
     $added = $true
   }
   if ($added -or $script:asks.Count) { Place-Asks }
@@ -378,18 +596,98 @@ function Add-ProjectItems($menu, $t) {
 }
 
 # ---- one tile's content -----------------------------------------------------------------------------------------
-function Build-Tile($t) {
-  $sp = New-Object System.Windows.Controls.StackPanel
-  $title = Text $t.title 12 $script:pal.soft 'SemiBold'
-  if ($t.canPick) {
+# The heading of a tile, the same as the overlay's panels: the title (for a project tile, a chip with the project's
+# state that opens the project picker), and at the right a grip (drag to move) or a lock (locked in place).
+# In the overlay ($Overlay) the project follows the overlay's switcher, so the chip is plain text there.
+function Tile-Head($t, [bool]$Overlay = $false) {
+  $head = New-Object System.Windows.Controls.DockPanel; $head.Margin = '0,0,0,10'; $head.LastChildFill = $false
+  $mark = $(if ($script:locked -and -not $Overlay) { Glyph 0xE72E 11 $script:pal.lineStrong 'Segoe MDL2 Assets' } else { Glyph 0x283F 12 $script:pal.lineStrong })
+  $mark.ToolTip = $(if ($script:locked -and -not $Overlay) { 'Locked in place (right-click to unlock)' } else { 'Drag to move' })
+  [System.Windows.Controls.DockPanel]::SetDock($mark, 'Right'); [void]$head.Children.Add($mark)
+  if ($t.big -and $t.kind -eq 'spend' -and $t.size -ne 's') { $v = Text $t.big 15 '' 'SemiBold'; $v.Margin = '0,0,10,0'; [System.Windows.Controls.DockPanel]::SetDock($v, 'Right'); [void]$head.Children.Add($v) }
+  if ($t.canPick -and -not $Overlay) {
     # the project name is a switch: click it to show another project here
-    $title.Text = "$($t.title)  " + [string][char]0x25BE
-    $title.Cursor = 'Hand'; $title.ToolTip = 'Show another project'
-    $title.Tag = $t
-    $title.Add_MouseLeftButtonDown({ param($s, $e) $e.Handled = $true; $cm = New-Object System.Windows.Controls.ContextMenu; Add-ProjectItems $cm $s.Tag; $cm.PlacementTarget = $s; $cm.IsOpen = $true })
+    $p = $script:projects | Where-Object { $_.id -eq $t.projectId } | Select-Object -First 1
+    $chip = New-Object System.Windows.Controls.Border; $chip.CornerRadius = 9; $chip.Padding = '8,2,8,3'; $chip.Cursor = 'Hand'; $chip.Background = Brush $script:pal.sunken
+    $chip.ToolTip = 'Show another project'; $chip.Tag = $t
+    $row = New-Object System.Windows.Controls.StackPanel; $row.Orientation = 'Horizontal'
+    $d = Dot $(if ($p -and $p.state) { [string]$p.state } else { 'idle' }); $d.Margin = '0,0,6,0'; [void]$row.Children.Add($d)
+    $n = Text $t.title 12 '' 'SemiBold'; $n.MaxWidth = $(if ($t.size -eq 's') { 92 } else { 220 }); [void]$row.Children.Add($n)
+    $c = Glyph 0x25BE 10 $script:pal.soft; $c.Margin = '6,0,0,0'; [void]$row.Children.Add($c)
+    $chip.Child = $row
+    $chip.Add_MouseLeftButtonDown({ param($s, $e) $e.Handled = $true; Show-ProjectPicker $s $s.Tag })
+    [System.Windows.Controls.DockPanel]::SetDock($chip, 'Left'); [void]$head.Children.Add($chip)
+  } else {
+    $title = Text $t.title 12 $script:pal.soft 'SemiBold'; $title.VerticalAlignment = 'Center'
+    [System.Windows.Controls.DockPanel]::SetDock($title, 'Left'); [void]$head.Children.Add($title)
   }
-  $title.Margin = '0,0,0,8'
-  if ($t.big -and $t.kind -eq 'spend' -and $t.size -ne 's') { [void]$sp.Children.Add((Row $title (Text $t.big 15 '' 'SemiBold'))) } else { [void]$sp.Children.Add($title) }
+  return $head
+}
+
+# The project picker of a tile: a small card like the overlay's switcher, under the tile's title, one row per project
+# with what it is doing. A click picks; Esc or a click elsewhere closes it.
+$script:picker = $null
+function Show-ProjectPicker($src, $t) {
+  Close-Picker
+  $w = New-Object System.Windows.Window
+  $w.WindowStyle = 'None'; $w.AllowsTransparency = $true; $w.Background = [System.Windows.Media.Brushes]::Transparent
+  $w.ShowInTaskbar = $false; $w.ResizeMode = 'NoResize'; $w.Topmost = $true; $w.SizeToContent = 'WidthAndHeight'; $w.Title = 'Circle Studio - Show project'
+  $card = Card 300; $card.Margin = '12'
+  $sp = New-Object System.Windows.Controls.StackPanel
+  $hd = New-Object System.Windows.Controls.DockPanel; $hd.Margin = '2,0,2,10'
+  $esc = Text 'Esc closes' 10 $script:pal.soft; $esc.VerticalAlignment = 'Center'; [System.Windows.Controls.DockPanel]::SetDock($esc, 'Right'); [void]$hd.Children.Add($esc)
+  [void]$hd.Children.Add((Text 'Show project' 13 '' 'SemiBold'))
+  [void]$sp.Children.Add($hd)
+  $sv = New-Object System.Windows.Controls.ScrollViewer; $sv.MaxHeight = 420; $sv.VerticalScrollBarVisibility = 'Auto'
+  $list = New-Object System.Windows.Controls.StackPanel
+  $first = $null
+  foreach ($p in $script:projects) {
+    $on = ($p.id -eq $t.projectId)
+    $b = Btn '' 'plain'; $b.Margin = '0,0,0,6'; $b.Padding = '12,8,10,9'; $b.HorizontalContentAlignment = 'Stretch'
+    $b.Background = $(if ($on) { Brush $script:pal.accent '2E' } else { Brush $script:pal.sunken })
+    $b.BorderBrush = Brush $(if ($on) { $script:pal.accent } elseif ($p.state -eq 'waiting') { $script:pal.warn } else { $script:pal.line })
+    $b.BorderThickness = $(if ($on) { 2 } else { 1 })
+    $dp = New-Object System.Windows.Controls.DockPanel
+    if ($p.waiting -gt 0) { $pl = Pill ([string]$p.waiting) $script:pal.warn; $pl.ToolTip = 'Waiting for you'; [System.Windows.Controls.DockPanel]::SetDock($pl, 'Right'); [void]$dp.Children.Add($pl) }
+    elseif ($on) { $tk = Glyph 0x2713 13 $script:pal.accent; [System.Windows.Controls.DockPanel]::SetDock($tk, 'Right'); [void]$dp.Children.Add($tk) }
+    $col = New-Object System.Windows.Controls.StackPanel
+    $top = New-Object System.Windows.Controls.StackPanel; $top.Orientation = 'Horizontal'
+    [void]$top.Children.Add((Dot $(if ($p.state) { [string]$p.state } else { 'idle' })))
+    $nm = Text $p.name 13 '' 'SemiBold'; $nm.MaxWidth = 200; [void]$top.Children.Add($nm)
+    [void]$col.Children.Add($top)
+    if ($p.word) { $wd = Text $(if ($on) { "Shown here  $([char]0x00B7)  $($p.word)" } else { [string]$p.word }) 11 $(if ($p.state -eq 'waiting') { $script:pal.warn } elseif ($p.state -eq 'working') { $script:pal.ok } else { $script:pal.soft }); $wd.Margin = '16,2,0,0'; [void]$col.Children.Add($wd) }
+    [void]$dp.Children.Add($col)
+    $b.Content = $dp
+    $b.Tag = @{ index = [int]$t.index; projectId = [string]$p.id; on = $on }
+    [System.Windows.Automation.AutomationProperties]::SetName($b, "$($p.name), $($p.word)")
+    $b.Add_Click({ param($s, $e) $tag = $s.Tag; Close-Picker; if (-not $tag.on) { Pick-Widget $tag.index @{ projectId = $tag.projectId } } })
+    [void]$list.Children.Add($b)
+    if ($on -or -not $first) { $first = $b }
+  }
+  $sv.Content = $list; [void]$sp.Children.Add($sv)
+  $card.Child = $sp
+  $w.Content = $card
+  # under the title, in the screen's own units; kept on the screen
+  $pt = $src.PointToScreen((New-Object System.Windows.Point(0, $src.ActualHeight)))
+  $pt = [System.Windows.PresentationSource]::FromVisual($src).CompositionTarget.TransformFromDevice.Transform($pt)
+  $w.Left = $pt.X - 12; $w.Top = $pt.Y - 6
+  $w.Add_SourceInitialized({ param($s, $e) [CsDesk]::Tool((New-Object System.Windows.Interop.WindowInteropHelper($s)).Handle) })
+  $w.Add_Loaded({ param($s, $e) $a = [System.Windows.SystemParameters]::WorkArea; $s.Left = [Math]::Max($a.Left, [Math]::Min($s.Left, $a.Right - $s.ActualWidth)); $s.Top = [Math]::Max($a.Top, [Math]::Min($s.Top, $a.Bottom - $s.ActualHeight)) })
+  $w.Add_Deactivated({ Close-Picker })
+  $w.Add_PreviewKeyDown({ param($s, $e) if ($e.Key -eq 'Escape') { $e.Handled = $true; Close-Picker } })
+  $script:picker = $w
+  $w.Show(); [void]$w.Activate()
+  if ($first) { [void]$first.Focus() }
+}
+
+function Close-Picker {
+  $w = $script:picker; $script:picker = $null
+  if ($w) { try { $w.Close() } catch { } }
+}
+
+function Build-Tile($t, [bool]$Overlay = $false) {
+  $sp = New-Object System.Windows.Controls.StackPanel
+  [void]$sp.Children.Add((Tile-Head $t $Overlay))
   if ($t.chat -and $t.chat.threads -and $t.chat.threads.Count) {
     # the chats to switch between: the main chat first, then the agents'
     $wp = New-Object System.Windows.Controls.WrapPanel; $wp.Margin = '0,0,0,6'; $wp.MaxHeight = 52
@@ -573,7 +871,8 @@ $windows = @{}
 function Open-App([string]$hash) {
   # Circle Studio brings its open window forward (on that page) instead of opening a second one
   # (asynchronous, so the tiles never freeze while it does; it opens the window itself only when the server cannot)
-  # chat:<project id> opens that project's chat window: a small window to read, pick the engine and reply
+  # chat:<project id> opens that project's Chat in Circle Studio: the real chat, live, whatever started it
+  if ($hash -like 'chat:*') { $hash = '#/projects/' + [Uri]::EscapeDataString($hash.Substring(5)) + '/chat' }
   $body = $(if ($hash -eq 'widget.html') { @{ kind = 'widget' } } elseif ($hash -like 'chat:*') { @{ kind = 'tile'; tile = @{ kind = 'chat'; size = 'l' }; projectId = $hash.Substring(5) } } else { @{ kind = 'app'; hash = $hash } }) | ConvertTo-Json -Compress
   $wc = New-Object System.Net.WebClient
   $wc.Headers.Add('X-Circle', '1'); $wc.Headers.Add('Content-Type', 'application/json')
@@ -645,7 +944,7 @@ function New-Menu($t) {
 
 $script:HOTKEY_WORDS = 'Ctrl+Alt+C'
 $script:front = $false
-function Is-Up { return ($saved.onTop -or $script:front -or $script:ovUp) }
+function Is-Up { return ($saved.onTop -or $script:front) }
 
 function Apply-Layer {
   foreach ($w in $windows.Values) {
@@ -674,8 +973,9 @@ function New-TileWindow($t, [int]$i) {
   if (-not $pos -and $t.oldKey -and $saved.positions[$t.oldKey]) { $pos = $saved.positions[$t.oldKey]; $saved.positions[$t.key] = $pos; Save-State }
   if ($pos) { $w.Left = $pos.x; $w.Top = $pos.y } else { $p = Default-Place $i $t.size; $w.Left = $p[0]; $w.Top = $p[1] }
   $card = New-Object System.Windows.Controls.Border
-  $card.Margin = '12'; $card.CornerRadius = 20; $card.Padding = $PAD; $card.BorderThickness = 1
-  $fx = New-Object System.Windows.Media.Effects.DropShadowEffect; $fx.BlurRadius = 18; $fx.ShadowDepth = 3; $fx.Opacity = 0.35; $card.Effect = $fx
+  # the same card as the overlay's panels
+  $card.Margin = '12'; $card.CornerRadius = 16; $card.Padding = '16,12,16,14'; $card.BorderThickness = 1
+  $fx = New-Object System.Windows.Media.Effects.DropShadowEffect; $fx.BlurRadius = 24; $fx.ShadowDepth = 4; $fx.Opacity = 0.45; $card.Effect = $fx
   $card.Cursor = 'Hand'
   $w.Content = $card
   $w.Tag = @{ key = $t.key; url = $t.url }
@@ -695,7 +995,9 @@ function New-TileWindow($t, [int]$i) {
 }
 
 function Paint($w, $t) {
-  $sig = ($t | ConvertTo-Json -Depth 8 -Compress) + $script:pal.raised
+  # drawn again when it changes, the lock changes (grip or lock) or the state of the project it shows changes
+  $pj = $(if ($t.canPick) { $script:projects | Where-Object { $_.id -eq $t.projectId } | Select-Object -First 1 } else { $null })
+  $sig = ($t | ConvertTo-Json -Depth 8 -Compress) + $script:pal.raised + [string]$script:locked + $(if ($pj) { [string]$pj.state } else { '' })
   if ($w.Tag -and $w.Tag.sig -eq $sig) { return }
   $card = $w.Content
   $card.Background = Brush $script:pal.raised
@@ -747,10 +1049,15 @@ $timer.Add_Tick({ Safe-Refresh })
 $askTimer = New-Object System.Windows.Threading.DispatcherTimer
 $askTimer.Interval = [TimeSpan]::FromSeconds(3)
 $askTimer.Add_Tick({ Safe-Asks })
+# Most of the time the tiles only wait: once a minute, while nothing is open on top of them, the memory they are not
+# using goes back to Windows (PowerShell with WPF keeps far more than it needs between refreshes).
+$trimTimer = New-Object System.Windows.Threading.DispatcherTimer
+$trimTimer.Interval = [TimeSpan]::FromSeconds(60)
+$trimTimer.Add_Tick({ if (-not $script:ovUp -and -not $script:picker) { try { [GC]::Collect(); [GC]::WaitForPendingFinalizers(); [CsDesk]::Trim() } catch { } } })
 $hotkey = New-Object CsHotKey
 $hotkey.Add_Pressed({ try { Toggle-Overlay } catch { Add-Content -Path $logFile -Value ((Get-Date).ToString('s') + ' hotkey: ' + $_.Exception.Message + ' ' + $_.InvocationInfo.PositionMessage) } })
 $app.Add_Startup({
-  Safe-Refresh; $timer.Start(); Safe-Asks; $askTimer.Start()
+  Safe-Refresh; $timer.Start(); Safe-Asks; $askTimer.Start(); $trimTimer.Start()
   # Ctrl = 2, Alt = 1, Win = 8; C = 0x43, W = 0x57
   $got = ''
   foreach ($k in @(@('Ctrl+Alt+C', 3, 0x43), @('Ctrl+Alt+W', 3, 0x57), @('Win+Alt+C', 9, 0x43))) {

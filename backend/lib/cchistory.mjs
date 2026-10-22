@@ -52,6 +52,46 @@ function typedText(o) {
 const clipText = (s, n = MAX_TEXT) => (s.length > n ? `${s.slice(0, n)}\n\n[... cut, ${s.length - n} more characters]` : s);
 
 /** One line per conversation: id, title, when, size, and the subagent runs inside it. Newest first. */
+// What a conversation file says about itself (title, first message, folder, start, turns, agent runs), kept until the
+// file changes (its size or time): the widgets ask every few seconds, and a file is read up to 512 KB to know this.
+const summaries = new Map();
+function aboutFile(it) {
+  const key = `${it.st.mtimeMs}|${it.st.size}`;
+  const hit = summaries.get(it.file);
+  if (hit && hit.key === key) return hit.value;
+  const head = readSlice(it.file, 0, Math.min(HEAD_BYTES, it.st.size));
+  const tail = it.st.size > HEAD_BYTES ? readSlice(it.file, Math.max(HEAD_BYTES, it.st.size - HEAD_BYTES), Math.min(HEAD_BYTES, it.st.size - HEAD_BYTES)) : '';
+  let title = null;
+  let first = null;
+  let cwd = null;
+  let startedAt = null;
+  let turns = 0;
+  for (const line of `${head}\n${tail}`.split('\n')) {
+    if (!line.startsWith('{')) continue;
+    const o = parse(line);
+    if (!o) continue;
+    if ((o.type === 'ai-title' && o.aiTitle) || (o.type === 'custom-title' && o.customTitle) || (o.type === 'summary' && o.summary)) title = o.customTitle || o.aiTitle || o.summary;
+    if (o.type === 'user' && !o.isSidechain) {
+      cwd ||= o.cwd || null;
+      startedAt ||= o.timestamp || null;
+      const t = typedText(o);
+      if (t) { turns++; first ||= t; }
+    }
+  }
+  const subDir = path.join(path.dirname(it.file), it.id, 'subagents');
+  let agents = [];
+  try {
+    agents = fs.readdirSync(subDir).filter((f) => f.endsWith('.meta.json')).map((f) => {
+      const meta = parse(fs.readFileSync(path.join(subDir, f), 'utf8')) || {};
+      return { run: f.slice(0, -'.meta.json'.length), agentType: String(meta.agentType || '').slice(0, 80), description: redact(String(meta.description || '')).slice(0, 200) };
+    }).filter((a) => AGENT_RUN_RE.test(a.run));
+  } catch { /* no subagents */ }
+  const value = { title, first, cwd, startedAt, turns, agents };
+  if (summaries.size > 3000) summaries.clear();
+  summaries.set(it.file, { key, value });
+  return value;
+}
+
 export function listConversations(home, root, { limit = 40 } = {}) {
   const dir = historyDir(home, root);
   let names;
@@ -66,35 +106,9 @@ export function listConversations(home, root, { limit = 40 } = {}) {
   items.sort((a, b) => b.st.mtimeMs - a.st.mtimeMs);
   const out = [];
   for (const it of items.slice(0, limit)) {
-    const head = readSlice(it.file, 0, Math.min(HEAD_BYTES, it.st.size));
-    const tail = it.st.size > HEAD_BYTES ? readSlice(it.file, Math.max(HEAD_BYTES, it.st.size - HEAD_BYTES), Math.min(HEAD_BYTES, it.st.size - HEAD_BYTES)) : '';
-    let title = null;
-    let first = null;
-    let cwd = null;
-    let startedAt = null;
-    let turns = 0;
-    for (const line of `${head}\n${tail}`.split('\n')) {
-      if (!line.startsWith('{')) continue;
-      const o = parse(line);
-      if (!o) continue;
-      if ((o.type === 'ai-title' && o.aiTitle) || (o.type === 'custom-title' && o.customTitle) || (o.type === 'summary' && o.summary)) title = o.customTitle || o.aiTitle || o.summary;
-      if (o.type === 'user' && !o.isSidechain) {
-        cwd ||= o.cwd || null;
-        startedAt ||= o.timestamp || null;
-        const t = typedText(o);
-        if (t) { turns++; first ||= t; }
-      }
-    }
+    const { title, first, cwd, startedAt, turns, agents } = aboutFile(it);
     if (cwd && !sameFolder(cwd, root)) continue; // another folder whose name maps to the same key
     if (!first && !title) continue; // nothing a person said: an empty or tool-only run
-    const subDir = path.join(path.dirname(it.file), it.id, 'subagents');
-    let agents = [];
-    try {
-      agents = fs.readdirSync(subDir).filter((f) => f.endsWith('.meta.json')).map((f) => {
-        const meta = parse(fs.readFileSync(path.join(subDir, f), 'utf8')) || {};
-        return { run: f.slice(0, -'.meta.json'.length), agentType: String(meta.agentType || '').slice(0, 80), description: redact(String(meta.description || '')).slice(0, 200) };
-      }).filter((a) => AGENT_RUN_RE.test(a.run));
-    } catch { /* no subagents */ }
     out.push({
       id: it.id,
       title: redact(String(title || first).replace(/\s+/g, ' ').trim()).slice(0, 120),

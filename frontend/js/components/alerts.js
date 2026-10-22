@@ -28,6 +28,6 @@ export function initAlerts() {
   if (started) return;
   started = true;
   loadAlerts();
-  setInterval(loadAlerts, POLL_MS);
+  setInterval(() => { if (document.visibilityState === 'visible') loadAlerts(); }, POLL_MS); // a hidden window asks nothing
   window.addEventListener('focus', loadAlerts);
 }

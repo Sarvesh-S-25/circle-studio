@@ -43,7 +43,7 @@ export async function mountSingleTile(root, { kind, size, projectId, openApp }) 
   await refresh(true);
   listen(() => refresh(false, { timed: true }), `tile:${kind}:${size}${projectId ? `:${projectId}` : ''}`);
   setInterval(() => { if (document.visibilityState === 'visible') refresh(false, { timed: true }); }, POLL_MS);
-  setInterval(() => refresh(true), USAGE_MS);
+  setInterval(() => { if (document.visibilityState === 'visible') refresh(true); }, USAGE_MS);
 }
 
 /**
@@ -129,6 +129,6 @@ export async function mountBoard(root, { openApp, embedded = false }) {
     for (const ev of ['circle:requests', 'circle:alerts', 'circle:run', 'circle:notice']) { window.addEventListener(ev, redraw); offs.push(() => window.removeEventListener(ev, redraw)); }
   } else listen(() => refresh(false, { timed: true }), 'board');
   timers.push(setInterval(() => { if (document.visibilityState === 'visible' && !editing) refresh(false, { timed: true }); }, POLL_MS));
-  timers.push(setInterval(() => refresh(true), USAGE_MS));
+  timers.push(setInterval(() => { if (document.visibilityState === 'visible') refresh(true); }, USAGE_MS));
   return { destroy };
 }

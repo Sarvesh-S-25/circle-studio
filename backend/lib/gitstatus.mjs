@@ -39,7 +39,18 @@ export function parseStatus(text) {
   return out;
 }
 
-export function repoState(root) {
+const repoCache = new Map(); // folder -> { at, value }
+/** A project's git state, read again at most every `maxAgeMs` (tests read it fresh every time). */
+export function repoState(root, { maxAgeMs = process.env.NODE_TEST_CONTEXT ? 0 : 10_000, now = Date.now() } = {}) {
+  const hit = repoCache.get(root);
+  if (maxAgeMs > 0 && hit && now - hit.at < maxAgeMs) return hit.value;
+  const value = readRepo(root);
+  if (repoCache.size > 200) repoCache.clear();
+  repoCache.set(root, { at: now, value });
+  return value;
+}
+
+function readRepo(root) {
   if (git(root, ['rev-parse', '--is-inside-work-tree'])?.trim() !== 'true') return { isRepo: false };
   const st = parseStatus(git(root, ['status', '--porcelain=v1', '-b', '--untracked-files=normal']));
   const last = git(root, ['log', '-1', '--format=%h%x09%cI%x09%s']);

@@ -7,6 +7,8 @@
 //   secret       puts a key-shaped string in the text
 //   echo-input   puts the prompt it received in the text (and, for the advisor, in the summary)
 //   bash         asks to run FAKE_CLAUDE_COMMAND (default "echo circle-live"), then reports what happened
+//   say          answers FAKE_CLAUDE_SAY, streamed in pieces
+//   tools        asks for every tool in FAKE_CLAUDE_TOOLS (JSON [{ name, input }]) at once, then says the answers
 //   question     asks a question with AskUserQuestion, then reports the answer
 //   crash        emits init then exits with code 1
 //   loggedout    `claude auth status` says not signed in
@@ -96,7 +98,9 @@ function chat() {
   const SESSION = 'fake-session-1';
   const init = { type: 'system', subtype: 'init', session_id: SESSION, model: 'fake-model', cwd: process.cwd() };
   const say = (text) => send({ type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } }, session_id: SESSION });
-  const result = (extra = {}) => send({ type: 'result', subtype: 'success', is_error: false, session_id: SESSION, total_cost_usd: 0.001, duration_ms: 5, num_turns: 1, usage: { input_tokens: 10, cache_read_input_tokens: 90, output_tokens: 5 }, modelUsage: { 'fake-model': { inputTokens: 10, outputTokens: 5, contextWindow: 200000 } }, permission_denials: [], result: 'ok', ...extra });
+  // FAKE_CLAUDE_LIMITS="31,38": a rate_limit_event (5-hour and weekly use, as the real CLI sends) before the result
+  const limits = () => { const [f, w] = String(process.env.FAKE_CLAUDE_LIMITS || '').split(',').map(Number); if (process.env.FAKE_CLAUDE_LIMITS) send({ type: 'rate_limit_event', rate_limit_info: { status: 'allowed', unifiedWindows: { five_hour: { utilization: f / 100, resetsAt: 4102444800 }, seven_day: { utilization: w / 100, resetsAt: 4102444800 } } }, session_id: SESSION }); };
+  const result = (extra = {}) => limits() || send({ type: 'result', subtype: 'success', is_error: false, session_id: SESSION, total_cost_usd: 0.001, duration_ms: 5, num_turns: 1, usage: { input_tokens: 10, cache_read_input_tokens: 90, output_tokens: 5 }, modelUsage: { 'fake-model': { inputTokens: 10, outputTokens: 5, contextWindow: 200000 } }, permission_denials: [], result: 'ok', ...extra });
 
   const waiting = new Map();
   const early = new Map();
@@ -145,12 +149,34 @@ function chat() {
       result();
       return;
     }
+    if (mode === 'say') {
+      // FAKE_CLAUDE_SAY: a plain answer, streamed in a few pieces
+      send(init);
+      const words = String(process.env.FAKE_CLAUDE_SAY || 'Hello.').split(/(?<= )/);
+      for (const w of words) { say(w); await sleep(60); }
+      result();
+      return;
+    }
+    if (mode === 'tools') {
+      // asks for every tool in FAKE_CLAUDE_TOOLS ([{ name, input }]) at once, like parallel tool calls, then says what came back
+      const tools = JSON.parse(process.env.FAKE_CLAUDE_TOOLS || '[]');
+      send(init);
+      const answers = await Promise.all(tools.map((t, i) => {
+        send({ type: 'assistant', message: { model: 'fake-model', content: [{ type: 'tool_use', id: `toolu_t${i}`, name: t.name, input: t.input }] }, session_id: SESSION });
+        return ask(`req-t${i}`, { tool_name: t.name, input: t.input, tool_use_id: `toolu_t${i}` });
+      }));
+      answers.forEach((r, i) => send({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `toolu_t${i}`, content: r.behavior, is_error: r.behavior !== 'allow' }] } }));
+      say(`Answers: ${answers.map((r) => r.behavior).join(', ')}.`);
+      result();
+      return;
+    }
     if (mode === 'question') {
-      const questions = [{ question: 'Tabs or spaces?', header: 'Indent', options: [{ label: 'Tabs', description: 'one tab' }, { label: 'Spaces', description: 'two spaces' }], multiSelect: false }];
+      // FAKE_CLAUDE_QUESTIONS: the questions to ask (JSON, as Claude sends them); by default one with two options
+      const questions = process.env.FAKE_CLAUDE_QUESTIONS ? JSON.parse(process.env.FAKE_CLAUDE_QUESTIONS) : [{ question: 'Tabs or spaces?', header: 'Indent', options: [{ label: 'Tabs', description: 'one tab' }, { label: 'Spaces', description: 'two spaces' }], multiSelect: false }];
       send(init);
       send({ type: 'assistant', message: { model: 'fake-model', content: [{ type: 'tool_use', id: 'toolu_q', name: 'AskUserQuestion', input: { questions } }] }, session_id: SESSION });
       const r = await ask('req-question', { tool_name: 'AskUserQuestion', input: { questions }, tool_use_id: 'toolu_q', requires_user_interaction: true });
-      say(r.behavior === 'allow' ? `You chose ${JSON.stringify(r.updatedInput?.answers)}.` : 'No answer.');
+      say(r.behavior === 'allow' ? `Got it. ${Object.entries(r.updatedInput?.answers || {}).map(([q, a]) => `${q} ${Array.isArray(a) ? a.join(', ') : a}.`).join(' ')}` : 'No answer, so I will not go on with that.');
       result();
       return;
     }

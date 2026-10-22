@@ -223,7 +223,7 @@ test('permissions: read-only by default; each permission gates exactly what it n
   try {
     const id = (await s.call('POST', '/api/projects', { path: root })).json.project.id;
     const got = (await s.call('GET', `/api/projects/${id}`)).json;
-    assert.deepEqual(got.project.permissions, { write: false, run: false, claude: false });
+    assert.deepEqual(got.project.permissions, { write: false, run: false, claude: false, autoEdits: false, autoReadsOutside: false });
     assert.ok(got.team.roles.length, 'reading works without any permission');
     const ops = [{ op: 'model', role: 'planner', model: 'opus' }];
     const noWrite = await s.call('POST', '/api/changes/preview', { projectId: id, ops });

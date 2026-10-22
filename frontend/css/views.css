@@ -47,8 +47,12 @@
 .cs-chat__engine { inline-size: auto; min-inline-size: calc(var(--sp-8) * 2); }
 .cs-msg { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-radius: var(--r-l); max-inline-size: var(--measure); }
 .cs-msg--user { align-self: flex-end; background: var(--c-accent-soft); }
+.cs-msg--queued { opacity: 0.7; border: var(--bw) dashed var(--c-line); }
 .cs-msg--claude { align-self: flex-start; background: var(--c-surface-raised); border: var(--bw) solid var(--c-line); }
 .cs-msg__text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.cs-msg--circle { align-self: stretch; max-inline-size: none; background: var(--c-surface); border: var(--bw) dashed var(--c-line); }
+.cs-msg__lines { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: var(--fs-s); color: var(--c-text-soft); }
+.cs-chat__elsewhere { align-self: stretch; }
 .cs-msg__tools { display: flex; flex-direction: column; gap: var(--sp-1); }
 .cs-tool { display: flex; align-items: center; gap: var(--sp-2); color: var(--c-text-soft); font-size: var(--fs-s); }
 .cs-hist { display: flex; flex-direction: column; gap: var(--sp-2); inline-size: 100%; max-inline-size: var(--w-xl); margin-block-start: var(--sp-4); text-align: start; }

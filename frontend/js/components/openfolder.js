@@ -6,8 +6,8 @@ import { toast } from './overlay.js';
 
 const baseName = (p) => p.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || p;
 
-/** Ask what Circle Studio may do in `path`, register the folder and open its plan. Returns the project or null. */
-export async function openFolder(path) {
+/** Ask what Circle Studio may do in `path`, register the folder and open it (its plan, or `tab`). Returns the project or null. */
+export async function openFolder(path, { tab = 'workflow' } = {}) {
   const p = String(path || '').trim().replace(/^"(.*)"$/, '$1');
   if (!p) return null;
   const perms = await askPermissions({ name: baseName(p), path: p });
@@ -15,7 +15,7 @@ export async function openFolder(path) {
   try {
     const r = await api.addProject(p, perms);
     await Promise.all([refreshProjects(), refreshShell()]);
-    location.hash = `#/projects/${r.project.id}/workflow`;
+    location.hash = `#/projects/${r.project.id}/${tab}`;
     return r.project;
   } catch (e) {
     toast(e.message, { kind: 'danger', ms: 8000 });
@@ -24,12 +24,12 @@ export async function openFolder(path) {
 }
 
 /** Show the Windows folder dialog, then continue as openFolder. */
-export async function browseForFolder() {
+export async function browseForFolder(opts) {
   try {
     const r = await api.pickFolder();
     if (r.busy) { toast('A folder dialog is already open.', { kind: 'info' }); return null; }
     if (!r.path) return null;
-    return openFolder(r.path);
+    return openFolder(r.path, opts);
   } catch (e) {
     toast(e.message, { kind: 'danger' });
     return null;

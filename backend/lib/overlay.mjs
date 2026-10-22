@@ -1,16 +1,23 @@
-// The overlay (Ctrl+Alt+C, like the Xbox Game Bar): the screen dims, every desktop tile comes forward, and a command
-// box takes what you type. This file is the part that can be tested without a screen: reading a command, finding the
+// The overlay (Ctrl+Alt+C, like the Xbox Game Bar): the screen dims, panels show what goes on, and a command box takes
+// what you type. This file is the part that can be tested without a screen: reading a command, finding the
 // project or agent it names, the PC's numbers and the small panels the overlay draws. The desktop host
 // (scripts/widgets/desktop-widgets.ps1) only lays the panels out; routes.overlay.mjs runs the commands.
 import os from 'node:os';
 
 // Every command, as the help lists it. `words` are what you can type first; the rest of the line is its argument.
+// who asks, when it is not a workflow agent: the engine by name
+const ENGINE_NAMES = { claude: 'Claude', codex: 'Codex', copilot: 'Copilot', gemini: 'Gemini' };
+
 export const COMMANDS = [
   { id: 'help', words: ['help', '?', 'commands'], use: 'help', says: 'Everything you can type' },
   { id: 'project', words: ['project', 'use', 'switch', 'p'], use: 'project <name>', says: 'Show another project here' },
   { id: 'open', words: ['open', 'go', 'show'], use: 'open <page or project>', says: 'Open Circle Studio there: home, inbox, settings, widgets, mods, chat, workflow, history' },
   { id: 'chat', words: ['chat'], use: 'chat', says: "Open this project's chat window" },
   { id: 'ask', words: ['ask', 'say', 'tell'], use: 'ask <message>', says: "Send it to this project's main chat (plain text works too)" },
+  { id: 'newchat', words: ['new', 'fresh'], use: 'new', says: 'Start a new chat in this project' },
+  { id: 'chats', words: ['chats', 'conversations', 'history', 'earlier'], use: 'chats', says: 'Earlier conversations in this folder (terminal, IDE or here), numbered' },
+  { id: 'continue', words: ['continue', 'resume'], use: 'continue [number or words]', says: 'Carry on an earlier conversation (the last one, or that one)' },
+  { id: 'folder', words: ['folder', 'add'], use: 'folder', says: 'Choose another folder to work in' },
   { id: 'run', words: ['run', 'start'], use: 'run <agent> <message>', says: 'Give one agent of the workflow some work' },
   { id: 'stop', words: ['stop', 'cancel'], use: 'stop [agent]', says: 'Stop what runs in this project' },
   { id: 'waiting', words: ['waiting', 'inbox', 'asks', 'pending'], use: 'waiting', says: 'What waits for you, numbered' },
@@ -29,7 +36,7 @@ const BY_WORD = new Map(COMMANDS.flatMap((c) => c.words.map((w) => [w, c.id])));
 
 // The pages `open` knows, and the Circle Studio address of each (a project page needs the project).
 export const PAGES = {
-  home: '#/', inbox: '#/inbox', settings: '#/settings', widgets: '#/widgets', mods: '#/mods', skills: '#/skills',
+  home: '#/', folder: '#/open-folder', inbox: '#/inbox', settings: '#/settings', widgets: '#/widgets', mods: '#/mods', skills: '#/skills',
   templates: '#/templates', connections: '#/connections', usage: '#/usage',
   chat: 'project:chat', workflow: 'project:workflow', history: 'project:history', plan: 'project:plan', health: 'project:health',
 };
@@ -38,6 +45,15 @@ export const PAGES = {
  * What a typed line asks for: `{ id, rest }`. A line that starts with no known word is sent to the chat when it reads
  * like a sentence (two words or more, or ending in "?"); one unknown word is a typo, not a message, so it is `unknown`.
  */
+/** In a chat box: `/waiting`, `/allow 1`... are Circle Studio's commands; anything else (a sentence, `/compact`, a
+ * project's own slash command, or `//waiting` to send the word itself) goes to the agent. Null when it is not ours. */
+export function chatCommand(text) {
+  const line = String(text ?? '').trim();
+  if (!line.startsWith('/') || line.startsWith('//')) return null;
+  const first = (/^\/(\S+)/.exec(line)?.[1] || '').toLowerCase().replace(/[:,]$/, '');
+  return BY_WORD.has(first) ? parseCommand(line) : null;
+}
+
 export function parseCommand(text) {
   const line = String(text ?? '').replace(/\s+/g, ' ').trim();
   if (!line) return { id: 'empty', rest: '' };
@@ -121,11 +137,42 @@ export function waitingPanel(pending, nameOf) {
   return pending.map((r, i) => {
     const q = r.kind === 'question' ? (r.questions || [])[0] : null;
     return {
-      n: i + 1, id: r.id, kind: r.kind, project: nameOf(r.projectId), who: r.nodeId || 'the agent',
+      n: i + 1, id: r.id, kind: r.kind, project: r.source === 'terminal' ? `${r.folderName} (terminal)` : nameOf(r.projectId), who: r.nodeId || ENGINE_NAMES[r.engine] || 'the agent',
       title: clip(q ? q.question : r.title, 120), detail: r.kind === 'approval' ? clip(r.detail, 140) : '',
       options: q ? (q.options || []).slice(0, 4).map((o, k) => `${k + 1}. ${clip(o.label, 40)}`) : [],
       outside: r.risk === 'outside-project',
     };
+  });
+}
+
+/** Widgets that can be added to the overlay from its Widgets menu (the rest of the board's kinds are panels already). */
+/**
+ * While an answer comes in, the bar shows it as "live"; real Claude Code has already written that turn (your message and
+ * the start of the answer) into the conversation the list is read from, so that copy is left out: once, not twice.
+ */
+export function withoutLive(talk, live) {
+  if (!talk || !live || live.done || !live.you) return talk;
+  const you = String(live.you).slice(0, 200); // the list cuts long messages
+  const at = talk.messages.findLastIndex((m) => m.mine && String(m.text).slice(0, 200) === you);
+  return at < 0 ? talk : { ...talk, messages: talk.messages.slice(0, at) };
+}
+
+export const OVERLAY_EXTRAS = [
+  { kind: 'pulse', label: 'Activity rings' },
+  { kind: 'status', label: 'Agents' },
+  { kind: 'project', label: 'Project at a glance' },
+  { kind: 'overview', label: 'All projects' },
+  { kind: 'mods', label: 'Mods' },
+];
+
+/** The projects for the switcher, in their usual order: whether each needs you, works or is quiet, in a few words. */
+export function projectChoices(list, running = [], pending = [], currentId = null) {
+  return list.map((p) => {
+    const waiting = pending.filter((r) => r.projectId === p.id).length;
+    const runs = running.filter((r) => r.projectId === p.id).length;
+    const state = waiting ? 'waiting' : runs ? 'working' : 'idle';
+    const word = waiting ? `${plural(waiting, 'thing')} ${waiting === 1 ? 'waits' : 'wait'} for you` : runs ? (runs === 1 ? 'Working' : `${runs} running`) : 'Quiet';
+    return { id: p.id, name: p.name, state, word, waiting, running: runs, current: p.id === currentId };
   });
 }
 

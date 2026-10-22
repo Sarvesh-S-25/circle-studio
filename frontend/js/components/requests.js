@@ -32,7 +32,8 @@ export function initRequests(windowKey = '') {
     } else if (name === 'request') {
       if (!state.pending.some((r) => r.id === data.id)) {
         state.pending.push(data);
-        desktopAlert({ title: `${projectName(data.projectId)}: ${data.nodeId || engineName(data.engine)} ${data.kind === 'question' ? 'has a question' : 'asks to go ahead'}`, body: data.title || '', tag: data.id, onClick: () => openRequest(data.id) });
+        // the desktop card already asks, with its own Allow and Deny: no second notification from this window
+        if (!data.carded) desktopAlert({ title: `${projectName(data.projectId)}: ${data.nodeId || engineName(data.engine)} ${data.kind === 'question' ? 'has a question' : 'asks to go ahead'}`, body: data.title || '', tag: data.id, onClick: () => openRequest(data.id) });
       }
       notify();
       announce('circle:requests', data);
@@ -45,6 +46,7 @@ export function initRequests(windowKey = '') {
       announce('circle:requests', data);
       showNext();
     } else if (name === 'run' || name === 'usage') announce('circle:run', data);
+    else if (name === 'progress') announce('circle:progress', data);
     else if (name === 'notice') announce('circle:notice', data);
   }, windowKey);
 }
@@ -74,7 +76,9 @@ export function openRequest(id) {
 }
 
 function metaLine(rec) {
-  return h('p', { class: 'cs-soft cs-small' }, `${engineName(rec.engine)} · ${projectName(rec.projectId)}${rec.nodeId ? ` · ${rec.nodeId}` : ''} · ${timeAgo(rec.at)}`);
+  // from Claude Code in a terminal or an editor: the folder it works in
+  const where = rec.source === 'terminal' ? `Claude Code in your terminal · ${rec.folder || rec.folderName}` : `${engineName(rec.engine)} · ${projectName(rec.projectId)}`;
+  return h('p', { class: 'cs-soft cs-small' }, `${where}${rec.nodeId ? ` · ${rec.nodeId}` : ''} · ${timeAgo(rec.at)}`);
 }
 
 function riskBanner(rec) {
@@ -83,6 +87,23 @@ function riskBanner(rec) {
       h('div', {}, h('strong', {}, 'This reaches outside the project folder.'), h('ul', { class: 'cs-prose' }, (rec.reasons || []).map((r) => h('li', {}, r)))));
   }
   return h('div', { class: 'cs-banner cs-banner--info' }, h('span', { class: 'cs-banner__icon' }, icon('shield', 's')), h('span', {}, `Runs in ${projectName(rec.projectId)}. Check the exact text below before you allow it.`));
+}
+
+// "Allow from now on": only the choices the server says fit this request (rec.remember)
+export const REMEMBER = {
+  run: 'Allow this kind of step for the rest of this run',
+  edits: 'Always allow edits in this project (turn off in Permissions)',
+  'reads-outside': 'Always allow reading files outside this project (turn off in Permissions)',
+};
+
+function rememberChoice(rec) {
+  const opts = (rec.remember || []).filter((k) => REMEMBER[k]);
+  if (!opts.length) return null;
+  const name = `remember-${rec.id}`;
+  const row = (value, label) => h('label', { class: 'cs-radio' }, h('input', { type: 'radio', name, value, checked: value === '' || undefined }), h('span', {}, label));
+  const node = h('fieldset', { class: 'cs-field' }, h('legend', { class: 'cs-field__label' }, 'When you allow it'),
+    h('div', { class: 'cs-stack cs-stack--tight' }, row('', 'Just this once'), opts.map((k) => row(k, REMEMBER[k]))));
+  return { node, value: () => node.querySelector(`input[name="${name}"]:checked`)?.value || '' };
 }
 
 function questionForm(rec) {
@@ -115,10 +136,8 @@ function show(rec) {
     body.append(form.el);
   } else {
     body.append(riskBanner(rec), h('div', { class: 'cs-cmd', tabindex: 0, role: 'region', 'aria-label': 'Exactly what the agent wants to do' }, rec.detail || rec.title));
-    if (rec.risk === 'normal') {
-      remember = h('input', { class: 'cs-switch__input', type: 'checkbox', id: 'req-remember' });
-      body.append(h('label', { class: 'cs-switch', for: 'req-remember' }, remember, h('span', { class: 'cs-switch__track' }), h('span', {}, 'Allow the same kind of step for the rest of this run')));
-    }
+    remember = rememberChoice(rec);
+    if (remember) body.append(remember.node);
   }
   const more = state.pending.length - 1;
   if (more > 0) body.append(h('p', { class: 'cs-soft cs-small' }, `${more} more waiting for you.`));
@@ -133,9 +152,11 @@ function show(rec) {
       if (e.status === 409) { toast('That was already answered or the run ended.', { kind: 'info' }); ctrl.close(null); } else toast(e.message, { kind: 'danger' });
     }
   };
+  // a terminal's request can also be answered there: the popup and the card go, Claude Code asks in the terminal
+  const toTerminal = rec.source === 'terminal' ? [{ label: 'In the terminal', kind: 'quiet', onClick: async (c) => { try { await api.releaseToTerminal(rec.id); } catch { /* already answered */ } c.close('sent'); } }] : [];
   const actions = isQuestion
-    ? [{ label: 'Decide later', kind: 'quiet', onClick: (c) => c.close(null) }, { label: 'Send answer', kind: 'primary', id: 'req-send', onClick: (c) => send(c, { decision: 'answer', answers: form.collect() }) }]
-    : [{ label: 'Decide later', kind: 'quiet', onClick: (c) => c.close(null) }, { label: 'Deny', id: 'req-deny', onClick: (c) => send(c, { decision: 'deny' }) }, { label: 'Allow', kind: 'primary', id: 'req-allow', onClick: (c) => send(c, { decision: 'allow', ...(remember?.checked ? { remember: 'run' } : {}) }) }];
+    ? [...toTerminal, { label: 'Decide later', kind: 'quiet', onClick: (c) => c.close(null) }, { label: 'Send answer', kind: 'primary', id: 'req-send', onClick: (c) => send(c, { decision: 'answer', answers: form.collect() }) }]
+    : [...toTerminal, { label: 'Decide later', kind: 'quiet', onClick: (c) => c.close(null) }, { label: 'Deny', id: 'req-deny', onClick: (c) => send(c, { decision: 'deny' }) }, { label: 'Allow', kind: 'primary', id: 'req-allow', onClick: (c) => send(c, { decision: 'allow', ...(remember?.value() ? { remember: remember.value() } : {}) }) }];
   const ctrl = openModal({
     title: isQuestion ? (rec.questions[0]?.header || 'The agent has a question') : rec.title,
     body, actions, top: true, size: 'wide',

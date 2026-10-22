@@ -141,6 +141,15 @@ export function evaluate({ tool, input, blockedPath }, ctx) {
   const data = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
   if (tool === 'AskUserQuestion') return evaluateQuestion(data);
   if (tool === 'Bash') return evaluateBash(data, blockedPath, c);
+  if (tool === 'PowerShell') {
+    const base = { title: 'Run a PowerShell command', detail: typeof data.command === 'string' ? data.command : '' };
+    if (typeof data.command !== 'string' || !data.command.trim()) return refuse('The agent sent a command the app cannot read.', 'dangerous', base);
+    if (!c.permissions.shell) return refuse('Running commands is turned off for this project (Permissions).', 'normal', base);
+    // every word that looks like a path is checked (a secret file, a key folder): those are refused, the rest asked
+    const secret = data.command.split(/[\s'"`;|,()<>]+/).map((w) => sensitiveReason(w)).find(Boolean);
+    if (secret) return result('deny', 'dangerous', [`It touches ${secret}.`], base);
+    return result('ask', 'normal', [], base);
+  }
   if (tool === 'Read' || tool === 'Grep' || tool === 'Glob' || EDIT_TOOLS.has(tool)) return evaluatePaths(tool, data, blockedPath, c);
   return result('ask', 'normal', [], { title: `Use ${clip(tool, 60)}`, detail: clip(JSON.stringify(data, null, 2), 2000) });
 }

@@ -25,7 +25,8 @@ function alive(pid) {
 /** A fingerprint of the widget scripts, so widgets started from older code are restarted after an update. */
 export function hostVersion(appRoot) {
   const h = crypto.createHash('sha1');
-  for (const f of [hostScript(appRoot), path.join(appRoot, 'scripts', 'widgets', 'start-widgets.vbs')]) { try { h.update(fs.readFileSync(f)); } catch { /* missing */ } }
+  // overlay.ps1 is dot-sourced by the host, so a change to it alone must restart the host too
+  for (const f of [hostScript(appRoot), path.join(appRoot, 'scripts', 'widgets', 'overlay.ps1'), path.join(appRoot, 'scripts', 'widgets', 'start-widgets.vbs')]) { try { h.update(fs.readFileSync(f)); } catch { /* missing */ } }
   return h.digest('hex').slice(0, 16);
 }
 

@@ -5,16 +5,21 @@ import { StreamParser, credentialRisk, NO_SECRET_READS, MODELS } from '../claude
 import { redact } from '../secrets.mjs';
 import { startChild, lineReader, parseLine, killTree } from './proc.mjs';
 
-const TOOLS = 'Read,Grep,Glob,Edit,Write,Bash,AskUserQuestion';
-// Hooks off (a project's own hooks must not run here). An "ask" rule for Bash and edits makes the CLI send every one to
-// the app, including the read-only commands it would otherwise run on its own (verified live: `echo` and `cat` ran unasked).
-const SETTINGS = JSON.stringify({ disableAllHooks: true, permissions: { ask: ['Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit'] } });
+// Claude Code's own tools, all of them, as in a terminal (subagents, the to-do list, web search, skills...).
+// Hooks off (a project's own hooks must not run here). An "ask" rule for every tool that runs or changes something makes
+// the CLI send each one to the app, including the read-only commands it would otherwise run on its own (verified live:
+// `echo` and `cat` ran unasked); the app's policy then allows, asks you or refuses.
+const SETTINGS = JSON.stringify({ disableAllHooks: true, permissions: { ask: ['Bash', 'PowerShell', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'WebFetch'] } });
+
+// Subagents run inside the answer, not in the background: a background one asks for its commands after the turn has
+// ended, when nobody can answer (verified live 2026-10-19: its Bash failed with "Stream closed"; with this, it asked).
+const FOREGROUND = { CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1' };
 
 export function turnArgs({ model, resume, fork = false, systemPrompt, guarded }) {
   return [
     '-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
     '--permission-mode', 'default', '--permission-prompt-tool', 'stdio',
-    '--tools', TOOLS, '--disallowedTools', ...NO_SECRET_READS,
+    '--disallowedTools', ...NO_SECRET_READS,
     '--settings', SETTINGS, '--strict-mcp-config',
     ...(guarded ? ['--setting-sources', 'user'] : []),
     ...(resume ? ['--resume', resume, ...(fork ? ['--fork-session'] : [])] : []),
@@ -52,7 +57,7 @@ export function createClaudeAdapter({ service, bin, prefixArgs }) {
           attempt++;
           let child;
           try {
-            child = startChild(cli().bin, [...cli().prefix, ...turnArgs({ model, resume, fork: fork && Boolean(resume), systemPrompt, guarded: risk.length > 0 })], { cwd, extraEnv });
+            child = startChild(cli().bin, [...cli().prefix, ...turnArgs({ model, resume, fork: fork && Boolean(resume), systemPrompt, guarded: risk.length > 0 })], { cwd, extraEnv: { ...(extraEnv || {}), ...FOREGROUND } });
           } catch (e) {
             emit('error', { code: 'not_ready', message: e.code === 'ENOENT' ? 'Claude CLI not found.' : `Could not start Claude (${e.code || e.message}).` });
             resolve({ status: 'error', sessionId: resume });

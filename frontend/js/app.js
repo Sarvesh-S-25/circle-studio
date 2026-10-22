@@ -46,6 +46,8 @@ function parseRoute(hash) {
   if (parts[0] === 'connections') return { view: 'keys', params: { advanced: true } };
   if (parts[0] === 'widgets') return { view: 'widgets', params: {} };
   if (parts[0] === 'mods') return { view: 'mods', params: {} };
+  // the overlay's `folder`: Home, with the folder dialog open; the folder chosen opens on its chat
+  if (parts[0] === 'open-folder') return { view: 'home', params: { pick: true } };
   return { view: 'home', params: {} };
 }
 

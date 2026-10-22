@@ -11,6 +11,7 @@ import { cleanEnv, killTree, runCommand } from './run.mjs';
 import { StreamRedactor, redact } from './secrets.mjs';
 import { parseJson } from './team.mjs';
 import { resolveCli } from './engines/proc.mjs';
+import { fromStream } from './limits.mjs';
 
 const SAFETY = ['--settings', '{"disableAllHooks":true}', '--strict-mcp-config', '--disable-slash-commands'];
 export const NO_SECRET_READS = ['Read(.env)', 'Read(.env.*)', 'Read(**/*.pem)', 'Read(**/*.key)', 'Read(**/id_rsa*)', 'Read(**/.npmrc)', 'Read(**/credentials*)'];
@@ -100,6 +101,10 @@ export function summarize(name, input, root) {
     case 'Glob': return `Glob ${clip(input.pattern ?? '')}`;
     case 'Edit': case 'Write': return `${name} ${rel(input.file_path)}`;
     case 'Bash': return `Run ${clip(input.command ?? '')}`;
+    case 'AskUserQuestion': {
+      const qs = Array.isArray(input.questions) ? input.questions : [];
+      return qs.length ? `Asked you: ${clip(qs[0]?.question ?? '')}${qs.length > 1 ? ` (and ${qs.length - 1} more)` : ''}` : 'Asked you a question';
+    }
     default: return name;
   }
 }
@@ -113,6 +118,7 @@ export class StreamParser {
     this.buf = '';
     this.dec = new StringDecoder('utf8');
     this.blocks = new Map();
+    this.toolsSeen = new Set();
     this.sawDelta = false;
     this.textEmitted = false;
     this.finished = false;
@@ -156,10 +162,20 @@ export class StreamParser {
       this.#streamEvent(o.event);
     } else if (o.type === 'assistant' && o.message && Array.isArray(o.message.content)) {
       if (!this.sawDelta) for (const b of o.message.content) if (b.type === 'text' && b.text) this.#text(b.text);
+      // a tool that came whole (not streamed in pieces) is named here, once
+      for (const b of o.message.content) {
+        if (b.type !== 'tool_use' || !b.id || this.toolsSeen.has(b.id)) continue;
+        this.toolsSeen.add(b.id);
+        this.onEvent('tool', { id: b.id, name: b.name, summary: redact(summarize(b.name, b.input || {}, this.root)), status: 'start' });
+      }
     } else if (o.type === 'user' && o.message && Array.isArray(o.message.content)) {
       for (const b of o.message.content) {
         if (b.type === 'tool_result') this.onEvent('tool', { id: b.tool_use_id, status: 'end', ok: b.is_error !== true });
       }
+    } else if (o.type === 'rate_limit_event') {
+      // the plan's 5-hour and weekly use, said by Claude Code itself (lib/limits.mjs)
+      const r = fromStream(o.rate_limit_info);
+      if (r) this.onEvent('limits', r);
     } else if (o.type === 'result') {
       this.#result(o);
     }
@@ -186,6 +202,7 @@ export class StreamParser {
         let input = {};
         try { input = JSON.parse(blk.json || '{}'); } catch { /* keep {} */ }
         this.onEvent('tool', { id: blk.id, name: blk.name, summary: redact(summarize(blk.name, input, this.root)), status: 'start' });
+        this.toolsSeen.add(blk.id);
         this.blocks.delete(ev.index);
       }
     }

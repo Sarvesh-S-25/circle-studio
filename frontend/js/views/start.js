@@ -60,7 +60,7 @@ export async function mount(el) {
       h('section', { class: 'cs-card cs-start__card' },
         h('div', { class: 'cs-row cs-row--wrap' }, icon('github', 's'), h('strong', {}, 'Sign in to GitHub'), h('span', { class: 'cs-grow' }), h('span', { class: `cs-pill cs-pill--${tone}` }, g.signedIn ? icon('check', 's') : null, word)),
         h('p', { class: 'cs-small' }, g.setup.does),
-        g.signedIn ? h('p', { class: 'cs-soft cs-small' }, 'To sign out: gh auth logout in a terminal.') : steps(pseudo)));
+        g.signedIn ? h('div', { class: 'cs-row' }, h('button', { class: 'cs-btn cs-btn--small cs-btn--quiet', type: 'button', onclick: signOut }, 'Sign out of GitHub')) : steps(pseudo)));
   }
 
   let autoPicked = chosen.size > 0;
@@ -96,6 +96,11 @@ export async function mount(el) {
           h('li', {}, 'No API key is needed: each tool uses your own account, and Circle Studio never sees your password.'),
           h('li', {}, 'Commands run in PowerShell. They need Node.js, which you already have (Circle Studio runs on it).'),
           h('li', {}, 'Everything stays on this PC. Come back here any time from Settings, or Ctrl+K "Let\'s begin".'))));
+  }
+
+  async function signOut() {
+    try { const r = await api.githubSignOut(); toast(r.ok ? 'Signed out of GitHub.' : r.message, { kind: r.ok ? 'ok' : 'warn' }); } catch (e) { toast(e.message, { kind: 'danger' }); }
+    check();
   }
 
   async function check() {

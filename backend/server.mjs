@@ -12,6 +12,7 @@ import { HttpError } from './lib/errors.mjs';
 import { ID_RE, NAME_RE } from './lib/paths.mjs';
 import { redact } from './lib/secrets.mjs';
 import { desktopWidgets } from './lib/deskhost.mjs';
+import { pruneBackups } from './lib/mcpmanage.mjs';
 
 const MB = 1024 * 1024;
 const BODY_LIMIT = { 'import.files': 16 * MB, 'skills.save': 4 * MB };
@@ -233,6 +234,8 @@ async function main() {
     console.log(`Circle Studio is running at ${url}`);
     console.log(`Data folder: ${config.dataDir}`);
     if (process.argv.includes('--open')) openBrowser(url);
+    // copies of ~/.claude.json made before a connection fix may hold keys: kept a day at most, also when no fix runs again
+    try { const n = pruneBackups(path.join(config.dataDir, 'backups')); if (n) console.log(`Removed ${n} old backup${n === 1 ? '' : 's'} of ~/.claude.json.`); } catch { /* the next start tries again */ }
     // the desktop host comes back with the server: the tiles once the human has put them on the desktop, and the
     // cards that ask on the desktop (on unless turned off in Settings). CIRCLE_NO_OPEN=1 (tests, previews) starts neither.
     const st = app.settings.get();

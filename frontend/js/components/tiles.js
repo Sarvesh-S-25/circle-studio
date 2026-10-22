@@ -8,6 +8,7 @@ import { openRequest } from './requests.js';
 import { renderMarkdown } from '../markdown.js';
 
 export const KINDS = {
+  limits: { title: 'Limits', about: 'How much of your Claude plan\'s 5-hour window and week is used, and when each starts again.', sizes: ['s', 'm', 'l'] },
   pulse: { title: 'Activity ring', about: 'See at a glance which projects are working (the ring turns), waiting for you (amber) or just done.', sizes: ['s', 'm', 'l'] },
   status: { title: 'Agents', about: 'A ring per agent: working, waiting for you, done or idle.', sizes: ['s', 'm', 'l'], project: true },
   spend: { title: 'Spending', about: 'Use per provider over 30 days: Claude priced, Codex tokens, the others turns.', sizes: ['s', 'm', 'l'] },
@@ -72,6 +73,38 @@ function statusTile(tile, ctx) {
     tile.size === 'l' ? legend() : null];
 }
 const legend = () => h('div', { class: 'cs-tile__legend' }, ['working', 'waiting', 'done', 'idle'].map((s) => h('span', {}, h('span', { class: `cs-dotst cs-dotst--${s}` }), STATE_WORD[s])));
+
+/* ---- your plan's limits: the 5-hour window and the week ---------------------------------------- */
+const limTone = (p) => (p >= 90 ? 'danger' : p >= 70 ? 'warn' : 'ok');
+const hhmm = (d) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+function limitsTile(tile, ctx) {
+  if (!ctx.limits) return [head('Limits', 'clock'), h('p', { class: 'cs-tile__quiet' }, 'Loading...')];
+  const l = ctx.limits.limits;
+  const windows = [['5 hours', l?.fiveHour, false], ['Week', l?.week, true]].filter(([, w]) => w);
+  if (!windows.length) {
+    return [head('Limits', 'clock'), h('p', { class: 'cs-tile__quiet' }, ctx.limits?.tap?.on ? 'Shows after your next Claude answer, here or in your terminal.' : 'Shows after Claude answers here. For your terminal too, turn it on in Widgets.')];
+  }
+  const now = Date.now();
+  const rows = windows.map(([label, w, long]) => {
+    const reset = w.resetsAt ? new Date(w.resetsAt) : null;
+    const over = reset && reset.getTime() <= now;
+    const pct = over ? 0 : w.pct;
+    const when = !reset ? '' : long ? reset.toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : hhmm(reset);
+    return { label, pct, tone: over ? 'ok' : limTone(pct), value: over ? 'new' : `${pct}%`, resets: over ? `started again at ${when}` : when ? `resets ${when}` : '' };
+  });
+  const read = `Read ${hhmm(new Date(l.at))} ${l.source === 'terminal' ? 'from your terminal' : 'from a chat here'}`;
+  if (tile.size === 's') {
+    const r = rows[0];
+    return [head('Limits', 'clock'), h('div', { class: `cs-tile__big cs-lim--${r.tone}` }, r.value), h('div', { class: 'cs-tile__sub' }, `${r.label} · ${r.resets}`)];
+  }
+  return [head('Limits', 'clock'),
+    h('div', { class: 'cs-tile__provs' }, rows.map((r) => h('div', { class: 'cs-tile__prov', title: r.resets },
+      h('span', { class: `cs-tile__provname cs-lim--${r.tone}` }, r.label),
+      h('span', { class: 'cs-tile__provbar', role: 'img', 'aria-label': `${r.label}: ${r.value} used` }, h('span', { class: `cs-tile__provfill cs-lim--${r.tone}`, style: { '--pct': `${Math.max(2, r.pct)}%` } })),
+      h('span', { class: 'cs-tile__provval' }, r.value)))),
+    h('div', { class: 'cs-tile__note' }, [...rows.map((r) => `${r.label}: ${r.resets}`), read].join(' · '))];
+}
 
 /* ---- spending by provider ---------------------------------------------------------------------- */
 function spendTile(tile, ctx) {
@@ -242,7 +275,67 @@ function chatTile(tile, ctx) {
     ? h('ol', { class: ['cs-tile__msgs', full && 'cs-tile__msgs--full'], 'aria-live': 'polite' }, rows)
     : h('p', { class: 'cs-tile__quiet' }, c.empty || 'Nothing said in this chat yet.');
   if (full && shownMsgs.length) requestAnimationFrame(() => { msgs.scrollTop = msgs.scrollHeight; });
-  return [top, c.threads?.length ? threads : null, c.title && tile.size === 'l' ? h('div', { class: 'cs-tile__muted' }, c.title) : null, msgs, composer(tile, c, ctx)];
+  const onMain = (c.selected || 'main') === 'main';
+  const earlierOpen = onMain && ctx.earlier?.get(c.project.id);
+  // one chat only (no workflow agents): no chip to switch, so the messages get the room
+  return [top, c.threads?.length > 1 ? threads : null, onMain ? chatBar(tile, c, ctx) : null,
+    earlierOpen ? earlierList(c, ctx) : null,
+    !earlierOpen && c.title && tile.size === 'l' ? h('div', { class: 'cs-tile__muted' }, c.title) : null,
+    earlierOpen ? null : msgs, composer(tile, c, ctx)];
+}
+
+/* ---- the main chat: start a new one, or carry on an earlier conversation from this folder ---------------------- */
+// Nothing is lost either way: every conversation stays in the folder (Claude Code keeps them), so a new chat is only
+// a new page, and an earlier one can be taken up again from Earlier chats.
+function chatBar(tile, c, ctx) {
+  ctx.earlier = ctx.earlier || new Map();
+  const pid = c.project.id;
+  const open = ctx.earlier.has(pid);
+  const busy = ctx.live.has(liveKey(c));
+  const note = c.continueId
+    ? h('span', { class: 'cs-tile__muted cs-tile__chatnote', title: 'Your newest conversation in this folder, from the terminal or an IDE. Writing here carries it on; the original stays as it was.' }, icon('clock', 's'), tile.size === 'l' ? 'Writing here carries it on' : 'Carries it on')
+    : h('span', { class: 'cs-tile__chatnote' });
+  const toggle = async () => {
+    if (open) { ctx.earlier.delete(pid); ctx.redraw(); return; }
+    ctx.earlier.set(pid, { list: null, error: null });
+    ctx.redraw();
+    try { ctx.earlier.get(pid).list = (await api.history(pid, '')).conversations || []; } catch (e) { if (ctx.earlier.has(pid)) ctx.earlier.get(pid).error = e.message; }
+    if (ctx.earlier.has(pid)) ctx.redraw();
+  };
+  const fresh = async () => {
+    if (busy) return;
+    try { for (const engine of ['', 'codex', 'gemini', 'copilot']) await api.resetChat(pid, '', engine); } catch (e) { ctx.earlier.set(pid, { list: [], error: e.message }); ctx.redraw(); return; }
+    ctx.earlier.delete(pid);
+    await ctx.reload();
+    document.querySelector('.cs-tile__input')?.focus({ preventScroll: true });
+  };
+  const edit = async () => {
+    try { const r = await api.openEditor(pid); if (!r.opened) ctx.earlier.set(pid, { list: [], error: r.why }); } catch (e) { ctx.earlier.set(pid, { list: [], error: e.message }); }
+    ctx.redraw();
+  };
+  // the large tile has room for Open in editor; a medium one keeps the bar to one line
+  return h('div', { class: 'cs-tile__chatbar' }, note,
+    tile.size === 'l' ? h('button', { class: 'cs-tile__linkbtn', type: 'button', title: 'Open this project in Antigravity IDE, at the file the agent last worked on', onclick: edit }, icon('external', 's'), 'Open in editor') : null,
+    h('button', { class: 'cs-tile__linkbtn', type: 'button', 'aria-expanded': String(open), title: 'Your conversations in this folder: from the terminal, an IDE or here', onclick: toggle }, icon('clock', 's'), open ? 'Back to the chat' : 'Earlier chats'),
+    h('button', { class: 'cs-tile__linkbtn', type: 'button', disabled: busy || undefined, title: 'Start a new chat. Earlier ones stay under Earlier chats.', onclick: fresh }, icon('plus', 's'), 'New chat'));
+}
+
+function earlierList(c, ctx) {
+  const pid = c.project.id;
+  const e = ctx.earlier.get(pid);
+  if (e.error) return h('p', { class: 'cs-tile__quiet' }, e.error);
+  if (!e.list) return h('p', { class: 'cs-tile__quiet' }, 'Reading the conversations in this folder...');
+  if (!e.list.length) return h('p', { class: 'cs-tile__quiet' }, 'No conversations in this folder yet. Write below to start one.');
+  const pickOne = async (conv) => {
+    try { await api.linkChat(pid, null, conv.id); } catch (err) { e.error = err.message; ctx.redraw(); return; }
+    ctx.earlier.delete(pid);
+    await ctx.reload();
+    document.querySelector('.cs-tile__input')?.focus({ preventScroll: true });
+  };
+  return h('ol', { class: 'cs-tile__earlier', 'aria-label': 'Earlier conversations' }, e.list.slice(0, 20).map((conv) => h('li', {},
+    h('button', { class: 'cs-tile__earlierbtn', type: 'button', title: 'Carry this conversation on here', onclick: () => pickOne(conv) },
+      h('span', { class: 'cs-tile__earliertitle' }, conv.title || '(untitled)'),
+      h('span', { class: 'cs-tile__muted' }, conv.lastAt ? timeAgo(conv.lastAt) : '')))));
 }
 
 /* ---- replying from the tile: which engine answers, a one-line box, the answer as it comes ------------------------ */
@@ -259,7 +352,10 @@ function composer(tile, c, ctx) {
   const prefKey = `chat-engine:${c.project.id}:main`;
   let engine = nodeId ? c.engine || 'claude' : (ctx.enginePref(prefKey) || c.engine || 'claude');
   if (!nodeId && usable.length && !usable.some((e) => e.id === engine)) engine = usable[0].id;
-  const engineEl = nodeId || usable.length < 2
+  // carrying on a Claude Code conversation: Claude answers, it has that conversation
+  const carry = !nodeId && c.continueId;
+  if (carry) engine = 'claude';
+  const engineEl = nodeId || carry || usable.length < 2
     ? h('span', { class: 'cs-tile__engine', title: nodeId ? 'This agent\'s engine, from the workflow' : 'The engine that answers' }, h('span', { class: ['cs-tile__enginedot', live && 'cs-tile__enginedot--on'], 'aria-hidden': 'true' }), ENGINE_NAME[engine] || engine)
     : h('select', { class: 'cs-tile__engine cs-tile__engine--pick', 'aria-label': 'Engine that answers', disabled: Boolean(live) || undefined, onchange: (e) => { ctx.setEnginePref(prefKey, e.target.value); ctx.redraw(); } },
       usable.map((e) => h('option', { value: e.id, selected: e.id === engine || undefined }, e.label)));
@@ -270,10 +366,12 @@ function composer(tile, c, ctx) {
     oninput: (e) => ctx.drafts.set(key, e.target.value),
     onkeydown: (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); go(); } },
   });
-  const go = () => {
+  const go = async () => {
     const text = input.value.trim();
     if (!text || live) return;
     ctx.drafts.delete(key);
+    // the conversation shown is one from the terminal or an IDE: take it up first, so the reply carries it on
+    if (carry) { try { await api.linkChat(c.project.id, null, c.continueId); } catch { /* the send says what is wrong */ } }
     ctx.sendChat({ key, projectId: c.project.id, nodeId, engine, text });
   };
   return h('div', { class: 'cs-tile__compose' }, engineEl, input,
@@ -315,7 +413,7 @@ function runningTile(tile, ctx) {
   const s = ctx.stats;
   if (!s) return [head('Running now', 'play'), h('p', { class: 'cs-tile__quiet' }, 'Loading...')];
   const runs = s.running.slice().sort((a, b) => Date.parse(a.startedAt || 0) - Date.parse(b.startedAt || 0));
-  const go = (r) => ctx.openApp(r.projectId ? `#/projects/${r.projectId}/${r.source === 'circle' ? 'chat' : 'workflow'}` : '#/');
+  const go = (r) => ctx.openApp(r.projectId ? `#/projects/${r.projectId}/${r.source === 'circle' || r.kind === 'terminal' ? 'chat' : 'workflow'}` : '#/');
   if (tile.size === 's') {
     return [head('Running now', 'play'), h('div', { class: `cs-tile__big ${runs.length ? 'cs-st--working' : ''}` }, String(runs.length)),
       h('div', { class: 'cs-tile__sub' }, runs[0] ? runLabel(runs[0]) : 'Nothing is running.')];
@@ -397,7 +495,7 @@ function modsTile(tile, ctx) {
       : h('p', { class: 'cs-tile__quiet' }, 'No mods yet. Add a ready-made one, like a tiny game for while Claude works, or ask Claude to make one.')];
 }
 
-const RENDER = { pulse: pulseTile, mods: modsTile, running: runningTile, status: statusTile, spend: spendTile, workflow: workflowTile, inbox: inboxTile, project: projectTile, overview: overviewTile, chat: chatTile, notices: noticesTile };
+const RENDER = { limits: limitsTile, pulse: pulseTile, mods: modsTile, running: runningTile, status: statusTile, spend: spendTile, workflow: workflowTile, inbox: inboxTile, project: projectTile, overview: overviewTile, chat: chatTile, notices: noticesTile };
 
 /** Draw one tile into a fresh element. */
 export function renderTile(tile, ctx) {
@@ -424,7 +522,7 @@ export function createTileData({ openApp }) {
     enginePref: (key) => pref(key, ''),
     setEnginePref: (key, v) => setPref(key, v),
     /** True while you type in a chat tile or a reply is on its way: a timed refresh then waits, so nothing jumps. */
-    holding: () => ctx.live.size > 0 || Boolean(document.activeElement?.closest?.('.cs-tile__compose')),
+    holding: () => ctx.live.size > 0 || Boolean(ctx.earlier?.size) || Boolean(document.activeElement?.closest?.('.cs-tile__compose')),
     /** Send from a chat tile: the same /api/chat as the Chat tab, so approvals and questions pop up as usual. */
     async sendChat({ key, projectId, nodeId, engine, text }) {
       const live = { you: text, text: '', engine, error: null, abort: new AbortController() };
@@ -464,6 +562,7 @@ export function createTileData({ openApp }) {
       for (const id of ids) jobs.push(api.pulse(id).then((p) => pulses.set(id, p)).catch(() => {}));
       for (const t of tiles.filter((x) => x.kind === 'chat')) jobs.push(api.widgetChat(t.projectId || ctx.defaultProject(), t.nodeId || 'main', t.size).then((c) => chats.set(t, c)).catch(() => {}));
       if (!ctx.engines && tiles.some((t) => t.kind === 'chat')) jobs.push(api.engines().then((r) => { ctx.engines = r.engines; }).catch(() => {}));
+      if (tiles.some((t) => t.kind === 'limits')) jobs.push(api.limits().then((l) => { ctx.limits = l; }).catch(() => {}));
       if (tiles.some((t) => t.kind === 'mods')) jobs.push(api.mods('').then((r) => { ctx.mods = r.mods; }).catch(() => {}));
       if (tiles.some((t) => ['notices', 'pulse', 'running'].includes(t.kind))) jobs.push(api.notices(20).then((n) => { ctx.notices = n; }).catch(() => {}));
       if (!skipUsage && (usage || !ctx.usage) && tiles.some((t) => t.kind === 'spend')) jobs.push(api.usage(30).then((u) => { ctx.usage = u; }).catch(() => {}));

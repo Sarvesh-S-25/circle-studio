@@ -38,6 +38,38 @@ function spendTile(t, ctx) {
 }
 
 /**
+ * Your plan's limits: how much of the 5-hour window and of the week is used, and when each starts again. A window
+ * whose reset time has passed is shown as started again, not as the old number. Colour: green, amber from 70%, red
+ * from 90%.
+ */
+export function limitsView(l, now = Date.now()) {
+  if (!l || (!l.fiveHour && !l.week)) return null;
+  const tone = (p) => (p >= 90 ? 'danger' : p >= 70 ? 'warn' : 'ok');
+  const one = (w, label, long) => {
+    if (!w) return null;
+    const reset = w.resetsAt ? Date.parse(w.resetsAt) : null;
+    const over = reset && reset <= now;
+    const at = reset ? new Date(reset) : null;
+    const when = !at ? '' : long ? at.toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return { label, pct: over ? 0 : w.pct, color: over ? 'ok' : tone(w.pct), value: over ? 'new' : `${w.pct}%`, resets: over ? `started again at ${when}` : when ? `resets ${when}` : '' };
+  };
+  return { at: l.at, source: l.source, rows: [one(l.fiveHour, '5 hours', false), one(l.week, 'Week', true)].filter(Boolean) };
+}
+
+function limitsTile(t, ctx) {
+  const v = limitsView(ctx.limits, ctx.now());
+  if (!v) return { title: 'Limits', empty: 'Shows after Claude answers in Circle Studio, or turn on "From your terminal too" in the app (Widgets).', url: '#/widgets' };
+  const first = v.rows[0];
+  const from = v.source === 'terminal' ? 'from your terminal' : 'from a chat here';
+  if (t.size === 's') return { title: 'Limits', big: `${first.pct}%`, bigState: first.color === 'danger' ? 'waiting' : null, sub: `${first.label} · ${first.resets}`, url: '#/widgets' };
+  return {
+    title: 'Limits', rows: v.rows.map((r) => ({ label: r.label, color: r.color, value: r.value, pct: Math.max(2, r.pct) })),
+    note: [...v.rows.map((r) => `${r.label}: ${r.resets}`), `Read ${new Date(v.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ${from}`].join('  ·  '),
+    url: '#/widgets',
+  };
+}
+
+/**
  * Where a project's workflow is: how many stages are done (a count, not a guess), the stage now and who works on it,
  * and what comes next. Small: the count in a ring. Medium: the track and the stage now. Large: every stage with its
  * people.
@@ -168,7 +200,8 @@ function runningTile(t, ctx) {
   if (!s) return { title: 'Running now', empty: 'Loading...' };
   const now = ctx.now();
   const runs = s.running.slice().sort((a, b) => Date.parse(a.startedAt || 0) - Date.parse(b.startedAt || 0));
-  const url = (r) => (r?.projectId ? `#/projects/${r.projectId}/${r.source === 'circle' ? 'chat' : 'workflow'}` : '#/');
+  // a chat here, or Claude Code in your terminal (the Chat shows it live): the Chat; a team run: the workflow
+  const url = (r) => (r?.projectId ? `#/projects/${r.projectId}/${r.source === 'circle' || r.kind === 'terminal' ? 'chat' : 'workflow'}` : '#/');
   if (t.size === 's') return { title: 'Running now', big: String(runs.length), bigState: runs.length ? 'working' : 'idle', sub: runs[0] ? runLabel(runs[0]) : 'Nothing is running.', url: url(runs[0]) };
   // large: what finished or failed earlier today, under what runs now
   const today = new Date(now).toDateString();
@@ -228,15 +261,15 @@ function modsTile(t, ctx) {
   };
 }
 
-const BUILD = { pulse: pulseTile, mods: modsTile, running: runningTile, status: statusTile, spend: spendTile, workflow: workflowTile, inbox: inboxTile, project: projectTile, overview: overviewTile, chat: chatTile, notices: noticesTile };
+const BUILD = { limits: limitsTile, pulse: pulseTile, mods: modsTile, running: runningTile, status: statusTile, spend: spendTile, workflow: workflowTile, inbox: inboxTile, project: projectTile, overview: overviewTile, chat: chatTile, notices: noticesTile };
 const PROJECT_KINDS = new Set(['status', 'workflow', 'project', 'chat']);
 
 /**
  * The tiles that are shown on the desktop. Each has a key for its saved place that stays the same when the tile is
  * switched to another project, its index on the board (to switch it), and for project tiles the project it shows.
  */
-export function buildFeed({ tiles, pulseOf, usage, stats, pending, alerts, nameOf, palette, defaultProject, chats = new Map(), projects = [], locked = false, notices = null, mods = null, asks = true, now = Date.now() }) {
-  const ctx = { pulseOf: (id) => pulseOf(id || defaultProject), usage, stats, pending, alerts, nameOf, chatAt: (t) => chats.get(tiles.indexOf(t)) || null, notices, mods, now: () => now };
+export function buildFeed({ tiles, pulseOf, usage, stats, pending, alerts, nameOf, palette, defaultProject, chats = new Map(), projects = [], locked = false, notices = null, mods = null, limits = null, asks = true, now = Date.now() }) {
+  const ctx = { pulseOf: (id) => pulseOf(id || defaultProject), usage, limits, stats, pending, alerts, nameOf, chatAt: (t) => chats.get(tiles.indexOf(t)) || null, notices, mods, now: () => now };
   const seen = new Map();
   const out = [];
   tiles.forEach((t, index) => {

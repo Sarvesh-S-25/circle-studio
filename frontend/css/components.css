@@ -179,7 +179,7 @@ button.cs-chip:hover { background: var(--c-sunken); }
 
 /* ---- view header, tabs --------------------------------------------------------------------------- */
 .cs-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); margin-block-end: var(--sp-4); }
-.cs-head__title { flex: 1; min-inline-size: 0; }
+.cs-head__title { flex: 1 1 auto; min-inline-size: min(100%, calc(var(--sp-8) * 6)); overflow-wrap: anywhere; }
 .cs-tabs { display: flex; flex-wrap: wrap; gap: var(--sp-1); border-block-end: var(--bw) solid var(--c-line); margin-block-end: var(--sp-5); }
 .cs-tab { display: inline-flex; align-items: center; gap: var(--sp-2); min-block-size: var(--tap); padding: 0 var(--sp-3); border: 0; border-block-end: var(--bw-strong) solid transparent; background: none; color: var(--c-text-soft); font-weight: var(--fw-medium); text-decoration: none; white-space: nowrap; margin-block-end: calc(var(--bw) * -1); }
 .cs-tab:hover { color: var(--c-text); background: var(--c-hover); }
@@ -237,7 +237,7 @@ button.cs-chip:hover { background: var(--c-sunken); }
 .cs-radios { display: flex; flex-direction: column; gap: var(--sp-1); }
 .cs-radio { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-2); min-block-size: var(--h-row); padding: var(--sp-1) var(--sp-3); border: var(--bw) solid var(--c-line); border-radius: var(--r-m); cursor: pointer; background: var(--c-surface); }
 .cs-radio:hover { background: var(--c-sunken); }
-.cs-radio[data-checked="true"] { border-color: var(--c-accent); background: var(--c-accent-soft); }
+.cs-radio[data-checked="true"], .cs-radio:has(input:checked) { border-color: var(--c-accent); background: var(--c-accent-soft); }
 .cs-radio input { position: absolute; opacity: 0; }
 .cs-radio__hint { flex-basis: 100%; padding-inline-start: calc(var(--icon-s) + var(--sp-2)); color: var(--c-text-soft); font-size: var(--fs-xs); }
 .cs-radio:focus-within { outline: var(--bw-strong) solid var(--c-focus); outline-offset: var(--bw); }

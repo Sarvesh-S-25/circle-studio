@@ -62,6 +62,12 @@ function log(message) {
 function fail(message) {
   log(message);
   console.error(message);
+  // opened by a click (no console to read): say it in a message box, so a failed start is never silent
+  if (process.env.CIRCLE_NO_OPEN !== '1' && !process.env.NODE_TEST_CONTEXT) {
+    const box = spawn('wscript.exe', [path.join(config.appRoot, 'scripts', 'message.vbs'), `${message}\n\nTry opening it again. If this comes back, the last lines of that log say why.`, 'Circle Studio could not start'], { detached: true, stdio: 'ignore', windowsHide: false });
+    box.on('error', () => {});
+    box.unref();
+  }
   process.exit(1);
 }
 

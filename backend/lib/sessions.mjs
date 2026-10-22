@@ -14,10 +14,32 @@ export function systemPrompt({ projectName, node, brief }) {
   if (node) {
     return [`You are "${node.title}" (${node.id}), one agent in the workflow of the project "${projectName}".`, node.does ? `Your job: ${node.does}` : '', node.prompt ? node.prompt : '', node.notes ? `Notes from the human: ${node.notes}` : '', brief ? `Project brief: ${brief}` : '', rules].filter(Boolean).join(' ');
   }
-  return [`You are Circle Studio's assistant for the project "${projectName}".`, 'Explain what is going on from the real files (AGENTS.md, CLAUDE.md, workflow.json, docs/), and help the human by running commands and editing files when asked.', brief ? `Project brief: ${brief}` : '', rules].filter(Boolean).join(' ');
+  // the main chat is plain Claude Code (its own instructions, CLAUDE.md, its tools): only what the approvals need
+  return 'Every command and file change you make is shown to the human first, who may refuse it: if a request is refused, do not try to get around it; say what you could not do. Never print secrets, keys or tokens.';
 }
 
 const answerText = (v) => (Array.isArray(v) ? v.join(', ') : String(v ?? ''));
+const EDITS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
+const READS = new Set(['Read', 'Grep', 'Glob']);
+
+/** Which "allow from now on" choices fit a request: 'run' (this kind of step, this run), 'edits' (every edit inside
+ * this project), 'reads-outside' (reading files outside it). Commands are never allowed for good. */
+export function rememberOptions(tool, input, ev) {
+  if (ev.verdict !== 'ask' || ev.kind !== 'approval') return [];
+  const out = [];
+  if (ev.risk === 'normal' && rememberRule(tool, input)) out.push('run');
+  if (EDITS.has(tool) && ev.risk === 'normal') out.push('edits');
+  if (READS.has(tool) && ev.risk === 'outside-project') out.push('reads-outside');
+  return out;
+}
+
+/** Does a project's "always" switch let this request go ahead without asking? The reason, or null. */
+function alwaysAllows(perms, tool, ev) {
+  if (ev.verdict !== 'ask' || ev.kind !== 'approval') return null;
+  if (perms?.autoEdits === true && EDITS.has(tool) && ev.risk === 'normal') return 'Allowed by your setting: always allow edits in this project.';
+  if (perms?.autoReadsOutside === true && READS.has(tool) && ev.risk === 'outside-project') return 'Allowed by your setting: always allow reading files outside this project.';
+  return null;
+}
 
 export class Sessions {
   constructor({ projects, chats, inbox, engines, config, getNode, getBrief }) {
@@ -29,6 +51,7 @@ export class Sessions {
     this.waiters = new Map();
     this.listeners = new Set();
     this.handoff = new Map();
+    this.permsNow = new Map(); // an "always" choice just made, until the projects file has it
   }
 
   subscribe(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
@@ -49,6 +72,26 @@ export class Sessions {
       tokens: r.tokens, contextPct: r.contextPct, costUsd: r.costUsd, lastEventAt: r.lastEventAt,
     }));
     return { runs, pending: this.inbox.pendingCount(projectId), lastHandoff: this.handoff.get(projectId) || null };
+  }
+
+  /** The turn running in one chat right now, whoever started it (the app, the overlay, a desktop card): what was
+   * said, the tools so far, the answer so far and what waits for you. Null when that chat is quiet. */
+  turnOf(projectId, nodeId = null) {
+    const r = this.runs.get(`${projectId}:${nodeId || 'project'}`);
+    if (!r) return null;
+    return {
+      runId: r.runId, engine: r.engine, model: r.model, status: r.status, startedAt: r.startedAt, lastEventAt: r.lastEventAt,
+      you: r.you || '', text: r.reply?.text || '', tools: (r.reply?.tools || []).map((t) => ({ summary: t.summary, ok: t.ok })),
+      waiting: [...r.pendingIds].map((id) => this.inbox.get(id)).filter(Boolean).map((q) => ({ id: q.id, kind: q.kind, title: q.title, detail: q.detail || '' })),
+    };
+  }
+
+  // a turn moved on (a tool started or ended, more of the answer came): at once for tools, at most twice a second for text
+  #progress(run, now = false) {
+    const t = Date.now();
+    if (!now && t - (run.progressAt || 0) < 500) return;
+    run.progressAt = t;
+    this.#publish('progress', { projectId: run.projectId, nodeId: run.nodeId, runId: run.runId, engine: run.engine });
   }
 
   #setStatus(run, status) {
@@ -88,6 +131,8 @@ export class Sessions {
 
     const at = new Date().toISOString();
     const reply = { role: 'assistant', text: '', tools: [], at, engine: engineId };
+    run.you = message;
+    run.reply = reply;
     let sessionId = saved.sessionId;
     const sink = (name, data) => {
       run.lastEventAt = new Date().toISOString();
@@ -105,6 +150,8 @@ export class Sessions {
       } else if (name === 'done') { sessionId = data.sessionId || sessionId; Object.assign(reply, { costUsd: data.costUsd, ms: data.ms, models: data.models }); }
       else if (name === 'error') reply.error = data.message;
       else if (name === 'stopped') reply.stopped = true;
+      else if (name === 'limits') this.#publish('limits', data);
+      if (name === 'text' || name === 'tool') this.#progress(run, name === 'tool');
       emit(name, data);
     };
 
@@ -142,12 +189,54 @@ export class Sessions {
       return { decision: 'deny', message: `Refused by Circle Studio: ${ev.reasons.join(' ') || 'not allowed here.'}` };
     }
     if (ev.risk === 'normal' && ev.kind === 'approval' && run.rules.some((r) => ruleCovers(r, req.tool, req.input))) return { decision: 'allow' };
-    const rec = this.inbox.add({ id: newId('r'), ...base, status: 'pending', resolvedAt: null });
+    // a project's "always" switch, read now (it may have been turned on or off during the run); kept in the Inbox
+    const always = alwaysAllows(this.#perms(run.projectId), req.tool, ev);
+    if (always) {
+      const rec = this.inbox.add({ id: newId('r'), ...base, status: 'allowed', resolvedAt: new Date().toISOString(), note: always });
+      this.#publish('request-resolved', rec);
+      run.emit('request-resolved', rec);
+      return { decision: 'allow' };
+    }
+    const remember = rememberOptions(req.tool, req.input, ev);
+    const rec = this.inbox.add({ id: newId('r'), ...base, ...(remember.length ? { remember } : {}), status: 'pending', resolvedAt: null });
     this.#publish('request', rec);
     run.emit('request', rec);
     run.pendingIds.add(rec.id);
     this.#setStatus(run, 'waiting');
     return new Promise((resolve) => { this.waiters.set(rec.id, { resolve, run, req, ev }); });
+  }
+
+  /**
+   * A request from a Claude Code session outside Circle Studio (a terminal or an editor), sent by its PermissionRequest
+   * hook: kept in the Inbox and shown on the cards like any other, answered the same way. Claude Code's own rules
+   * already decided to ask; Circle Studio's policy is shown beside it (outside the folder, or what it would refuse).
+   * Resolves with { decision: allow | deny | answer | terminal, message?, answers? }.
+   */
+  externalRequest({ projectId, folder, tool, input, sessionId }) {
+    const ev = evaluate({ tool, input }, { root: folder, protect: [this.config.dataDir], permissions: { shell: true, write: true } });
+    const question = ev.kind === 'question';
+    const run = { runId: `terminal:${sessionId || 'session'}`, projectId, nodeId: null, engine: 'claude', model: null, status: 'waiting', pendingIds: new Set(), emit: () => {}, rules: [], external: true };
+    const rec = this.inbox.add({
+      id: newId('r'), projectId, nodeId: null, runId: run.runId, engine: 'claude', source: 'terminal', folder, folderName: folder.split(/[\\/]/).filter(Boolean).pop() || folder,
+      kind: question ? 'question' : 'approval', risk: ev.risk, tool, title: ev.title || `Use ${tool}`, detail: ev.detail || '', input, reasons: ev.reasons || [],
+      ...(question && ev.questions ? { questions: ev.questions } : {}),
+      at: new Date().toISOString(), status: 'pending', resolvedAt: null,
+    });
+    run.pendingIds.add(rec.id);
+    this.#publish('request', rec);
+    const done = new Promise((resolve) => { this.waiters.set(rec.id, { resolve, run, req: { tool, input, toolUseId: null }, ev }); });
+    return { rec, done };
+  }
+
+  /** The terminal answers it after all (or stopped waiting): the card goes, and the hook lets Claude Code ask there. */
+  releaseExternal(id, why = 'Answered in the terminal.') {
+    const w = this.waiters.get(id);
+    if (!w?.run.external) return false;
+    this.waiters.delete(id);
+    const done = this.inbox.update(id, { status: 'expired', resolvedAt: new Date().toISOString(), note: why });
+    if (done) this.#publish('request-resolved', done);
+    w.resolve({ decision: 'terminal' });
+    return true;
   }
 
   /** The human's answer to a pending request. */
@@ -172,19 +261,51 @@ export class Sessions {
       }
     }
     const note = typeof body.note === 'string' ? body.note.slice(0, 500) : undefined;
-    if (decision === 'allow' && body.remember === 'run' && rec.risk === 'normal') {
+    const remember = decision === 'allow' && typeof body.remember === 'string' ? body.remember : null;
+    if (remember && !(rec.remember || []).includes(remember)) throw badRequest('That "allow from now on" choice does not fit this request.');
+    if (remember === 'run') {
       const rule = rememberRule(w.req.tool, w.req.input);
       if (rule) w.run.rules.push(rule);
+    } else if (remember === 'edits' || remember === 'reads-outside') {
+      // kept with the project's permissions: shown and turned off there
+      // (the file is written a moment later: until then the new value is used from here, so nothing asks twice)
+      const next = { ...this.projects.get(rec.projectId).permissions, [remember === 'edits' ? 'autoEdits' : 'autoReadsOutside']: true };
+      this.permsNow.set(rec.projectId, next);
+      Promise.resolve(this.projects.setPermissions(rec.projectId, next)).catch(() => {}).finally(() => { if (this.permsNow.get(rec.projectId) === next) this.permsNow.delete(rec.projectId); });
     }
     const status = decision === 'allow' ? 'allowed' : decision === 'deny' ? 'denied' : 'answered';
     const done = this.inbox.update(id, { status, resolvedAt: new Date().toISOString(), ...(answers ? { answer: answers } : {}), ...(note ? { note } : {}) });
     this.waiters.delete(id);
     w.run.pendingIds.delete(id);
-    if (!w.run.pendingIds.size) this.#setStatus(w.run, 'active');
+    if (!w.run.pendingIds.size && !w.run.external) this.#setStatus(w.run, 'active');
     this.#publish('request-resolved', done);
     w.run.emit('request-resolved', done);
     w.resolve(decision === 'deny' ? { decision: 'deny', message: note || 'The human said no.' } : { decision: 'allow', ...(answers ? { answers } : {}) });
+    // a question: the chat says what was asked and what you answered, in place of the bare tool name
+    if (rec.kind === 'question' && w.req.toolUseId) {
+      const said = (rec.questions || []).map((q) => `${q.question} ${answers ? `You answered: ${answers[q.question]}` : 'You did not answer.'}`).join(' · ');
+      const summary = clip(redact(said || 'A question'), 400);
+      const t = w.run.reply?.tools.find((x) => x.id === w.req.toolUseId);
+      // answered: the line is done (a tick); skipped: marked as not done, so it never spins on
+      if (t) Object.assign(t, { summary, ok: Boolean(answers) });
+      w.run.emit('tool', { id: w.req.toolUseId, name: 'AskUserQuestion', summary, status: 'end', ok: Boolean(answers) });
+      this.#progress(w.run, true);
+    }
+    // what now falls under the same choice, waiting in this project (or this run), goes ahead too
+    if (remember) for (const [otherId, o] of [...this.waiters]) {
+      const other = this.inbox.get(otherId);
+      if (!other || other.status !== 'pending') continue;
+      const covered = remember === 'run'
+        ? o.run === w.run && o.ev.risk === 'normal' && w.run.rules.some((r) => ruleCovers(r, o.req.tool, o.req.input))
+        : other.projectId === rec.projectId && Boolean(alwaysAllows(this.#perms(other.projectId), o.req.tool, o.ev));
+      if (covered) this.respond(otherId, { decision: 'allow', note: 'Allowed with the one before it.' });
+    }
     return done;
+  }
+
+  #perms(projectId) {
+    if (this.permsNow.has(projectId)) return this.permsNow.get(projectId);
+    try { return this.projects.get(projectId).permissions; } catch { return null; }
   }
 
   #expirePending(run, why) {

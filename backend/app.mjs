@@ -13,6 +13,7 @@ import { ghAwareFetch } from './lib/ghcli.mjs';
 import { ChangeManager } from './lib/changes.mjs';
 import { pickFolder } from './lib/pickfolder.mjs';
 import { codeFingerprint } from './lib/codeversion.mjs';
+import { Limits } from './lib/limits.mjs';
 
 export function createApp(config, overrides = {}) {
   const store = new Store(config.dataDir);
@@ -34,6 +35,9 @@ export function createApp(config, overrides = {}) {
   app.vault = new Vault(store, overrides.vaultCodec);
   app.catalog = new Catalog(store);
   app.sessions.vaultEnv = (projectId) => app.vault.envFor(projectId);
+  // the plan's limits, from every Claude run (the status line tap writes the same file)
+  app.limits = new Limits(store);
+  app.sessions.subscribe((name, data) => { if (name === 'limits') app.limits.record(data, 'chat'); });
   const changes = new ChangeManager({
     store,
     resolveProject: (id, opts) => projects.resolve(id, opts),

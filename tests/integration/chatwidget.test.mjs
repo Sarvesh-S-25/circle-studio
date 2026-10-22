@@ -6,6 +6,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { startServer } from '../helpers/server.mjs';
 import { makeMiniProject, tempDir, rmDir } from '../helpers/project.mjs';
 import { writeConversation } from '../helpers/fake-history.mjs';
@@ -94,5 +95,18 @@ test('desktop widgets started from older code are restarted; current ones are le
     assert.equal(spawned.length, 1, 'already current: not started twice');
   } finally {
     rmDir(dataDir);
+  }
+});
+
+test('a change to the overlay alone also counts as newer widget code', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'circle-hostver-'));
+  try {
+    fs.mkdirSync(path.join(root, 'scripts', 'widgets'), { recursive: true });
+    for (const f of ['desktop-widgets.ps1', 'overlay.ps1', 'start-widgets.vbs']) fs.writeFileSync(path.join(root, 'scripts', 'widgets', f), 'v1');
+    const before = hostVersion(root);
+    fs.writeFileSync(path.join(root, 'scripts', 'widgets', 'overlay.ps1'), 'v2');
+    assert.notEqual(hostVersion(root), before);
+  } finally {
+    rmDir(root);
   }
 });

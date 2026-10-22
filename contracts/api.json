@@ -153,6 +153,12 @@
       "doc": "Stored chat transcript for a project."
     },
     {
+      "id": "projects.chat.live",
+      "method": "GET",
+      "path": "/api/projects/:id/chat/live",
+      "doc": "The turn running in one chat right now (what was said, tools so far, answer so far, what waits), masked; null when quiet."
+    },
+    {
       "id": "projects.chat.reset",
       "method": "DELETE",
       "path": "/api/projects/:id/chat",
@@ -219,6 +225,48 @@
       "doc": "Re-detect every engine now (bypasses the short cache)."
     },
     {
+      "id": "overlay.say",
+      "method": "POST",
+      "path": "/api/overlay/say",
+      "doc": "Send what was typed on a desktop card or the overlay to a project's main chat or one agent ({projectId, nodeId?, text}); the answer comes back as a card."
+    },
+    {
+      "id": "desktop.replies",
+      "method": "GET",
+      "path": "/api/desktop/replies",
+      "doc": "Chat answers waiting as desktop cards: what was asked, the answer in plain words (masked), and the file the agent worked on."
+    },
+    {
+      "id": "desktop.replies.dismiss",
+      "method": "POST",
+      "path": "/api/desktop/replies/dismiss",
+      "doc": "Close one answer card ({id})."
+    },
+    {
+      "id": "desktop.folder",
+      "method": "POST",
+      "path": "/api/desktop/folder",
+      "doc": "Open a project's folder in File Explorer: {projectId}."
+    },
+    {
+      "id": "desktop.terminal",
+      "method": "POST",
+      "path": "/api/desktop/terminal",
+      "doc": "Bring forward the terminal or editor a project's conversation runs in, or open a terminal that carries it on: {projectId, mode: auto|show|new}."
+    },
+    {
+      "id": "desktop.editor",
+      "method": "POST",
+      "path": "/api/desktop/editor",
+      "doc": "Open a project in Antigravity IDE (else VS Code) at the file its agent last worked on ({projectId, nodeId?, file?: false for the folder only}). Only files inside the project."
+    },
+    {
+      "id": "github.signout",
+      "method": "POST",
+      "path": "/api/github/signout",
+      "doc": "Sign out of GitHub in the GitHub CLI (gh auth logout). gh forgets its token; Circle Studio never saw it."
+    },
+    {
       "id": "engines.terminal",
       "method": "POST",
       "path": "/api/engines/terminal",
@@ -235,6 +283,24 @@
       "method": "GET",
       "path": "/api/alerts",
       "doc": "Questions a team's texter raised for the human in docs/tasks/ALERTS.md, across all projects (?status=open|all). Answered by changes.preview/apply with the alert-answer op."
+    },
+    {
+      "id": "hooks.permission",
+      "method": "POST",
+      "path": "/api/hooks/permission",
+      "doc": "From Claude Code's PermissionRequest hook (a terminal or editor session): {tool_name, tool_input, cwd, session_id}. Becomes a request on the cards; returns its id."
+    },
+    {
+      "id": "hooks.permission.wait",
+      "method": "GET",
+      "path": "/api/hooks/permission/:id",
+      "doc": "The hook waits for the answer: ?wait=seconds (25 at most). {status: pending|done|gone, decision, message, answers}."
+    },
+    {
+      "id": "hooks.permission.release",
+      "method": "POST",
+      "path": "/api/hooks/permission/:id/release",
+      "doc": "Answer it in the terminal instead: the card goes and Claude Code asks there."
     },
     {
       "id": "requests.respond",
@@ -499,6 +565,30 @@
       "method": "POST",
       "path": "/api/widgets/pick",
       "doc": "Switch one widget ({index, projectId?, nodeId?}): the project it shows, or which chat the Chat widget shows."
+    },
+    {
+      "id": "permhook.get",
+      "method": "GET",
+      "path": "/api/permhook",
+      "doc": "Whether Claude Code sessions in terminals and editors ask on the desktop cards (the PermissionRequest hook), with the change it makes."
+    },
+    {
+      "id": "permhook.set",
+      "method": "POST",
+      "path": "/api/permhook",
+      "doc": "Turn it on or off: {on}. Backs up ~/.claude/settings.json; other hooks stay."
+    },
+    {
+      "id": "limits.get",
+      "method": "GET",
+      "path": "/api/limits",
+      "doc": "Your Claude plan's 5-hour and weekly use as Claude Code last said it, and whether the status line tap is on."
+    },
+    {
+      "id": "limits.tap",
+      "method": "POST",
+      "path": "/api/limits/tap",
+      "doc": "Turn the status line tap on or off: {on: true|false}. Backs up ~/.claude/settings.json and keeps your own status line."
     },
     {
       "id": "desktop.widgets",

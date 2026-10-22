@@ -102,7 +102,9 @@ export async function mount(el, ctx) {
       gitChip(data.project),
       h('button', { class: 'cs-btn cs-btn--small', type: 'button', title: 'A small window for this project: what runs, what waits for you. Pin it to the Desktop or Start menu.', 'aria-haspopup': 'menu', onclick: (e) => widgetMenu(e.currentTarget, data.project) }, icon('pin', 's'), 'Widget'),
       h('button', { class: 'cs-btn cs-btn--small', type: 'button', title: `Allowed: ${permissionSummary(data.project.permissions).join(', ') || 'read only'}`, onclick: async () => {
-        const next = await askPermissions({ name: data.project.name, path: data.project.path, current: pctx.project.permissions, confirmLabel: 'Save' });
+        // read them now: an "always allow" chosen on a card since this page loaded must not be undone by Save
+        const now = (await api.project(id).catch(() => null))?.project?.permissions || pctx.project.permissions;
+        const next = await askPermissions({ name: data.project.name, path: data.project.path, current: now, confirmLabel: 'Save' });
         if (!next) return;
         await api.setPermissions(id, next);
         toast('Permissions saved.', { kind: 'ok', ms: 2000 });

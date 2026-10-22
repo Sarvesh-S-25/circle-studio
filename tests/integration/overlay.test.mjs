@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { startServer } from '../helpers/server.mjs';
 import { makeMiniProject, rmDir } from '../helpers/project.mjs';
-import { parseCommand, findByName, splitAgent, splitNumber, pcStats, workflowMap, gitPanel, helpLines } from '../../backend/lib/overlay.mjs';
+import { parseCommand, findByName, splitAgent, splitNumber, pcStats, workflowMap, gitPanel, helpLines, projectChoices, withoutLive } from '../../backend/lib/overlay.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const cmd = (s, text, projectId) => s.call('POST', '/api/overlay/command', { text, projectId });
@@ -47,6 +47,15 @@ test('the small panels: PC numbers, the workflow drawn small, git in words', () 
   assert.equal(gitPanel({ isRepo: false }).isRepo, false);
 });
 
+test('the project switcher: each project says whether it needs you, works or is quiet', () => {
+  const list = [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }, { id: 'c', name: 'C' }];
+  const out = projectChoices(list, [{ projectId: 'b' }, { projectId: 'c' }], [{ projectId: 'c' }, { projectId: 'c' }], 'b');
+  assert.deepEqual(out.map((p) => [p.id, p.state, p.word, p.current]), [
+    ['a', 'idle', 'Quiet', false], ['b', 'working', 'Working', true], ['c', 'waiting', '2 things wait for you', false],
+  ]);
+  assert.equal(projectChoices(list.slice(0, 1), [], [{ projectId: 'a' }]).at(0).word, '1 thing waits for you');
+});
+
 test('overlay: feed, help, project switch, open, typos, then ask -> the agent asks -> allow 1 -> the answer comes in', async () => {
   const s = await startServer();
   const root = makeMiniProject();
@@ -58,6 +67,14 @@ test('overlay: feed, help, project switch, open, typos, then ask -> the agent as
     assert.ok(feed.palette.raised && feed.pc.memTotalGb > 0);
     assert.deepEqual(feed.waiting, []);
     assert.ok(Array.isArray(feed.running) && Array.isArray(feed.examples));
+    // widgets added from the Widgets menu come drawn for the project shown; unknown kinds are left out
+    assert.deepEqual(feed.extras, []);
+    assert.ok(feed.extrasOffered.some((x) => x.kind === 'pulse'));
+    const ex = (await s.call('GET', `/api/overlay?projectId=${id}&extra=status,pulse,nope`)).json.extras;
+    assert.deepEqual(ex.map((t) => t.kind), ['status', 'pulse']);
+    assert.equal(ex[0].projectId, id);
+    // the desktop tiles' project picker gets each project's state too
+    assert.equal((await s.call('GET', '/api/widgets/feed')).json.projects.find((p) => p.id === id).state, 'idle');
 
     assert.equal((await cmd(s, 'help', id)).json.say.title, 'What you can type');
     assert.equal((await cmd(s, 'hlep', id)).json.say.tone, 'warn');
@@ -81,6 +98,8 @@ test('overlay: feed, help, project switch, open, typos, then ask -> the agent as
     let w = [];
     for (let i = 0; i < 100 && !w.length; i++) { await sleep(50); w = (await s.call('GET', `/api/overlay?projectId=${id}`)).json.waiting; }
     assert.equal(w.length, 1);
+    const mine = (await s.call('GET', `/api/overlay?projectId=${id}`)).json.projects.find((p) => p.id === id);
+    assert.deepEqual([mine.state, mine.waiting, mine.current], ['waiting', 1, true]);
     assert.deepEqual([w[0].n, w[0].kind, w[0].detail], [1, 'approval', 'echo circle-live']);
     assert.match((await cmd(s, 'waiting', id)).json.say.lines[0], /^1\. /);
     assert.equal((await cmd(s, 'answer 1 yes', id)).json.say.tone, 'warn'); // an approval is not a question
@@ -97,4 +116,12 @@ test('overlay: feed, help, project switch, open, typos, then ask -> the agent as
     await s.close();
     rmDir(root);
   }
+});
+
+test('the bar shows a message being answered once: the copy Claude Code already wrote is left out until it is done', () => {
+  const talk = { title: 't', messages: [{ who: 'You', mine: true, text: 'first' }, { who: 'Claude', mine: false, text: 'ok' }, { who: 'You', mine: true, text: 'what is the plan?' }, { who: 'Claude', mine: false, text: 'The plan is' }] };
+  assert.deepEqual(withoutLive(talk, { you: 'what is the plan?', done: false }).messages.map((m) => m.text), ['first', 'ok']);
+  assert.equal(withoutLive(talk, { you: 'what is the plan?', done: true }), talk, 'done: the list has it all, nothing live');
+  assert.equal(withoutLive(talk, { you: 'not written yet', done: false }), talk, 'not in the list yet: nothing left out');
+  assert.equal(withoutLive(talk, null), talk);
 });

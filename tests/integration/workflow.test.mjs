@@ -269,7 +269,7 @@ test('projects.create shows every file first and writes nothing until confirmed'
   assert.equal(made.status, 200);
   assert.equal(made.json.confirmed, true);
   assert.equal(made.json.project.path, target);
-  assert.deepEqual(made.json.project.permissions, ALL);
+  assert.deepEqual(made.json.project.permissions, { ...ALL, autoEdits: false, autoReadsOutside: false }, 'the "always" switches start off');
   assert.deepEqual(fs.readdirSync(target).sort(), ['.claude', 'AGENTS.md', 'CLAUDE.md', 'docs', 'workflow.json']);
   assert.equal(read(target, 'CLAUDE.md'), '@AGENTS.md\n');
   assert.match(read(target, 'AGENTS.md'), /^# fresh-one\n\nA tiny tool for tidying notes\.\n/);

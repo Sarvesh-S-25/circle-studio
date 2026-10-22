@@ -28,6 +28,17 @@ export async function ghStatus({ force = false, run, find = resolveCli } = {}) {
   return value;
 }
 
+/** Sign out of GitHub in gh (`gh auth logout`): gh forgets its token; Circle Studio never had it. */
+export async function ghSignOut({ run, find = resolveCli } = {}) {
+  if (!run && process.env.NODE_TEST_CONTEXT) return { ok: true };
+  run ||= runCommand;
+  const cli = find('gh');
+  if (!cli) return { ok: false, message: 'GitHub CLI (gh) is not installed.' };
+  const r = await run(cli.bin, [...cli.prefix, 'auth', 'logout', '--hostname', 'github.com'], { timeoutMs: 20_000 });
+  cache = { at: 0, value: null };
+  return r.code === 0 ? { ok: true } : { ok: false, message: 'gh did not sign out. Open Let\'s begin and press Check again.' };
+}
+
 /** Parse `gh api -i` output: "HTTP/2.0 200 OK", headers, a blank line, the body. */
 export function parseGhInclude(text) {
   const m = /^HTTP\/[\d.]+ (\d{3})[^\n]*\r?\n([\s\S]*?)\r?\n\r?\n([\s\S]*)$/.exec(text);

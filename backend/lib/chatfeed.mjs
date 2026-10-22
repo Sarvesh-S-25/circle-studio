@@ -44,11 +44,29 @@ export function createChatFeed({ claudeHome, chats, chatKey, workflowOf }) {
 
     // the threads that exist, newest first after "Main chat"
     const threads = [];
-    // Circle Studio's main chat, with whichever engine was used last
+    // Circle Studio's main chat, with whichever engine was used last; a new chat (nothing said yet) or a conversation
+    // chosen to continue counts from the moment it was chosen, so it shows instead of an older conversation
     let mainCircle = null;
-    for (const eng of Object.keys(ENGINE_NAME)) { const c = circle(chatKey(project.id, null, eng)); if (c) mainCircle = newest(mainCircle, { ...c, engine: eng }); }
-    const mainCC = convs[0] ? { lastAt: convs[0].lastAt, cc: convs[0] } : null;
-    const main = newest(mainCircle && { ...mainCircle, src: 'circle' }, mainCC && { ...mainCC, src: 'cc' });
+    for (const eng of Object.keys(ENGINE_NAME)) {
+      const key = chatKey(project.id, null, eng);
+      const c = circle(key);
+      if (c) { mainCircle = newest(mainCircle, { ...c, engine: eng, src: 'circle' }); continue; }
+      const raw = chats.get(key);
+      if (raw.linked) mainCircle = newest(mainCircle, { lastAt: raw.linked.at, cc: { id: raw.linked.id, title: raw.linked.title, lastAt: raw.linked.lastAt }, src: 'cc', chosen: true, engine: eng });
+      else if (raw.startedAt) mainCircle = newest(mainCircle, { lastAt: raw.startedAt, messages: [], src: 'circle', fresh: true, engine: eng });
+    }
+    const mainCC = convs[0] ? { lastAt: convs[0].lastAt, cc: convs[0], src: 'cc' } : null;
+    const own = chats.get(chatKey(project.id, null, 'claude'));
+    // Circle Studio's Claude chat is itself a Claude Code conversation in the folder: show that file, the whole of it
+    // (a continued conversation keeps what was said before it came here)
+    const ownCC = own.sessionId && mainCircle?.src === 'circle' && mainCircle.engine === 'claude' ? convs.find((x) => x.id === own.sessionId) : null;
+    if (ownCC) mainCircle = { lastAt: [mainCircle.lastAt, ownCC.lastAt].sort().at(-1), cc: ownCC, src: 'cc', chosen: true, engine: 'claude' };
+    // continued here but its file is not (or not yet) in the folder: what was said before it came, then what was said here
+    else if (own.linked && mainCircle?.src === 'circle' && mainCircle.engine === 'claude') mainCircle = { ...mainCircle, before: own.linked };
+    const main = newest(mainCircle, mainCC);
+    // the main chat shows one of your Claude Code conversations that Circle Studio's chat is not already in: a reply
+    // continues that conversation (it is chosen first), so what you see is what the agent remembers
+    const continueId = main && main.src === 'cc' && !main.chosen && main.cc.id !== own.sessionId ? main.cc.id : null;
     if (main) threads.push({ id: 'main', label: 'Main chat', lastAt: main.lastAt, source: main.src === 'cc' ? 'Claude Code' : 'Circle Studio', engine: main.src === 'cc' ? 'claude' : main.engine, data: main });
     const usedTypes = new Set();
     for (const n of agents) {
@@ -67,12 +85,12 @@ export function createChatFeed({ claudeHome, chats, chatKey, workflowOf }) {
         threads.push({ id: `run:${type}`.slice(0, 84), label: type, lastAt: c.lastAt, source: 'Claude Code', engine: 'claude', data: { run: { ...a, sessionId: c.id }, src: 'cc' } });
       }
     }
-    if (!threads.length) return { threads: [], selected: 'main', engine: null, canReply: true, messages: [], empty: 'No chats in this project yet. Say something below to start one.' };
+    if (!threads.length) return { threads: [], selected: 'main', engine: null, canReply: true, continueId: null, fresh: false, messages: [], empty: 'No chats in this project yet. Say something below to start one.' };
 
     const sel = threads.find((t) => t.id === want) || threads[0];
     let raw = [];
     const d = sel.data;
-    if (d.src === 'circle') raw = d.messages;
+    if (d.src === 'circle') raw = d.before ? [...await readCC(project.path, d.before.id, null, d.before.lastAt || ''), ...d.messages] : d.messages;
     else if (d.cc) raw = await readCC(project.path, d.cc.id, null, d.cc.lastAt);
     else if (d.run) raw = await readCC(project.path, d.run.sessionId, d.run.run, d.lastAt || '');
     const who = sel.id === 'main' ? ENGINE_NAME[sel.engine] || 'Claude' : sel.label;
@@ -93,8 +111,11 @@ export function createChatFeed({ claudeHome, chats, chatKey, workflowOf }) {
       canReply: !sel.id.startsWith('run:'),
       selected: sel.id,
       title: sel.id === 'main' && d.cc ? clip(d.cc.title, 80) : null,
+      // main only: the conversation a reply would continue, and whether this is a new chat with nothing said yet
+      continueId: sel.id === 'main' ? continueId : null,
+      fresh: sel.id === 'main' && Boolean(d.fresh),
       messages,
-      empty: messages.length ? null : 'Nothing said in this chat yet.',
+      empty: messages.length ? null : d.fresh ? 'A new chat. Say something below to start it.' : 'Nothing said in this chat yet.',
     };
   }
   return { chatOf };

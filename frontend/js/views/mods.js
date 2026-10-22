@@ -215,7 +215,7 @@ export async function mount(el, ctx = {}) {
     try {
       const r = await api.modDetails(m.id);
       out.textContent = r.output || (r.ok ? 'Nothing more to say.' : 'Claude Code could not describe it.');
-    } catch (e) { out.textContent = `${e.message}\n\nClaude Code is needed for this. Run "claude plugin details ${m.id}" in a terminal to see the same.`; }
+    } catch (e) { out.textContent = `${e.message}\n\nClaude Code is needed for this: Let's begin (in the menu) checks it and sets it up.`; }
   }
 
   await load();

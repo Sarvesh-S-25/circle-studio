@@ -12,6 +12,7 @@ import { checkUpdate } from './lib/updater.mjs';
 import { listServers } from './lib/connections.mjs';
 import { analyze } from './lib/mcpmanage.mjs';
 import { Notices } from './lib/notices.mjs';
+import { Replies } from './lib/replies.mjs';
 import { desktopWidgets } from './lib/deskhost.mjs';
 
 const ALERT_POLL_MS = 30_000;
@@ -24,6 +25,9 @@ export function createDesktopServices({ config, store, projects, sessions, overr
   // Tests never pop real notifications.
   const toast = overrides.toast || (process.env.NODE_TEST_CONTEXT ? () => false : windowsToast);
   const viewers = { count: 0 };
+  // chat answers to show on the desktop as cards you can reply to; `fromDesktop` marks turns you started there
+  const replies = new Replies();
+  const fromDesktop = new Set();
   const base = () => `http://127.0.0.1:${config.port}`;
   const nameOf = (id) => { try { return projects.get(id).name; } catch { return id; } };
 
@@ -52,13 +56,17 @@ export function createDesktopServices({ config, store, projects, sessions, overr
       const started = runStarts.get(data.runId);
       runStarts.delete(data.runId);
       const who = `${nameOf(data.projectId)}: ${data.nodeId && data.nodeId !== 'main' ? data.nodeId : 'the chat'}`;
+      // an answer to something said from the desktop, or one nobody was watching: a card to read and reply to
+      const turn = `${data.projectId}|${data.nodeId || ''}`;
+      if (data.status === 'done' && (fromDesktop.has(turn) || viewers.count === 0)) replies.add({ projectId: data.projectId, nodeId: data.nodeId && data.nodeId !== 'main' ? data.nodeId : null, engine: data.engine });
+      fromDesktop.delete(turn);
       if (data.status === 'error') notices.add({ kind: 'error', title: `${who} stopped with an error`, projectId: data.projectId, url: `#/projects/${data.projectId}/chat` });
       else if (data.status === 'done' && started && Date.now() - started >= LONG_RUN_MS) notices.add({ kind: 'done', title: `${who} finished`, body: `after ${Math.round((Date.now() - started) / 1000)} s`, projectId: data.projectId, url: `#/projects/${data.projectId}/chat` });
       return;
     }
     if (name !== 'request') return;
     const who = data.kind === 'question' ? 'has a question' : 'asks to go ahead';
-    const title = `${nameOf(data.projectId)}: ${data.nodeId || 'the agent'} ${who}`;
+    const title = `${nameOf(data.projectId)}: ${data.nodeId || ({ claude: 'Claude', codex: 'Codex', copilot: 'Copilot', gemini: 'Gemini' })[data.engine] || 'the agent'} ${who}`;
     notices.add({ kind: data.kind === 'question' ? 'question' : 'approval', title, body: data.title || '', projectId: data.projectId, url: '#/inbox' });
     if (!quiet() && !carded()) toast({ title, body: data.title || 'Open Circle Studio to answer.', url: `${base()}/#/inbox` });
   });
@@ -205,5 +213,5 @@ export function createDesktopServices({ config, store, projects, sessions, overr
     return { shown: 'new', appWindow: open(url, size) };
   }
 
-  return { settings, notices, viewers, listAlerts, pollAlerts, updates, watchConnections, addWindow, showWindow, restartIntoNewCode, autoRestart, isStale, busyCount: busy, restart, openWindows: () => [...windows.keys()], stopDesktop: () => { clearInterval(autoTimer); clearInterval(timer); clearInterval(updTimer); clearTimeout(first); clearInterval(cxTimer); clearTimeout(cxFirst); } };
+  return { settings, notices, viewers, replies, fromDesktop, carded, listAlerts, pollAlerts, updates, watchConnections, addWindow, showWindow, restartIntoNewCode, autoRestart, isStale, busyCount: busy, restart, openWindows: () => [...windows.keys()], stopDesktop: () => { clearInterval(autoTimer); clearInterval(timer); clearInterval(updTimer); clearTimeout(first); clearInterval(cxTimer); clearTimeout(cxFirst); } };
 }

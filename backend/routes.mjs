@@ -130,6 +130,13 @@ export function buildHandlers(app) {
       const c = chats.get(app.sessions.chatKey(params.id, query.get('nodeId') || null, query.get('engine') || 'claude'));
       return { messages: c.messages, sessionId: c.sessionId, linked: c.linked || null };
     },
+    // The turn running in this chat now, whoever started it, masked: so every screen can show what is going on.
+    'projects.chat.live': ({ params, query }) => {
+      projects.get(params.id);
+      const t = app.sessions.turnOf(params.id, query.get('nodeId') || null);
+      if (!t) return { turn: null };
+      return { turn: { ...t, you: redact(t.you), text: redact(t.text), tools: t.tools.map((x) => ({ ...x, summary: redact(String(x.summary || '')) })), waiting: t.waiting.map((w) => ({ ...w, title: redact(String(w.title || '')), detail: redact(String(w.detail || '')) })) } };
+    },
     'projects.history.list': ({ params, query }) => {
       const p = projects.resolve(params.id);
       const nodeId = query.get('nodeId') || null;

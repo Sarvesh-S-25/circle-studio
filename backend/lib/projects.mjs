@@ -9,7 +9,9 @@ import { isTeamProject } from './team.mjs';
 const FILE = 'registry.json';
 
 /** What the human allowed Circle Studio to do in a project folder. Reading is implied by adding it. */
-export const PERMISSION_KEYS = ['write', 'run', 'claude'];
+// write, run, claude: what Circle Studio may do there. autoEdits, autoReadsOutside: what an agent may do without
+// asking (an edit inside the folder; reading a file outside it). Off unless you turn them on.
+export const PERMISSION_KEYS = ['write', 'run', 'claude', 'autoEdits', 'autoReadsOutside'];
 export const normalizePermissions = (p) => Object.fromEntries(PERMISSION_KEYS.map((k) => [k, p?.[k] === true]));
 
 function slugId(name) {

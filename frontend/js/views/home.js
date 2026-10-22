@@ -24,7 +24,7 @@ async function offerDesktop(box) {
   try { st = await api.desktopWidgets('status'); } catch { return; }
   if (st.platform !== 'win32' || st.running) return;
   const put = async () => {
-    try { await api.desktopWidgets('start'); toast('Circle Studio is on your desktop. Drag a tile to move it; Ctrl+Alt+C opens the overlay with every tile and a command box.', { kind: 'ok', ms: 7000 }); box.replaceChildren(); } catch (e) { toast(e.message, { kind: 'danger' }); }
+    try { await api.desktopWidgets('start'); toast('Circle Studio is on your desktop. Drag a tile to move it; Ctrl+Alt+C opens the overlay with panels and a command box.', { kind: 'ok', ms: 7000 }); box.replaceChildren(); } catch (e) { toast(e.message, { kind: 'danger' }); }
   };
   box.replaceChildren(h('section', { class: 'cs-card cs-row cs-row--wrap cs-home__desk', 'aria-label': 'Circle Studio on your desktop' },
     h('span', { class: 'cs-home__deskicon', 'aria-hidden': 'true' }, icon('pin', 'm')),
@@ -35,7 +35,7 @@ async function offerDesktop(box) {
     h('button', { class: 'cs-btn cs-btn--primary', type: 'button', onclick: put }, icon('pin', 's'), 'Put it on my desktop')));
 }
 
-export async function mount(el) {
+export async function mount(el, { params = {} } = {}) {
   const pathInput = h('input', { class: 'cs-input', id: 'home-path', placeholder: 'or paste a folder path, then Enter', autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Folder path' });
   pathInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); openFolder(pathInput.value); } });
   const summary = h('p', { class: 'cs-home__summary' });
@@ -46,6 +46,8 @@ export async function mount(el) {
   const claudeEl = h('div', { class: 'cs-home__claude' });
   const deskEl = h('div', {});
   offerDesktop(deskEl);
+  // from the overlay's `folder`: the folder dialog at once; the folder chosen opens on its chat
+  if (params.pick) setTimeout(async () => { const p = await browseForFolder({ tab: 'chat' }); if (!p && location.hash === '#/open-folder') location.hash = '#/'; }, 0);
   let stats = null;
   const pulses = new Map(); // project id -> /pulse answer
   const costs = new Map(); // project id -> 30-day usage from /cost
@@ -87,9 +89,11 @@ export async function mount(el) {
     runningEl.hidden = !stats.running.length;
     if (stats.running.length) runningEl.append(h('h2', { class: 'cs-h2', id: 'h-running' }, 'Working now'));
     for (const r of stats.running) {
-      runningEl.append(h('a', { class: 'cs-card cs-row cs-runrow', href: r.projectId ? `#/projects/${r.projectId}/${r.source === 'circle' ? 'chat' : 'health'}` : '#/advisor' },
+      // Claude Code in your terminal or editor opens the project's Chat, which shows that conversation live
+      const toChat = r.source === 'circle' || r.kind === 'terminal';
+      runningEl.append(h('a', { class: 'cs-card cs-row cs-runrow', href: r.projectId ? `#/projects/${r.projectId}/${toChat ? 'chat' : 'health'}` : '#/advisor' },
         icon('spinner', 's'), h('strong', {}, r.name),
-        h('span', { class: 'cs-pill cs-pill--quiet' }, r.source === 'circle' ? (r.kind === 'advisor' ? 'Advisor' : 'Chat') : 'Team session'),
+        h('span', { class: 'cs-pill cs-pill--quiet' }, r.source === 'circle' ? (r.kind === 'advisor' ? 'Advisor' : 'Chat') : r.kind === 'terminal' ? 'In your terminal' : 'Team session'),
         h('span', { class: 'cs-grow cs-soft cs-small cs-runrow__what' }, r.agent ? `${r.agent}: ${r.what}` : ''), h('span', { class: 'cs-soft cs-small' }, timeAgo(r.startedAt))));
     }
     const c = state.health?.claude;
@@ -147,7 +151,9 @@ export async function mount(el) {
       h('button', { class: 'cs-btn cs-btn--small', type: 'button', 'aria-haspopup': 'menu', onclick: (e) => widgetMenu(e.currentTarget, p) }, icon('pin', 's'), 'Widget'),
       h('span', { class: 'cs-grow' }),
       h('button', { class: 'cs-btn cs-btn--small cs-btn--quiet cs-btn--icon', type: 'button', 'aria-label': `Permissions for ${p.name}`, title: 'Permissions', onclick: async () => {
-        const next = await askPermissions({ name: p.name, path: p.path, current: p.permissions, confirmLabel: 'Save' });
+        // read them now: an "always allow" chosen on a card since this page loaded must not be undone by Save
+        const now = (await api.project(p.id).catch(() => null))?.project?.permissions || p.permissions;
+        const next = await askPermissions({ name: p.name, path: p.path, current: now, confirmLabel: 'Save' });
         if (next) { await api.setPermissions(p.id, next); toast('Permissions saved.', { kind: 'ok', ms: 2000 }); load(); }
       } }, icon('lock', 's'))));
     return card;
