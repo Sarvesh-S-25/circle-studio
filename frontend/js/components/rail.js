@@ -53,10 +53,10 @@ export function buildRail() {
       projectList.append(a);
     }
     // engines (and a newer Circle Studio, when there is one)
-    const ready = state.engines.filter((e) => e.usable);
+    const ready = state.engines.filter((e) => e.usable && e.loggedIn === true);
     status.replaceChildren(
       state.update?.available ? h('a', { class: 'cs-rail__update', href: '#/settings', title: 'A newer Circle Studio is ready: see Settings, Updates' }, icon('download', 's'), 'Update ready') : '',h('span', { class: `cs-dot cs-dot--${!state.engines.length ? '' : ready.length ? 'ok' : 'warn'}` }),
-      h('a', { class: 'cs-small cs-soft cs-rail__engines', href: '#/start', title: `${state.engines.map((e) => `${e.label}: ${e.usable ? 'ready' : e.installed ? 'not signed in' : 'not installed'}`).join('\n')}\nSet up AI tools: Let's begin` },
+      h('a', { class: 'cs-small cs-soft cs-rail__engines', href: '#/start', title: `${state.engines.map((e) => `${e.label}: ${e.loggedIn === true ? 'ready' : e.installed && e.loggedIn == null ? 'sign-in unverified' : e.installed ? 'not signed in' : 'not installed'}`).join('\n')}\nSet up AI tools: Let's begin` },
         !state.engines.length ? 'Checking engines...' : ready.length ? `${ready.length} of ${state.engines.length} AI tools ready` : 'No AI tool ready: set one up'));
     const dark = currentTheme() === 'dark';
     themeBtn.replaceChildren(icon(dark ? 'sun' : 'moon', 'm'));

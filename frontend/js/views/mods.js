@@ -82,6 +82,7 @@ export async function mount(el, ctx = {}) {
       h('p', { class: 'cs-soft' }, projectId
         ? 'Mods change Claude Code itself: how the chat looks, what Claude reads, how commands are checked. Plugins add skills, agents and tools. Here is what this project gets from everywhere, and what is its own.'
         : 'Mods change Claude Code itself: how the chat looks, what Claude reads, how commands are checked. Plugins add skills, agents and tools. General ones work in every project; the rest only where a project turns them on.')),
+    h('p', { class: 'cs-soft' }, 'These extensions require Claude Code. For Codex and shared engine skills, use ', h('a', { href: '#/library?engine=codex' }, 'Library'), '. Installing a Claude mod does not extend Codex.'),
     makeEl, filters, body));
 
   async function load() {

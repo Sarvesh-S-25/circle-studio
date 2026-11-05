@@ -1,5 +1,30 @@
 # Decisions
 
+### 2026-10-23: preserve recovery and acceptance evidence
+
+Keep successful completion notifications after durable transcript persistence. A save failure must release the live
+slot and preserve its checkpoint, while avoiding automatic queued continuation. Do not erase historical task acceptance
+when a prerequisite changes: dependent work returns to review and must be accepted again. Copying a supported provider
+conversation creates a distinct Circle record and defers the provider fork until a new message; it does not duplicate
+old usage totals. Live Codex acceptance applies only to the recorded CLI version and observed scenarios.
+
+### 2026-10-22 — Codex parity and recoverable local state (v1.3.0 development)
+
+The user superseded the review-only instruction and authorized implementation of `definitions.md`, dummy testing,
+and a persistent `connections.md` evidence ledger. Git mutations remain the human's work. Preserve existing source data
+locations; packaged versions share an external per-user data directory. Retain full Circle transcripts behind a bounded
+legacy active view. Never replay interrupted or persisted queued work automatically after restart. Completion requires
+human review evidence; achievements remain local, optional, deterministic and separate from token spending.
+
+Codex CLI 0.163.0 generated schemas accept `untrusted`; keep it on start/resume/fork and never silently weaken approval
+policy. Engine policies can permit operations without Circle cards, so the old universal interception claim cannot be
+made for Codex. Structured advice uses a read-only sandbox with denied interactive requests and validated output; no
+hidden Claude prerequisite. Fake tests, actual account behavior and OS/release acceptance are recorded separately.
+
+The runtime ZIP uses official Node checksums and complete license notices, per-file manifests and versioned installation.
+No signing/publishing claim is made. The only cleanup candidates are old generated cache/log/editor-view files shown
+in a checksum-bound preview. Backups exclude vault/provider credentials and restore into an isolated directory.
+
 One line per decision: what, why, and whether it departs from `docs/spec.md`. The builder appends
 below the line. Keep it short; this is a log, not an essay.
 
@@ -311,4 +336,30 @@ below the line. Keep it short; this is a log, not an essay.
 * **Found by running it:** Claude Code renames its terminal window to "claude", so a window cannot be told by the conversation's title. The process is the reliable link: each `claude.exe` is read for its working folder, and its window is found through the console (Windows Terminal) or up the parent processes (an editor's terminal). Title matching stays only as a fallback.
 * **When no window is open,** Terminal opens one in the folder that carries the newest conversation on (`claude --resume`), through the same checked launcher as Let's begin (the folder quoted, the id checked to be a conversation id), and refuses while Circle Studio answers in that chat, since two Claudes on one conversation would talk over each other.
 * **Where:** the Chat tab (and the live banner), the bar (/terminal), the notification and question cards with Folder (File Explorer) beside them. Tests never look at the PC's windows.
+
+# 2026-10-23 roadmap completion decisions
+
+**1.3.1 follow-up, 2026-10-24:** user requested native notification/answer testing and terminal/chat repair. Test only
+isolated dummy projects for request answering; a labeled real OS notification contains no model turn. Await actual
+toast-helper exit instead of treating a spawned helper as submitted. Capture the displayed saved UUID for Terminal;
+materialize pending Codex forks so the original is preserved, and retain the failed send as a draft. No auto replay
+or silent switch to a new conversation. Scoped real CLI resume/fork evidence is separate from the unconfirmed exact
+user-reported error. The user still handles Git, signing and publication.
+
+The user's later implementation request authorizes the reviewed roadmap while Git mutations remain their responsibility.
+Keep JSON persistence and the existing desktop host: bounded indexed reads, shared queries, disposal fixes and streamed
+downloads have measured benefits without adopting an unbenchmarked host replacement. The isolated history comparison
+is not a total-app memory claim; the completed soak excludes browser/WPF processes.
+
+Use exact conversation UUIDs in pinned widget/window identities and captured send targets. Context handoff is a reviewed
+draft with source evidence, not an automatically executed scheduler. Archive old completed request records instead of
+discarding audit; keep saved chats durable and make generated-file cleanup explicit. Protect pinned workflow versions.
+
+Register POST `/api/system/notifications/test` for an explicit no-model-call OS notification request. Completion notices
+retain audit even when delivery is disabled. Only browsers that can notify suppress native fallback. A toast submission
+does not establish visible delivery. Independent Codex terminal/app notifications require a separate integration.
+
+Distribute a Node-bundled ZIP with per-user staging, repair/uninstall and one generated download identity. Stable packaged
+updates verify checksum/archive/file manifest and isolated launch before activation; unsigned status is explicit.
+Publisher signing and publication remain external steps; checksums are not publisher authentication.
 

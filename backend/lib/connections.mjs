@@ -77,6 +77,8 @@ function describe(name, raw, { engine, scope, file, folder = null }) {
     url: host, envNames: Object.keys(env), headerNames: Object.keys(headers), plainSecrets: plain, tokenInUrl,
     anthropicKey: [...Object.values(env), ...Object.values(headers), ...args].some((v) => /sk-ant-/i.test(String(v))),
     disabled: raw.disabled === true || raw.enabled === false,
+    configured: true, authenticated: null, availableInRun: null,
+    configurationCoverage: engine === 'codex' ? 'Read from supported TOML tables. Profiles, project trust and CLI overrides can change effective configuration; run availability is unverified.' : 'Configured does not mean authenticated or loaded by the current chat.',
   };
 }
 
@@ -142,6 +144,7 @@ function collect({ root = null, home = os.homedir(), codexHome = path.join(os.ho
   for (const p of claudePlugins(home)) add(p.servers, { engine: 'claude', scope: `plugin: ${p.name}`, file: p.file });
   // Codex
   try { add(parseCodexToml(fs.readFileSync(path.join(codexHome, 'config.toml'), 'utf8')).mcp_servers, { engine: 'codex', scope: 'user', file: tilde(path.join(codexHome, 'config.toml')) }); } catch { /* no Codex */ }
+  if (root) { try { add(parseCodexToml(fs.readFileSync(path.join(root, '.codex', 'config.toml'), 'utf8')).mcp_servers, { engine: 'codex', scope: 'project', file: '.codex/config.toml' }); } catch { /* optional; trust and effective overrides are not inferred */ } }
   // Gemini
   add(readJson(path.join(home, '.gemini', 'settings.json'))?.mcpServers, { engine: 'gemini', scope: 'user', file: '~/.gemini/settings.json' });
   if (root) add(readJson(path.join(root, '.gemini', 'settings.json'))?.mcpServers, { engine: 'gemini', scope: 'project', file: '.gemini/settings.json' });

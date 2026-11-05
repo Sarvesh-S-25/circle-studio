@@ -5,6 +5,7 @@ import { StringDecoder } from 'node:string_decoder';
 
 // Variables that must never reach a child: credentials and the markers of a parent Claude Code session.
 const STRIP = [
+  'OPENAI_API_KEY', 'OPENAI_AUTH_TOKEN', 'CODEX_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GOOGLE_GENAI_USE_VERTEXAI',
   'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SESSION_ID',
   'CLAUDE_CODE_CHILD_SESSION', 'CLAUDE_CODE_MESSAGING_SOCKET', 'CLAUDE_CODE_MESSAGING_TOKEN', 'CLAUDE_CODE_SSE_PORT',
   'CLAUDE_CODE_SESSION_ATTENDED', 'CLAUDE_PID', 'CLAUDE_EFFORT', 'CLAUDE_CODE_EXECPATH', 'CLAUDE_CODE_OAUTH_TOKEN',
@@ -12,7 +13,8 @@ const STRIP = [
 
 export function cleanEnv(base = process.env) {
   const env = { ...base };
-  for (const k of STRIP) delete env[k];
+  const denied = new Set(STRIP);
+  for (const k of Object.keys(env)) if (denied.has(k.toUpperCase())) delete env[k];
   return env;
 }
 

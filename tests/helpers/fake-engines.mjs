@@ -54,10 +54,25 @@ async function codex(m) {
   const reply = (result) => out({ id: m.id, result });
   if (m.method === 'initialize') return reply({ userAgent: 'codex-fake' });
   if (m.method === 'initialized') return;
+  if (m.method === 'model/list') return reply({ data: [{ id: 'dummy-codex-balanced', model: 'dummy-codex-balanced', displayName: 'Dummy Codex Balanced', isDefault: true, supportedReasoningEfforts: [{ reasoningEffort: 'medium' }] }, { id: 'dummy-codex-small', model: 'dummy-codex-small', displayName: 'Dummy Codex Small', supportedReasoningEfforts: [] }], nextCursor: null });
+  if (m.method === 'account/read') return reply({ account: { type: 'chatgpt', email: 'dummy@example.invalid' } });
+  if (m.method === 'account/rateLimits/read') return reply({ rateLimits: { primary: { usedPercent: 24, windowDurationMins: 300, resetsAt: Math.round(Date.now() / 1000) + 3600 }, secondary: { usedPercent: 12, windowDurationMins: 10080, resetsAt: Math.round(Date.now() / 1000) + 86400 } } });
+  if (m.method === 'thread/list') return reply({ data: [{ id: 'fake-codex-history-1', name: 'Dummy Codex history', preview: 'An earlier local conversation', cwd: process.cwd(), createdAt: Math.round(Date.now() / 1000) - 86400, updatedAt: Math.round(Date.now() / 1000) - 3600, status: { type: 'notLoaded' } }], nextCursor: null });
+  if (m.method === 'thread/read') return reply({ thread: { id: m.params.threadId, cwd: process.cwd(), name: 'Dummy Codex history', updatedAt: Math.round(Date.now() / 1000) - 3600, turns: [] } });
+  if (m.method === 'thread/turns/list') return reply({ data: [{ id: 'old-turn', items: [{ type: 'userMessage', content: [{ type: 'text', text: 'Explain this dummy project.' }] }, { type: 'agentMessage', text: 'This is an isolated dummy project used for testing Circle Studio.' }] }], nextCursor: null });
+  if (m.method === 'thread/fork') return reply({ thread: { id: 'fake-codex-copy-1' } });
   if (m.method === 'thread/start' || m.method === 'thread/resume') return reply({ thread: { id: m.params.threadId || 'thr-1' } });
   if (m.method === 'turn/start') {
     reply({ turn: { id: 'turn-1' } });
     const text = m.params.input?.[0]?.text ?? '';
+    if (text === 'crash after accepting turn') { process.exit(23); }
+    if (m.params.outputSchema) {
+      const schema = m.params.outputSchema;
+      const sample = (s) => s.enum ? s.enum[0] : s.type === 'object' ? Object.fromEntries((s.required || []).map((k) => [k, sample(s.properties[k])])) : s.type === 'array' ? [] : s.type === 'boolean' ? false : s.type === 'integer' || s.type === 'number' ? s.minimum || 0 : 'Dummy advice verified by a fake engine.';
+      out({ method: 'item/agentMessage/delta', params: { delta: process.env.FAKE_CODEX_STRUCTURED || JSON.stringify(sample(schema)) } });
+      out({ method: 'turn/completed', params: { threadId: m.params.threadId, turn: { status: 'completed' } } });
+      return;
+    }
     const ids = { threadId: m.params.threadId, turnId: 'turn-1', startedAtMs: Date.now() };
     if (text.startsWith('edit')) {
       // as the real app-server (0.154.0 schema): the paths and diff come in item/started; the approval names none

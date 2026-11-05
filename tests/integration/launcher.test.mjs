@@ -84,3 +84,30 @@ test('launcher: a running server older than the code on disk is restarted, a cur
     rmDir(dataDir);
   }
 });
+
+test('launcher: recovers a crashed server and explicit stop prevents resurrection', async () => {
+  const dataDir = tempDir('circle-launch-data-');
+  const port = await freePort();
+  const env = { ...process.env, CIRCLE_PORT: String(port), CIRCLE_DATA: dataDir, CIRCLE_NO_OPEN: '1' };
+  const run = (...args) => spawnSync(process.execPath, [LAUNCH, ...args], { env, encoding: 'utf8', timeout: 30_000 });
+  const lease = path.join(dataDir, 'server-supervisor.json');
+  try {
+    const result = run('--background');
+    assert.equal(result.status, 0, result.stderr);
+    const before = JSON.parse(fs.readFileSync(lease));
+    process.kill(before.serverPid);
+    let recovered = null;
+    for (let i = 0; i < 100; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      const next = JSON.parse(fs.readFileSync(lease));
+      if (next.serverPid !== before.serverPid && (await health(port))?.ok) { recovered = next; break; }
+    }
+    assert.ok(recovered, 'the companion restarts the crashed process');
+    assert.equal(recovered.pid, before.pid, 'one supervisor owns recovery');
+    assert.match(fs.readFileSync(path.join(dataDir, 'server.log'), 'utf8'), /supervisor: server exited/);
+    assert.equal(run('--stop').status, 0);
+    assert.equal(fs.existsSync(lease), false);
+    await new Promise((r) => setTimeout(r, 2200));
+    assert.equal(await health(port), null, 'an intentional stop remains stopped');
+  } finally { run('--stop'); rmDir(dataDir); }
+});

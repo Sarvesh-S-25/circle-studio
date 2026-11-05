@@ -6,6 +6,7 @@
 import http from 'node:http';
 
 const port = Number(process.env.CIRCLE_PORT) || Number(process.argv[process.argv.indexOf('--port') + 1]) || 4380;
+const engine = process.argv.includes('--engine') && process.argv[process.argv.indexOf('--engine') + 1] === 'codex' ? 'codex' : 'claude';
 const LIMIT_MS = 9 * 60 * 1000; // under the hook's own timeout (10 minutes), so Claude Code never has to cut it off
 
 function call(method, path, body) {
@@ -32,7 +33,7 @@ process.stdin.on('end', async () => {
   let input;
   try { input = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return stepAside(); }
   if (input?.hook_event_name && input.hook_event_name !== 'PermissionRequest') return stepAside();
-  const sent = await call('POST', '/api/hooks/permission', { tool_name: input.tool_name, tool_input: input.tool_input, cwd: input.cwd, session_id: input.session_id });
+  const sent = await call('POST', '/api/hooks/permission', { engine, tool_name: input.tool_name, tool_input: input.tool_input, cwd: input.cwd, session_id: input.session_id });
   if (!sent?.id) return stepAside(); // Circle Studio is not running (or refused it): the terminal asks
   const until = Date.now() + LIMIT_MS;
   while (Date.now() < until) {

@@ -25,7 +25,7 @@ export async function mount(el, ctx) {
   let part = skill?.partition || 'shared';
   const engineBoxes = ENGINES.map(([id, label]) => h('label', { class: 'cs-radio' }, h('input', { type: 'checkbox', value: id, checked: !skill?.engines || skill.engines.includes(id) || undefined }), h('span', {}, label)));
   const partSel = h('select', { class: 'cs-select', id: 'sk-part', 'aria-label': 'Partition', onchange: (e) => { part = e.target.value; } },
-    [['shared', 'Shared: every engine that reads skills'], ['claude', 'Claude only'], ['copilot', 'Copilot only'], ['gemini', 'Gemini only (folder not verified)']].map(([v, l]) => h('option', { value: v, selected: part === v || undefined }, l)));
+    [['shared', 'Shared: every engine that reads skills'], ['claude', 'Claude only'], ['codex', 'Codex only'], ['copilot', 'Copilot only'], ['gemini', 'Gemini only (folder not verified)']].map(([v, l]) => h('option', { value: v, selected: part === v || undefined }, l)));
   const status = h('span', { class: 'cs-soft cs-small', role: 'status' });
   let saved = skill ? skill.skillMd : '';
 

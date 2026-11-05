@@ -1,5 +1,6 @@
 // A JSON-RPC peer over a child's stdio, one message per line. Used by Copilot (ACP) and Codex (app-server).
 import { lineReader, parseLine } from './proc.mjs';
+import { redact } from '../secrets.mjs';
 
 export class RpcPeer {
   /**
@@ -8,17 +9,21 @@ export class RpcPeer {
    * @param opts.onRequest async (method, params) => result, for requests the other side sends; throw to answer with an error
    * @param opts.onNotification (method, params) => void
    */
-  constructor(child, { jsonrpc = true, onRequest, onNotification } = {}) {
+  constructor(child, { jsonrpc = true, onRequest, onNotification, onClose, timeoutMs = 30_000 } = {}) {
     this.child = child;
     this.jsonrpc = jsonrpc;
     this.onRequest = onRequest;
     this.onNotification = onNotification;
+    this.onClose = onClose;
+    this.timeoutMs = timeoutMs;
+    this.diagnostic = '';
     this.next = 1;
     this.pending = new Map();
     this.closed = false;
     child.stdin.on('error', () => {});
     this.flush = lineReader(child.stdout, (line) => this.#incoming(line));
-    child.on('close', () => this.#close(new Error('The engine process ended.')));
+    child.stderr?.on('data', (data) => { this.diagnostic = redact((this.diagnostic + data.toString('utf8')).slice(-8192)); });
+    child.on('close', (code) => { this.flush(); this.#close(new Error(`The engine process ended${code == null ? '' : ` (exit ${code})`}.`)); });
     child.on('error', (e) => this.#close(e));
   }
 
@@ -28,12 +33,17 @@ export class RpcPeer {
     return true;
   }
 
-  request(method, params = {}) {
+  request(method, params = {}, { timeoutMs = this.timeoutMs } = {}) {
     return new Promise((resolve, reject) => {
       if (this.closed) { reject(new Error('The engine process ended.')); return; }
       const id = this.next++;
-      this.pending.set(id, { resolve, reject, method });
-      if (!this.#send({ id, method, params })) { this.pending.delete(id); reject(new Error('The engine process ended.')); }
+      const timer = timeoutMs > 0 ? setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`The engine did not answer ${method} within ${Math.round(timeoutMs / 1000)} seconds.`));
+      }, timeoutMs) : null;
+      timer?.unref?.();
+      this.pending.set(id, { resolve, reject, method, timer });
+      if (!this.#send({ id, method, params })) { clearTimeout(timer); this.pending.delete(id); reject(new Error('The engine process ended.')); }
     });
   }
 
@@ -42,8 +52,9 @@ export class RpcPeer {
   #close(err) {
     if (this.closed) return;
     this.closed = true;
-    for (const p of this.pending.values()) p.reject(err);
+    for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(err); }
     this.pending.clear();
+    this.onClose?.(err);
   }
 
   close() { this.#close(new Error('Closed.')); try { this.child.stdin.end(); } catch { /* gone */ } }
@@ -53,7 +64,7 @@ export class RpcPeer {
     if (!m) return;
     if (m.method !== undefined && m.id !== undefined) {
       try {
-        const result = await this.onRequest?.(m.method, m.params ?? {});
+        const result = await this.onRequest?.(m.method, m.params ?? {}, m.id);
         this.#send({ id: m.id, result: result ?? {} });
       } catch (e) {
         this.#send({ id: m.id, error: { code: -32603, message: String(e?.message || e).slice(0, 300) } });
@@ -64,6 +75,7 @@ export class RpcPeer {
       const p = this.pending.get(m.id);
       if (!p) return;
       this.pending.delete(m.id);
+      clearTimeout(p.timer);
       if (m.error) p.reject(Object.assign(new Error(String(m.error.message || 'The engine refused the request.').slice(0, 300)), { rpc: m.error }));
       else p.resolve(m.result ?? {});
     }

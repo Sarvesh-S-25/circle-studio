@@ -13,6 +13,7 @@ import { startHistory, appendVersion, restoreVersion, describeVersions } from '.
 import { discoverWorkflow, isUntouchedTemplateCopy } from './discover.mjs';
 
 export const SEED_ID = 'staged_build_team';
+export const CODEX_SEED_ID = 'codex_build_check';
 export const IMPORT_MAX_BYTES = 1024 * 1024;
 const DIR = 'templates';
 const MARKER = `${DIR}/.seeded`;
@@ -83,6 +84,16 @@ export class Templates {
     this.seedFile = seedFile;
     this.dir = store.abs(DIR);
     this.#seedOnce();
+    this.#seedCodex();
+  }
+
+  #seedCodex() {
+    const marker = `${DIR}/.codex-seeded`;
+    if (fs.existsSync(this.store.abs(marker))) return;
+    const workflow = normalizeWorkflow({ name: 'Codex build and check', description: 'A small Codex workflow. Graph edges are instructions; accept tasks with evidence in Tasks & progress.', nodes: [{ id: 'you', kind: 'human', title: 'You' }, { id: 'plan', kind: 'stage', title: 'Plan' }, { id: 'build', kind: 'stage', title: 'Build' }, { id: 'check', kind: 'stage', title: 'Check' }, { id: 'planner', kind: 'agent', title: 'Planner', engine: 'codex', parent: 'plan', prompt: 'Read the request and propose a small plan. Ask about missing requirements.' }, { id: 'builder', kind: 'agent', title: 'Builder', engine: 'codex', parent: 'build', prompt: 'Implement the accepted plan. Preserve unrelated files and report changed behavior.' }, { id: 'reviewer', kind: 'agent', title: 'Reviewer', engine: 'codex', parent: 'check', prompt: 'Review the change and run relevant checks. Report evidence, failures and limitations; do not claim human acceptance.' }], edges: [{ from: 'you', to: 'plan' }, { from: 'plan', to: 'build' }, { from: 'build', to: 'check' }] });
+    const at = now();
+    if (!fs.existsSync(this.store.abs(`${DIR}/${CODEX_SEED_ID}.json`))) this.store.writeJson(`${DIR}/${CODEX_SEED_ID}.json`, { id: CODEX_SEED_ID, name: workflow.name, description: workflow.description, createdAt: at, updatedAt: at, builtin: true, ...startHistory(workflow, { note: 'Bundled Codex starter', at }) });
+    atomicWrite(this.store.abs(marker), `${at}\n`);
   }
 
   /** The bundled template is copied in once. A marker file remembers it, so deleting it keeps it deleted. */
@@ -194,6 +205,14 @@ export class Workflows {
   }
 
   #file(id) { return `workflows/${id}.json`; }
+  pin(project, version, pinned) {
+    const record = this.ensure(project);
+    const target = record.versions.find((v) => v.version === version);
+    if (!target) throw notFound('That workflow version is no longer retained.');
+    target.pinned = pinned === true;
+    this.store.writeJson(this.#file(project.id), record);
+    return this.#view(record, project);
+  }
 
   #view(record, project) {
     const view = { templateId: record.templateId ?? null, origin: record.origin ?? (record.templateId ? 'template' : 'saved'), ...historyView(record) };

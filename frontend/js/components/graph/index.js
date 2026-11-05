@@ -360,7 +360,7 @@ export function mountGraph(el, opts) {
     const showGraph = S.mode !== 'versions';
     canvas.hidden = !showGraph;
     versionsHost.hidden = showGraph;
-    if (showGraph) { applyView(); drawEdges(); drawNodes(); } else renderVersions(versionsHost, { versions: S.versions, head: S.head, onRestore: opts.onRestore });
+    if (showGraph) { applyView(); drawEdges(); drawNodes(); } else renderVersions(versionsHost, { versions: S.versions, head: S.head, onRestore: opts.onRestore, onPin: opts.onPin });
     drawBar(); drawLegend(); drawFoot();
   }
 

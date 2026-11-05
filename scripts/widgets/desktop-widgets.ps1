@@ -7,6 +7,29 @@ param([int]$Port = 4380, [string]$DataDir = '')
 
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Xaml
+Add-Type -AssemblyName System.Net.Http
+
+# Native .NET HTTP tasks run without blocking the WPF dispatcher. Only one batch per channel
+# can be in flight; completed results are consumed by the dispatcher on its next tick.
+$script:desktopHttp = New-Object System.Net.Http.HttpClient
+$script:desktopHttp.Timeout = [TimeSpan]::FromSeconds(20)
+$script:desktopReads = @{}
+function Read-DesktopBatch([string]$key, [string[]]$paths, [int]$seconds) {
+  $slot = $script:desktopReads[$key]
+  if (-not $slot) {
+    $tasks = @($paths | ForEach-Object { $script:desktopHttp.GetStringAsync("$base$_") })
+    $script:desktopReads[$key] = @{ tasks = $tasks; next = [DateTime]::UtcNow.AddSeconds($seconds) }
+    return $null
+  }
+  if ($slot.tasks) {
+    if (@($slot.tasks | Where-Object { -not $_.IsCompleted }).Count) { return $null }
+    $tasks = $slot.tasks; $slot.tasks = $null
+    $results = @($tasks | ForEach-Object { $_.GetAwaiter().GetResult() | ConvertFrom-Json })
+    return ,$results
+  }
+  if ([DateTime]::UtcNow -ge $slot.next) { $script:desktopReads.Remove($key); return Read-DesktopBatch $key $paths $seconds }
+  return $null
+}
 
 $created = $false
 $mutex = New-Object System.Threading.Mutex($true, 'Local\CircleStudioDesktopWidgets', [ref]$created)
@@ -16,6 +39,22 @@ Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 public static class CsDesk {
+  [StructLayout(LayoutKind.Sequential)] struct Rect { public int Left, Top, Right, Bottom; }
+  [StructLayout(LayoutKind.Sequential)] struct MonitorInfo { public int Size; public Rect Monitor, Work; public uint Flags; }
+  delegate bool MonitorProc(IntPtr monitor, IntPtr dc, IntPtr rect, IntPtr data);
+  [DllImport("user32.dll")] static extern bool EnumDisplayMonitors(IntPtr dc, IntPtr clip, MonitorProc callback, IntPtr data);
+  [DllImport("user32.dll")] static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
+  [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr window, out Rect rect);
+  public static bool Reachable(IntPtr window) {
+    Rect rect; if (window == IntPtr.Zero || !GetWindowRect(window, out rect)) return true;
+    bool visible = false;
+    EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, (monitor, dc, bounds, data) => {
+      var info = new MonitorInfo(); info.Size = Marshal.SizeOf(typeof(MonitorInfo));
+      if (GetMonitorInfo(monitor, ref info) && Math.Min(rect.Right, info.Work.Right) - Math.Max(rect.Left, info.Work.Left) >= 64 && Math.Min(rect.Bottom, info.Work.Bottom) - Math.Max(rect.Top, info.Work.Top) >= 32) visible = true;
+      return true;
+    }, IntPtr.Zero);
+    return visible;
+  }
   [DllImport("user32.dll", SetLastError = true)] public static extern IntPtr FindWindow(string cls, string name);
   [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] static extern IntPtr SetLongPtr(IntPtr h, int i, IntPtr v);
   [DllImport("user32.dll", EntryPoint = "SetWindowLongW")] static extern int SetLong(IntPtr h, int i, int v);
@@ -259,6 +298,70 @@ function Answer-Ask([string]$id, $body) {
 
 function Project-Name([string]$id) { $p = $script:projects | Where-Object { $_.id -eq $id } | Select-Object -First 1; if ($p) { return $p.name } else { return $id } }
 
+function Keep-Visible($window) {
+  $window.UpdateLayout()
+  $handle = (New-Object System.Windows.Interop.WindowInteropHelper($window)).Handle
+  if ([CsDesk]::Reachable($handle)) { return }
+  $area = [System.Windows.SystemParameters]::WorkArea
+  $window.Left = [Math]::Max($area.Left, [Math]::Min($window.Left, $area.Right - $window.ActualWidth))
+  $window.Top = [Math]::Max($area.Top, [Math]::Min($window.Top, $area.Bottom - $window.ActualHeight))
+  if ($window.Tag -and $window.Tag.key) { $saved.positions[$window.Tag.key] = @{ x = $window.Left; y = $window.Top }; Save-State }
+}
+
+function Confirm-TeamDiff([string]$diff) {
+  $dialog = New-Object System.Windows.Window
+  $dialog.Title = 'Review team answer'; $dialog.Width = [Math]::Min(700, [System.Windows.SystemParameters]::WorkArea.Width - 32); $dialog.Height = [Math]::Min(560, [System.Windows.SystemParameters]::WorkArea.Height - 32)
+  $dialog.WindowStartupLocation = 'CenterScreen'; $dialog.Background = Brush $script:pal.raised
+  $dock = New-Object System.Windows.Controls.DockPanel; $dock.Margin = '16'
+  $actions = HStack; $actions.HorizontalAlignment = 'Right'
+  $cancel = Btn 'Cancel'; $cancel.IsCancel = $true; $cancel.Add_Click({ param($s, $e) [System.Windows.Window]::GetWindow($s).DialogResult = $false })
+  $apply = Btn 'Apply reviewed answer' 'primary'; $apply.Add_Click({ param($s, $e) [System.Windows.Window]::GetWindow($s).DialogResult = $true })
+  [void]$actions.Children.Add($cancel); [void]$actions.Children.Add($apply); [System.Windows.Controls.DockPanel]::SetDock($actions, 'Bottom'); [void]$dock.Children.Add($actions)
+  $text = New-Object System.Windows.Controls.TextBox; $text.IsReadOnly = $true; $text.AcceptsReturn = $true; $text.Text = $diff; $text.VerticalScrollBarVisibility = 'Auto'; $text.HorizontalScrollBarVisibility = 'Auto'; $text.FontFamily = 'Consolas'; $text.Background = Brush $script:pal.sunken; $text.Foreground = Brush $script:pal.text
+  [System.Windows.Automation.AutomationProperties]::SetName($text, 'Exact reviewed change to the team question file')
+  [void]$dock.Children.Add($text); $dialog.Content = $dock
+  return $dialog.ShowDialog() -eq $true
+}
+
+function New-TeamCard($r) {
+  $w = New-Object System.Windows.Window
+  $w.Title = 'Circle Studio team question'; $w.Width = 384; $w.SizeToContent = 'Height'; $w.ShowInTaskbar = $false; $w.ShowActivated = $false; $w.Topmost = $true; $w.ResizeMode = 'NoResize'
+  $w.WindowStyle = 'None'; $w.AllowsTransparency = $true; $w.Background = [System.Windows.Media.Brushes]::Transparent
+  $border = New-Object System.Windows.Controls.Border; $border.Margin = '12'; $border.CornerRadius = 16; $border.Padding = 16; $border.Background = Brush $script:pal.raised; $border.BorderBrush = Brush $script:pal.warn; $border.BorderThickness = 1
+  $sp = VStack
+  [void]$sp.Children.Add((Wrap (Text "$($r.projectName) - $($r.title)" 14 '' 'SemiBold')))
+    [void]$sp.Children.Add((Wrap (Text ([string]$r.question) 12) 120))
+    if ($r.options) { [void]$sp.Children.Add((Wrap (Text ([string]$r.options) 11 $script:pal.soft) 60)) }
+  $open = Btn 'Open question' 'quiet'; $open.Add_Click({ Open-App '#/inbox' }); [void]$sp.Children.Add($open)
+  if ($r.answerable) {
+    $answer = New-Object System.Windows.Controls.TextBox; $answer.MaxLength = 600; $answer.MinHeight = 50; $answer.TextWrapping = 'Wrap'; $answer.AcceptsReturn = $true
+    $answer.Background = Brush $script:pal.sunken; $answer.Foreground = Brush $script:pal.text; $answer.BorderBrush = Brush $script:pal.lineStrong; $answer.BorderThickness = 1; $answer.Padding = 8; $answer.Margin = '0,6,0,6'
+    [System.Windows.Automation.AutomationProperties]::SetName($answer, 'Your answer to the team question')
+    [void]$sp.Children.Add($answer)
+    $review = Btn 'Review file change' 'primary'; $review.Tag = @{ projectId = [string]$r.projectId; alertId = [string]$r.alertId; answer = $answer }
+    $review.Add_Click({ param($s, $e)
+      $s.IsEnabled = $false
+      try {
+        $headers = @{ 'X-Circle' = '1' }
+        $body = @{ projectId = $s.Tag.projectId; ops = @(@{ op = 'alert-answer'; id = $s.Tag.alertId; answer = $s.Tag.answer.Text }) } | ConvertTo-Json -Depth 5
+        $preview = Invoke-RestMethod -Uri "$base/api/changes/preview" -Method Post -Headers $headers -ContentType 'application/json' -Body ([Text.Encoding]::UTF8.GetBytes($body)) -TimeoutSec 8
+        $lines = @('Review the exact file change below. Only Apply reviewed answer writes it.', '')
+        foreach ($file in $preview.files) { $lines += [string]$file.path; foreach ($hunk in $file.diff.hunks) { foreach ($line in $hunk.lines) { $lines += ([string]$line.t + [string]$line.text) } } }
+        $diff = $lines -join "`n"
+        if (-not $preview.id -or $diff.Length -gt 24000) { Open-App '#/inbox'; return }
+        if (Confirm-TeamDiff $diff) {
+          $apply = @{ id = $preview.id } | ConvertTo-Json
+          Invoke-RestMethod -Uri "$base/api/changes/apply" -Method Post -Headers $headers -ContentType 'application/json' -Body $apply -TimeoutSec 8 | Out-Null
+          Safe-Asks
+        }
+      } catch { [void][System.Windows.MessageBox]::Show('The answer could not be applied. It may already be answered or changed. Open the Inbox to review the current question.', 'Circle Studio') }
+      finally { $s.IsEnabled = $true }
+    })
+    [void]$sp.Children.Add($review)
+  }
+  $border.Child = $sp; $w.Content = $border; return $w
+}
+
 function New-AskCard($r) {
   $w = New-Object System.Windows.Window
   $w.WindowStyle = 'None'; $w.AllowsTransparency = $true; $w.Background = [System.Windows.Media.Brushes]::Transparent
@@ -306,7 +409,7 @@ function New-AskCard($r) {
   }
   $fromFolder = $(if ($r.source -eq 'terminal') { [string]$r.folder } else { '' })
   [void]$whereRow.Children.Add((Where-Btn 'Folder' 'The folder in File Explorer' '/api/desktop/folder' ([string]$r.projectId) $fromFolder))
-  [void]$whereRow.Children.Add((Where-Btn 'Terminal' 'The terminal or editor where Claude works on this folder' '/api/desktop/terminal' ([string]$r.projectId) $fromFolder))
+  [void]$whereRow.Children.Add((Where-Btn 'Terminal' 'Show or resume the engine that raised this request' '/api/desktop/terminal' ([string]$r.projectId) $fromFolder ([string]$r.engine) ([string]$r.nodeId)))
   [void]$sp.Children.Add($whereRow)
   $open.Add_Click({ Open-App '#/inbox' })
   if (-not $isQ) {
@@ -374,11 +477,13 @@ function Collect-Answers($st) {
     if ($q.multiSelect) {
       $all = @($picked) + @($(if ($typed) { $typed }))
       if (-not $all.Count) { return $null }
-      $answers[[string]$q.question] = ($all -join ', ')
+      $answerKey = if ($q.id) { [string]$q.id } else { [string]$q.question }
+      $answers[$answerKey] = ($all -join ', ')
     } else {
       $a = $(if ($typed) { $typed } elseif ($picked.Count) { $picked[0] } else { $null })
       if (-not $a) { return $null }
-      $answers[[string]$q.question] = $a
+      $answerKey = if ($q.id) { [string]$q.id } else { [string]$q.question }
+      $answers[$answerKey] = $a
     }
   }
   return $answers
@@ -392,7 +497,7 @@ function Send-Answers($st) {
 
 function Pick-Option($t) {
   $st = $t.st; $q = $st.qs[$t.i]
-  if ($st.fast) { Answer-Ask $st.id @{ decision = 'answer'; answers = @{ [string]$q.question = $t.a } }; return }
+  if ($st.fast) { $answerKey = if ($q.id) { [string]$q.id } else { [string]$q.question }; Answer-Ask $st.id @{ decision = 'answer'; answers = @{ $answerKey = $t.a } }; return }
   if ($q.multiSelect) {
     if (@($st.picked[$t.i]) -contains $t.a) { $st.picked[$t.i] = @(@($st.picked[$t.i]) | Where-Object { $_ -ne $t.a }) } else { $st.picked[$t.i] = @(@($st.picked[$t.i]) + $t.a) }
   } else { $st.picked[$t.i] = @($t.a) }
@@ -460,9 +565,10 @@ function Add-QuestionPicker($sp, $row, $r, $open) {
 }
 
 # Folder and Terminal on a card: the project's folder in File Explorer; the terminal or editor where Claude works on it.
-function Where-Btn([string]$label, [string]$tip, [string]$path, [string]$projectId, [string]$folder = '') {
+function Where-Btn([string]$label, [string]$tip, [string]$path, [string]$projectId, [string]$folder = '', [string]$engine = '', [string]$nodeId = '') {
   # a terminal's request names its folder (it may not be one of your projects); the rest name the project
   $b = Btn $label 'quiet'; $b.ToolTip = $tip; $b.Tag = @{ path = $path; body = $(if ($folder) { @{ folder = $folder; mode = 'show' } } else { @{ projectId = $projectId } }) }
+  if ($engine) { $b.Tag.body.engine = $engine }; if ($nodeId) { $b.Tag.body.nodeId = $nodeId }
   $b.Add_Click({ param($s, $e) Post-Json $s.Tag.path $s.Tag.body {} })
   return $b
 }
@@ -501,9 +607,9 @@ function New-ReplyCard($r, [string]$editor) {
   [void]$sp.Children.Add($said)
   $row = New-Object System.Windows.Controls.WrapPanel; $row.HorizontalAlignment = 'Right'
   [void]$row.Children.Add((Where-Btn 'Folder' 'The project folder in File Explorer' '/api/desktop/folder' ([string]$r.projectId)))
-  [void]$row.Children.Add((Where-Btn 'Terminal' 'The terminal or editor where Claude works on this folder (a new one that carries the chat on, if none is open)' '/api/desktop/terminal' ([string]$r.projectId)))
-  $op = Btn 'Open chat' 'primary'; $op.ToolTip = 'The whole conversation, in Circle Studio'; $op.Tag = @{ p = [string]$r.projectId; id = [string]$r.id }
-  $op.Add_Click({ param($s, $e) $t = $s.Tag; Close-ReplyCard $t.id; Open-App ('chat:' + $t.p) })
+  [void]$row.Children.Add((Where-Btn 'Terminal' 'Show or resume this engine in the project folder' '/api/desktop/terminal' ([string]$r.projectId) '' ([string]$r.engine) ([string]$r.nodeId)))
+  $op = Btn 'Open chat' 'primary'; $op.ToolTip = 'The original conversation, in Circle Studio'; $op.Tag = @{ p = [string]$r.projectId; id = [string]$r.id; url = [string]$r.url }
+  $op.Add_Click({ param($s, $e) $t = $s.Tag; Close-ReplyCard $t.id; if ($t.url) { Open-App $t.url } else { Open-App ('chat:' + $t.p) } })
   [void]$row.Children.Add($op)
   [void]$sp.Children.Add($row)
   $card.Child = $sp
@@ -532,18 +638,25 @@ function Place-Asks {
 
 function Refresh-Asks {
   if (-not $script:asksOn -or -not $script:pal) { foreach ($k in @($script:asks.Keys)) { $script:asks[$k].Close(); $script:asks.Remove($k) }; return }
-  $list = @((Invoke-RestMethod -Uri "$base/api/requests?status=pending" -TimeoutSec 4).requests | Where-Object { $_ })
+  $batch = Read-DesktopBatch 'asks' @('/api/requests?status=pending', '/api/alerts?status=open', '/api/desktop/replies') 3
+  if ($null -eq $batch) { return }
+  $list = @($batch[0].requests | Where-Object { $_ })
   $list = @($list | Sort-Object at | Select-Object -Last 3)
+  if ($list.Count -lt 3) {
+    try {
+      $team = @($batch[1].alerts | Select-Object -First (3 - $list.Count))
+      foreach ($a in $team) { $a | Add-Member -NotePropertyName alertId -NotePropertyValue $a.id -Force; $a.id = "team:$($a.projectId):$($a.id)"; $a | Add-Member -NotePropertyName kind -NotePropertyValue 'team' -Force; $list += $a }
+    } catch { }
+  }
   # answers that came back, as cards to reply on (keyed r:<id> beside the asks)
-  $rep = $null
-  try { $rep = Invoke-RestMethod -Uri "$base/api/desktop/replies" -TimeoutSec 4 } catch { }
+  $rep = $batch[2]
   $replies = @($(if ($rep) { $rep.replies } else { @() }) | Where-Object { $_ } | Sort-Object at | Select-Object -Last 2)
   $ids = @($list | ForEach-Object { $_.id }) + @($replies | ForEach-Object { 'r:' + $_.id })
   foreach ($k in @($script:asks.Keys)) { if ($ids -notcontains $k) { $script:asks[$k].Close(); $script:asks.Remove($k) } }
   $added = $false
   foreach ($r in $list) {
     if ($script:asks.ContainsKey($r.id)) { continue }
-    $w = New-AskCard $r
+    $w = if ($r.kind -eq 'team') { New-TeamCard $r } else { New-AskCard $r }
     $w.Tag = @{ at = [string]$r.at }
     $script:asks[$r.id] = $w
     # shown even while the overlay is open, on top of it: you answer on the card wherever you are
@@ -1004,7 +1117,7 @@ function Paint($w, $t) {
   $card.BorderBrush = Brush $script:pal.line
   $card.ClipToBounds = $true
   $card.Child = Build-Tile $t
-  $w.Tag = @{ key = $t.key; url = $(if ($t.chatWindow) { 'chat:' + $t.chatWindow } elseif ($t.url) { $t.url } else { '#/' }); sig = $sig }
+  $w.Tag = @{ key = $t.key; url = $(if ($t.url) { $t.url } elseif ($t.chatWindow) { 'chat:' + $t.chatWindow } else { '#/' }); sig = $sig }
   $w.ContextMenu = New-Menu $t # the project list changes, so the menu is built again each time
 }
 
@@ -1013,8 +1126,13 @@ function Theme { try { $v = Get-ItemPropertyValue -Path 'HKCU:\Software\Microsof
 $script:offline = $null
 function Refresh {
   try {
-    $feed = Invoke-RestMethod -Uri "$base/api/widgets/feed?theme=$(Theme)&asks=1" -TimeoutSec 20
+    $batch = Read-DesktopBatch 'feed' @("/api/widgets/feed?theme=$(Theme)&asks=1") 15
+    if ($null -eq $batch) { return }
+    $feed = $batch[0]
   } catch {
+    # Keep the last good tiles during a transient failure or resume. Replacing them with
+    # an offline tile closes every window and makes the desktop appear to have crashed.
+    if ($windows.Count -gt 0 -and -not $windows.ContainsKey('offline')) { return }
     if (-not $script:pal) { $script:pal = @{ raised = '#202828'; line = '#2d3535'; text = '#e0e8e8'; soft = '#afbaba'; sunken = '#0b1111'; lineStrong = '#6a7b7c'; ok = '#6fd087'; warn = '#f9aa60'; info = '#8fb9f7'; danger = '#ff847f'; gate = '#dbbb56'; accent = '#29a0a6'; onAccent = '#020e0e' } }
     $feed = @{ tiles = @(@{ key = 'offline'; kind = 'inbox'; size = 's'; title = 'Circle Studio'; empty = 'Not running. Click to start it.'; url = '#/' }) }
     $script:offline = $true
@@ -1028,6 +1146,7 @@ function Refresh {
   foreach ($t in $feed.tiles) {
     $keys += $t.key
     if (-not $windows.ContainsKey($t.key)) { $windows[$t.key] = New-TileWindow $t $i; Paint $windows[$t.key] $t; $windows[$t.key].Show() } else { Paint $windows[$t.key] $t }
+    Keep-Visible $windows[$t.key]
     $i++
   }
   foreach ($k in @($windows.Keys)) { if ($keys -notcontains $k) { $windows[$k].Close(); $windows.Remove($k) } }
@@ -1041,19 +1160,19 @@ function Refresh {
 $app = New-Object System.Windows.Application
 $app.ShutdownMode = 'OnExplicitShutdown'
 $timer = New-Object System.Windows.Threading.DispatcherTimer
-$timer.Interval = [TimeSpan]::FromSeconds(15)
+$timer.Interval = [TimeSpan]::FromMilliseconds(500)
 $logFile = Join-Path $DataDir 'desktop-widgets.log'
 function Safe-Refresh { try { Refresh } catch { Add-Content -Path $logFile -Value ((Get-Date).ToString('s') + ' ' + $_.Exception.Message + ' ' + $_.InvocationInfo.PositionMessage) } }
 $timer.Add_Tick({ Safe-Refresh })
 # what an agent asks is looked for every 3 seconds (one small local request): it should not wait for the tiles
 $askTimer = New-Object System.Windows.Threading.DispatcherTimer
-$askTimer.Interval = [TimeSpan]::FromSeconds(3)
+$askTimer.Interval = [TimeSpan]::FromMilliseconds(500)
 $askTimer.Add_Tick({ Safe-Asks })
 # Most of the time the tiles only wait: once a minute, while nothing is open on top of them, the memory they are not
 # using goes back to Windows (PowerShell with WPF keeps far more than it needs between refreshes).
 $trimTimer = New-Object System.Windows.Threading.DispatcherTimer
 $trimTimer.Interval = [TimeSpan]::FromSeconds(60)
-$trimTimer.Add_Tick({ if (-not $script:ovUp -and -not $script:picker) { try { [GC]::Collect(); [GC]::WaitForPendingFinalizers(); [CsDesk]::Trim() } catch { } } })
+$trimTimer.Add_Tick({ if (-not $script:ovUp -and -not $script:picker) { try { [CsDesk]::Trim() } catch { } } })
 $hotkey = New-Object CsHotKey
 $hotkey.Add_Pressed({ try { Toggle-Overlay } catch { Add-Content -Path $logFile -Value ((Get-Date).ToString('s') + ' hotkey: ' + $_.Exception.Message + ' ' + $_.InvocationInfo.PositionMessage) } })
 $app.Add_Startup({
@@ -1068,5 +1187,5 @@ $app.Add_Startup({
   Set-Content -Path (Join-Path $DataDir 'desktop-widgets.hotkey') -Value $script:HOTKEY_WORDS -Encoding ASCII
   if (-not $got) { Add-Content -Path $logFile -Value ((Get-Date).ToString('s') + ' hotkey: Ctrl+Alt+C, Ctrl+Alt+W and Win+Alt+C are all taken by other apps') }
 })
-$app.Add_Exit({ try { $hotkey.Unregister() } catch { }; try { Remove-Item -Path (Join-Path $DataDir 'desktop-widgets.pid') -ErrorAction SilentlyContinue } catch { }; $mutex.ReleaseMutex() })
+$app.Add_Exit({ $timer.Stop(); $askTimer.Stop(); $trimTimer.Stop(); $script:desktopHttp.Dispose(); try { $hotkey.Unregister() } catch { }; try { Remove-Item -Path (Join-Path $DataDir 'desktop-widgets.pid') -ErrorAction SilentlyContinue } catch { }; $mutex.ReleaseMutex() })
 [void]$app.Run()

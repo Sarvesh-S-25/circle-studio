@@ -23,6 +23,7 @@ import { allMods } from './lib/mods.mjs';
 import { tapState, setTap } from './lib/limits.mjs';
 import { permHookState, setPermHook } from './lib/permhook.mjs';
 import { redact } from './lib/secrets.mjs';
+import { tileWindowKey } from '../frontend/js/window-key.js';
 import { projectChoices, OVERLAY_EXTRAS } from './lib/overlay.mjs';
 
 const WHERE = ['desktop', 'startmenu', 'startup'];
@@ -41,6 +42,7 @@ export function buildDesktopHandlers(app) {
   const { projects, settings, config } = app;
   const ghCache = new Map(); // projectId -> { at, data }
   const usageCache = new Map(); // days -> { at, data }
+  const usagePending = new Map();
   const icon = () => path.join(config.dataDir, 'circle-studio.ico');
   const base = () => `http://127.0.0.1:${config.port}`;
   const exists = (where, project) => { const p = shortcutPath(where, project); return Boolean(p && fs.existsSync(p)); };
@@ -53,7 +55,7 @@ export function buildDesktopHandlers(app) {
   function pulseOf(id) {
     const params = { id };
     const project = projects.get(params.id);
-    const stats = projectStats(project, app.chats.get(params.id));
+    const stats = projectStats(project, { summary: app.chats.summary(params.id) });
     const live = app.sessions.live(params.id);
     const pending = app.inbox.list({ status: 'pending', projectId: params.id }).map((r) => ({ id: r.id, kind: r.kind, title: r.title, nodeId: r.nodeId, engine: r.engine, risk: r.risk, at: r.at }));
     const alerts = project.exists ? app.listAlerts('open').filter((a) => a.projectId === params.id).map((a) => ({ id: a.id, title: a.title })) : [];
@@ -69,7 +71,10 @@ export function buildDesktopHandlers(app) {
         stages: stages.map((s) => {
           const kids = wf.nodes.filter((n) => n.kind === 'agent' && n.parent === s.id);
           const who = kids.map((n) => { const a = agents.find((x) => x.id === n.id); return { title: n.title || n.id, state: a?.state || 'idle', detail: a?.detail || '' }; });
-          return { id: s.id, title: s.title, agents: kids.length, who, checkpoint: s.gate?.on ? (s.gate.by || 'you') : null, state: stateOf(kids.map((n) => n.id)) };
+          const activity = stateOf(kids.map((n) => n.id));
+          const evidence = app.progress?.read(params.id).stages.find((st) => st.id === s.id);
+          const state = ['working', 'waiting'].includes(activity) ? activity : evidence?.complete ? 'done' : 'idle';
+          return { id: s.id, title: s.title, agents: kids.length, who, checkpoint: s.gate?.on ? (s.gate.by || 'you') : null, state, verified: evidence?.complete === true, completedTasks: evidence?.done || 0, taskTotal: evidence?.total || 0 };
         }),
         agents: wf.nodes.filter((n) => n.kind === 'agent').length,
       };
@@ -89,33 +94,41 @@ export function buildDesktopHandlers(app) {
     const days = [7, 30, 90].includes(Number(query.get('days'))) ? Number(query.get('days')) : 30;
     const key = `${days}`;
     if (!usageCache.has(key) || Date.now() - usageCache.get(key).at > 5 * 60_000 || query.get('fresh') === '1') {
-      const chats = projects.list().map((p) => app.chats.get(p.id));
+      if (usagePending.has(key)) { await usagePending.get(key); return { ...usageCache.get(key).data, at: new Date(usageCache.get(key).at).toISOString() }; }
+      const job = (async () => {
+      const chats = app.chats.usageRecords();
       const data = await providerUsage({ claudeHome: config.claudeHome, codexHome: config.codexHome, chats, days });
       const home = folderKey(os.homedir());
       const nice = (k) => k.startsWith(home) ? k.slice(home.length).replace(/^-+(Desktop-+)?/, '') || '~' : k;
       data.claudeFolders = data.claudeFolders.map((f) => ({ ...f, name: nice(f.key) }));
       usageCache.set(key, { at: Date.now(), data });
+      })();
+      usagePending.set(key, job);
+      try { await job; } finally { usagePending.delete(key); }
     }
     return { ...usageCache.get(key).data, at: new Date(usageCache.get(key).at).toISOString() };
   }
 
   const chatFeed = createChatFeed({ claudeHome: config.claudeHome, chats: app.chats, chatKey: (...a) => app.sessions.chatKey(...a), workflowOf: (p) => app.workflows.head(p) });
-  const chatOf = (projectId, nodeId, size) => {
+  const chatOf = (projectId, nodeId, size, pinnedEngine = null, conversationId = null) => {
     let p;
     try { p = projects.get(projectId); } catch { return { threads: [], selected: null, messages: [], empty: 'No project yet.' }; }
-    return chatFeed.chatOf(p, { nodeId, size }).then((c) => ({ ...c, project: { id: p.id, name: p.name } }));
+    const selected = app.chats.selected(p.id, nodeId === 'main' ? null : String(nodeId || '').replace(/^node:/, ''));
+    const engine = pinnedEngine || selected?.engine || settings.get().overlayBar?.engine || settings.get().preferredEngine || null;
+    return chatFeed.chatOf(p, { nodeId, size, engine, conversationId }).then((c) => ({ ...c, model: selected?.engine === engine ? selected.model : null, reasoning: selected?.engine === engine ? selected.reasoning : null, project: { id: p.id, name: p.name } }));
   };
   const defaultProject = () => projects.list().find((p) => p.exists)?.id || null;
 
   // the status line tap works on your Claude Code settings; the test runner's Claude home is a temp folder
   const tapCtx = () => ({ claudeHome: config.claudeHome, dataDir: config.dataDir, appRoot: config.appRoot });
-  const permHookNow = () => {
-    const t = permHookState({ ...tapCtx(), port: config.port });
-    return { on: t.on, canSet: t.canSet, why: t.why || null, before: t.before ? redact(JSON.stringify(t.before, null, 2)) : null, after: t.after ? redact(JSON.stringify(t.after, null, 2)) : null };
+  const hookEngine = (engine = 'claude') => { if (!['claude', 'codex'].includes(engine)) throw badRequest('Choose claude or codex.'); return engine; };
+  const permHookNow = (engine = 'claude') => {
+    const t = permHookState({ ...tapCtx(), codexHome: config.codexHome, port: config.port, engine: hookEngine(engine) });
+    return { on: t.on, canSet: t.canSet, why: t.why || null, engine, trustRequired: Boolean(t.trustRequired), instructions: t.instructions || null, before: t.before ? redact(JSON.stringify(t.before, null, 2)) : null, after: t.after ? redact(JSON.stringify(t.after, null, 2)) : null };
   };
-  const limitsNow = () => {
+  const limitsNow = (engine = settings.get().overlayBar?.engine || settings.get().preferredEngine || 'claude') => {
     const t = tapState(tapCtx());
-    return { limits: app.limits?.get() || null, tap: { on: t.on, canTap: t.canTap, why: t.why || null, own: t.own ? redact(t.own) : null, before: t.before ? redact(JSON.stringify(t.before, null, 2)) : null, after: t.after ? redact(JSON.stringify(t.after, null, 2)) : null } };
+    return { engine, limits: app.limits?.get(engine) || null, tap: { on: t.on, canTap: engine === 'claude' && t.canTap, why: engine === 'claude' ? t.why || null : 'The status-line tap is for Claude only.', own: t.own ? redact(t.own) : null, before: t.before ? redact(JSON.stringify(t.before, null, 2)) : null, after: t.after ? redact(JSON.stringify(t.after, null, 2)) : null } };
   };
 
   return {
@@ -123,7 +136,9 @@ export function buildDesktopHandlers(app) {
     'widgets.chat': async ({ query }) => {
       const projectId = query.get('projectId') || defaultProject();
       if (!projectId) return { threads: [], selected: null, messages: [], empty: 'No project yet. Add a folder on Home.' };
-      return chatOf(projectId, query.get('nodeId') || 'main', query.get('size') === 'l' ? 'l' : 'm');
+      const pinned = query.get('engine') || null;
+      if (pinned && !app.engines.adapter(pinned)) throw badRequest('Unknown widget engine.');
+      return chatOf(projectId, query.get('nodeId') || 'main', query.get('size') === 'l' ? 'l' : 'm', pinned, query.get('conversationId') || null);
     },
     // Switch what one tile shows (its project, or which chat), from the board or a desktop widget.
     'widgets.pick': async ({ body }) => {
@@ -137,11 +152,19 @@ export function buildDesktopHandlers(app) {
         if (!projects.list().some((p) => p.id === id && p.exists)) throw badRequest('No such project.');
         t.projectId = id;
         if (t.kind === 'chat') delete t.nodeId; // another project: start from its main chat
+        delete t.conversationId;
       }
       if (body?.nodeId !== undefined) {
         if (t.kind !== 'chat') throw badRequest('Only the chat widget switches chats.');
         if (!NODE_RE.test(String(body.nodeId))) throw badRequest('No such chat.');
         t.nodeId = String(body.nodeId);
+        delete t.conversationId;
+      }
+      if (body?.engine !== undefined) { if (t.kind !== 'chat' || (body.engine && !app.engines.adapter(body.engine))) throw badRequest('Choose an available chat engine.'); if (body.engine) t.engine = body.engine; else delete t.engine; delete t.conversationId; }
+      if (body?.conversationId !== undefined) {
+        if (t.kind !== 'chat') throw badRequest('Only chat widgets can pin conversations.');
+        if (body.conversationId) { const engine = body.engine || t.engine; if (!engine) throw badRequest('Choose an engine before pinning.'); app.chats.read(app.sessions.chatKey(t.projectId || defaultProject(), t.nodeId?.startsWith('node:') ? t.nodeId.slice(5) : null, engine), body.conversationId, { limit: 1 }); t.conversationId = body.conversationId; }
+        else delete t.conversationId;
       }
       const next = tiles.slice();
       next[i] = t;
@@ -154,7 +177,25 @@ export function buildDesktopHandlers(app) {
     },
     'settings.save': async ({ body }) => {
       const patch = {};
+      if (body?.retention !== undefined) {
+        const r = body.retention;
+        if (!r || !Number.isInteger(r.generatedDays) || r.generatedDays < 1 || r.generatedDays > 365 || !Number.isInteger(r.generatedMaxMiB) || r.generatedMaxMiB < 1 || r.generatedMaxMiB > 5000) throw badRequest('Choose 1–365 days and 1–5,000 MiB for generated files.');
+        patch.retention = { generatedDays: r.generatedDays, generatedMaxMiB: r.generatedMaxMiB };
+      }
+      if (body?.achievements !== undefined) patch.achievements = body.achievements === true;
+      if (body?.preferredEngine !== undefined) {
+        if (!['claude', 'codex', 'gemini', 'copilot'].includes(body.preferredEngine)) throw badRequest('Unknown preferred engine.');
+        patch.preferredEngine = body.preferredEngine;
+      }
       if (body?.desktopAlerts !== undefined) patch.desktopAlerts = body.desktopAlerts === true;
+      if (body?.desktopNotifications !== undefined) {
+        const v = body.desktopNotifications;
+        if (!v || typeof v !== 'object') throw badRequest('Send notification preferences.');
+        const next = { ...(settings.get().desktopNotifications || {}) };
+        for (const key of ['done', 'update', 'quietHours']) if (v[key] !== undefined) next[key] = v[key] === true;
+        for (const key of ['start', 'end']) if (v[key] !== undefined) { if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(v[key])) throw badRequest('Quiet hours use HH:MM.'); next[key] = v[key]; }
+        patch.desktopNotifications = next;
+      }
       if (body?.desktopWidgets !== undefined) patch.desktopWidgets = body.desktopWidgets === true;
       if (body?.desktopAsks !== undefined) patch.desktopAsks = body.desktopAsks === true; // approvals and questions as cards on the desktop
       if (body?.widgetsLocked !== undefined) patch.widgetsLocked = body.widgetsLocked === true; // tiles cannot be dragged
@@ -171,7 +212,8 @@ export function buildDesktopHandlers(app) {
           if (KIND_SIZES[w.kind] && !KIND_SIZES[w.kind].includes(w.size)) throw badRequest(`A ${w.kind} widget comes in ${KIND_SIZES[w.kind].join(' or ')}.`);
           const projectId = typeof w.projectId === 'string' && /^[a-z0-9_-]{1,60}$/.test(w.projectId) ? w.projectId : null;
           const nodeId = w.kind === 'chat' && typeof w.nodeId === 'string' && NODE_RE.test(w.nodeId) ? w.nodeId : null;
-          return { kind: w.kind, size: w.size, projectId, ...(nodeId ? { nodeId } : {}), desktop: w.desktop !== false };
+          const engine = w.kind === 'chat' && app.engines.adapter(w.engine) ? w.engine : null;
+          return { kind: w.kind, size: w.size, projectId, ...(nodeId ? { nodeId } : {}), ...(engine ? { engine } : {}), ...(w.kind === 'chat' && /^[0-9a-f-]{36}$/i.test(w.conversationId || '') ? { conversationId: w.conversationId } : {}), desktop: w.desktop !== false };
         });
       }
       return { settings: await settings.set(patch) };
@@ -202,11 +244,12 @@ export function buildDesktopHandlers(app) {
     },
     'app.update.get': async ({ query }) => ({ version: appVersion(config.appRoot), update: query.get('check') === '1' ? await app.updates.check({ force: true }) : app.updates.last, check: settings.get().updates.check, autoRestart: settings.get().updates.autoRestart !== false }),
     'app.update.apply': async () => {
-      const r = await (app.overrides?.applyUpdate || applyUpdate)(config.appRoot);
+      if (app.busyCount()) throw badRequest('Finish running work and pending requests before updating.');
+      const r = await (app.overrides?.applyUpdate || applyUpdate)(config.appRoot, { dataDir: config.dataDir, busy: () => app.busyCount() > 0, fetchImpl: app.fetchImpl });
       if (!r.ok) throw badRequest(r.message);
       app.updates.last = null;
       // The launcher sees that the code on disk is newer than this server, stops it and starts the new one.
-      return { ...r, restarting: app.restartIntoNewCode() };
+      return { ...r, restarting: app.restartIntoNewCode(r.nextRoot) };
     },
     'desktop.status': ({ query }) => {
       const id = query.get('projectId');
@@ -221,10 +264,10 @@ export function buildDesktopHandlers(app) {
       if (kind === 'tile') {
         const t = body?.tile || {};
         if (!WIDGET_KINDS.includes(t.kind) || !['s', 'm', 'l'].includes(t.size)) throw badRequest('Say which tile (kind and size s, m or l).');
-        const url = `${base()}/widget.html?w=${t.kind}&size=${t.size}${project ? `&p=${encodeURIComponent(project.id)}` : ''}`;
-        return { opened: true, ...(await app.showWindow(`tile:${t.kind}:${t.size}${project ? `:${project.id}` : ''}`, url, { size: TILE_WINDOW[t.size] })) };
+        const url = `${base()}/widget.html?w=${t.kind}&size=${t.size}${project ? `&p=${encodeURIComponent(project.id)}` : ''}${t.engine && app.engines.adapter(t.engine) ? `&engine=${encodeURIComponent(t.engine)}` : ''}${typeof t.nodeId === 'string' && NODE_RE.test(t.nodeId) ? `&n=${encodeURIComponent(t.nodeId)}` : ''}${/^[0-9a-f-]{36}$/i.test(t.conversationId || '') ? `&conversation=${t.conversationId}` : ''}`;
+        return { opened: true, ...(await app.showWindow(tileWindowKey({ ...t, projectId: project?.id }), url, { size: TILE_WINDOW[t.size] })) };
       }
-      const hash = typeof body?.hash === 'string' && /^#\/[A-Za-z0-9_/-]{0,120}$/.test(body.hash) ? body.hash : project ? `#/projects/${encodeURIComponent(project.id)}/workflow` : '';
+      const hash = typeof body?.hash === 'string' && /^#\/[A-Za-z0-9_/-]{0,240}$/.test(body.hash) ? body.hash : project ? `#/projects/${encodeURIComponent(project.id)}/workflow` : '';
       if (kind === 'widget') {
         const url = `${base()}/widget.html${project ? `?p=${encodeURIComponent(project.id)}` : ''}`;
         return { opened: true, ...(await app.showWindow(project ? `widget:${project.id}` : 'board', url, { size: project ? WIDGET_SIZE : BOARD_SIZE, settle })) };
@@ -246,7 +289,7 @@ export function buildDesktopHandlers(app) {
       // the chat tiles' messages are read first (Claude Code conversations are files on this PC)
       const chats = new Map();
       for (const [i, t] of tiles.entries()) {
-        if (t.kind === 'chat' && t.desktop !== false) chats.set(i, await chatOf(t.projectId || recent[0]?.id, t.nodeId || 'main', t.size).catch((e) => ({ threads: [], messages: [], empty: `Could not read the chats: ${e.message}` })));
+        if (t.kind === 'chat' && t.desktop !== false) chats.set(i, await chatOf(t.projectId || recent[0]?.id, t.nodeId || 'main', t.size, t.engine, t.conversationId).catch((e) => ({ threads: [], messages: [], empty: `Could not read the chats: ${e.message}` })));
       }
       const stats = shown('overview') || shown('running') || shown('pulse') || tiles.some((t) => PROJECT_KINDS.includes(t.kind)) ? computeStats(app) : null;
       const pending = app.inbox.list({ status: 'pending' });
@@ -259,7 +302,7 @@ export function buildDesktopHandlers(app) {
         stats,
         mods: shown('mods') ? (() => { try { return allMods({ claudeHome: config.claudeHome, projects: projects.list() }); } catch { return []; } })() : null,
         asks: settings.get().desktopAsks !== false,
-        limits: app.limits?.get() || null,
+        limits: app.limits?.get(settings.get().overlayBar?.engine || settings.get().preferredEngine || 'claude') || null,
         pending,
         alerts: app.listAlerts('open'),
         notices: app.notices.list(20),
@@ -275,13 +318,18 @@ export function buildDesktopHandlers(app) {
       return { changed: app.notices.markRead(ids), ...app.notices.list(60) };
     },
     // Your plan's 5-hour and weekly use (as Claude Code last said it), and whether your terminal's status line feeds it.
-    'limits.get': () => limitsNow(),
+    'limits.get': async ({ query }) => {
+      const engine = query?.get('engine') || settings.get().overlayBar?.engine || settings.get().preferredEngine || 'claude';
+      if (query?.get('fresh') === '1') await app.limits.refresh(engine, app.engines.adapter(engine));
+      return limitsNow(engine);
+    },
     // Answering Claude Code's terminal requests on the desktop: the hook in your Claude Code settings, and its preview.
-    'permhook.get': () => permHookNow(),
+    'permhook.get': ({ query }) => permHookNow(query.get('engine') || 'claude'),
     'permhook.set': ({ body }) => {
       if (typeof body?.on !== 'boolean') throw badRequest('Say on: true or false.');
-      try { setPermHook(body.on, { ...tapCtx(), port: config.port }); } catch (e) { throw e.status === 400 ? badRequest(e.message) : e; }
-      return permHookNow();
+      const engine = hookEngine(body.engine || 'claude');
+      try { setPermHook(body.on, { ...tapCtx(), codexHome: config.codexHome, port: config.port, engine }); } catch (e) { throw e.status === 400 ? badRequest(e.message) : e; }
+      return permHookNow(engine);
     },
     // Turn the status line tap on or off: ~/.claude/settings.json is backed up first, your own command is kept and run.
     'limits.tap': ({ body }) => {

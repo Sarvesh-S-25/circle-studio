@@ -5,6 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
+import { checkRelease, applyRelease } from './release-update.mjs';
 
 const ENV = { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0', LC_ALL: 'C' };
 
@@ -37,11 +38,12 @@ export async function localState(appRoot) {
 }
 
 /** Compare with the remote, read only. */
-export async function checkUpdate(appRoot) {
+export async function checkUpdate(appRoot, options = {}) {
+  if (!fs.existsSync(path.join(appRoot, '.git')) && fs.existsSync(path.join(appRoot, 'release-manifest.json'))) return checkRelease(appRoot, options);
   const at = new Date().toISOString();
   const local = await localState(appRoot);
   const version = appVersion(appRoot);
-  if (local.mode === 'zip') return { at, version, mode: 'zip', available: null, canUpdate: false, reason: 'This copy was not cloned with git, so it cannot update itself. Download the newest copy and run "Install Circle Studio.cmd" again; your data folder carries over if you copy it across.' };
+  if (local.mode === 'zip') return { at, version, mode: 'zip', available: null, canUpdate: false, reason: fs.existsSync(path.join(appRoot, 'installation.json')) ? 'Installed release: download and extract a verified newer release, then run "Install for this user.cmd". Versions are kept separately; your shared data folder is preserved. Automatic release downloads are not configured.' : 'This source ZIP was not cloned with git. Download the newer copy, keep your data folder, and run "Install Circle Studio.cmd". Use CIRCLE_DATA for a stable data location across source folders.' };
   if (!local.remote) return { at, version, ...local, available: null, canUpdate: false, reason: `The branch "${local.branch}" does not follow a remote branch, so there is nothing to compare with.` };
   const ls = await git(appRoot, ['ls-remote', local.remote, `refs/heads/${local.remoteBranch}`]);
   if (!ls.ok) return { at, version, ...local, available: null, canUpdate: false, reason: `Could not reach ${local.url || local.remote}: ${ls.err.split('\n')[0] || 'no answer'}.` };
@@ -57,7 +59,8 @@ export async function checkUpdate(appRoot) {
 }
 
 /** Fast-forward to the remote. Returns { ok, from, to, message }. */
-export async function applyUpdate(appRoot) {
+export async function applyUpdate(appRoot, options = {}) {
+  if (!fs.existsSync(path.join(appRoot, '.git')) && fs.existsSync(path.join(appRoot, 'release-manifest.json'))) return applyRelease(appRoot, options);
   const c = await checkUpdate(appRoot);
   if (!c.available) return { ok: false, message: c.reason || 'Already up to date.' };
   if (!c.canUpdate) return { ok: false, message: c.reason };

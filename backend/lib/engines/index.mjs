@@ -15,6 +15,8 @@ export class Engines {
   constructor(adapters) {
     this.adapters = new Map(adapters.map((a) => [a.id, a]));
     this.cache = new Map();
+    this.catalogCache = new Map();
+    this.detecting = new Map();
   }
 
   adapter(id) { return this.adapters.get(id) || null; }
@@ -23,9 +25,19 @@ export class Engines {
   async #detect(a, force) {
     const hit = this.cache.get(a.id);
     if (!force && hit && Date.now() - hit.at < TTL_MS) return hit.info;
+    if (this.detecting.has(a.id)) return this.detecting.get(a.id);
+    const pending = this.#detectFresh(a).finally(() => this.detecting.delete(a.id));
+    this.detecting.set(a.id, pending);
+    return pending;
+  }
+
+  async #detectFresh(a) {
     let d;
     try { d = await a.detect(); } catch { d = { installed: false, version: null, loggedIn: null, loginHint: '' }; }
-    const info = { id: a.id, label: a.label, installed: d.installed === true, version: d.version ?? null, loggedIn: d.loggedIn ?? null, loginHint: d.loginHint || '', detail: d.detail || '', usable: d.installed === true && d.loggedIn !== false, capabilities: a.capabilities, models: a.models, notes: a.notes };
+    let catalog = [];
+    if (d.installed && d.loggedIn === true && a.catalog) { try { catalog = await a.catalog(); this.catalogCache.set(a.id, catalog); } catch { /* detection stays useful on older protocols */ } }
+    const capabilities = { ...a.capabilities, ...(a.capabilities?.liveEvidence ? { liveVerified: d.version === a.capabilities.liveEvidence.version } : {}) };
+    const info = { id: a.id, label: a.label, installed: d.installed === true, version: d.version ?? null, loggedIn: d.loggedIn ?? null, loginHint: d.loginHint || '', detail: d.detail || '', usable: d.installed === true && d.loggedIn !== false, capabilities, models: catalog.length ? catalog.map((m) => m.id) : a.models, modelCatalog: catalog, notes: a.notes };
     this.cache.set(a.id, { at: Date.now(), info });
     return info;
   }

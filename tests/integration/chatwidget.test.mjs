@@ -59,7 +59,7 @@ test('chat widget: main chat, agents\' chats, one at a time; switching saves jus
     assert.equal(tile.canPick, false, 'one project: nothing to switch to');
     assert.equal(tile.chat.selected, 'node:reviewer');
     assert.deepEqual(tile.chat.threads.filter((t) => t.on).map((t) => t.id), ['node:reviewer']);
-    assert.equal(tile.url, `#/projects/${id}/chat`);
+    assert.equal(tile.url, `#/projects/${id}/chat/claude/${s.app.chats.get(s.app.sessions.chatKey(id, 'reviewer', 'claude')).conversationId}/reviewer`);
     assert.equal(tile.chatWindow, id, 'a click on the desktop opens the chat window of the project, to reply there');
     const one = (await s.call('GET', `/api/widgets/chat?projectId=${id}&nodeId=node:reviewer`)).json;
     assert.equal(one.engine, one.threads.find((t) => t.id === 'node:reviewer').engine, 'the engine that answers is known');

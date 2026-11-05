@@ -94,7 +94,7 @@ export async function reviewChanges({ projectId, ops, title = 'Review changes', 
               c.button('apply').replaceWith(h('button', { class: 'cs-btn cs-btn--primary', type: 'button', onclick: () => c.close(result) }, 'Done'));
               c.el.querySelector('.cs-modal__foot .cs-btn')?.focus();
               const failed = result.commands.some((x) => !x.ok);
-              toast(failed ? 'Written, but a command failed. See the details.' : 'Changes written.', { kind: failed ? 'warn' : 'ok' });
+              toast(result.rolledBack ? 'The connection test failed. Previous files were restored.' : failed ? 'Written, but a command failed. See the details.' : 'Changes written.', { kind: result.rolledBack || failed ? 'warn' : 'ok' });
             } catch (e) {
               c.setBusy(false);
               c.button('apply').disabled = true;

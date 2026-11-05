@@ -7,6 +7,15 @@ run, change or ask, from a popup, the Inbox, a desktop notification or a small w
 
 Single user, this PC, `127.0.0.1` only. No account, no telemetry, **no API key**. Node.js built-ins only, no build step.
 
+**1.3.2:** Desktop polling runs asynchronously and keeps the last good tiles through temporary outages. Browser event
+connections detect stalled heartbeats after sleep and resync pending approvals. Shortcut launches recover server crashes
+with backoff; explicit Stop disables recovery. Codex terminal approval hooks are available in Settings (or
+`node scripts/circle.mjs hooks --engine codex --on`). Restart Codex and review/trust the hook through `/hooks` before use.
+Circle chats and independent terminal sessions use separate notification paths. Windows notification tests await actual submission. Native Codex approval/answer controls were checked on
+Windows with a dummy project. Terminal follows the displayed saved chat and reasoning choice; pending Codex copies
+receive their own provider thread, and failed sends retain a draft. A real Codex 0.164.0 CLI round trip passed.
+Full evidence and acceptance limits are in [connections.md](connections.md).
+
 ## Install
 
 You need **Windows 10 or 11**, **Node.js 24 or newer** ([nodejs.org](https://nodejs.org), the LTS button) and an
@@ -22,9 +31,10 @@ time it opens, **Let's begin** asks which you use, shows which are ready, and ru
 | Gemini (Google) | a Google account | Antigravity, from [antigravity.google](https://antigravity.google) | run `agy` once |
 | GitHub Copilot | a GitHub account with a Copilot plan | `npm install -g @github/copilot` | `copilot login` |
 
-Claude Code does the most here (the workflow helper, Find skills and the Advisor use it); agents and chats run on any of
-them. OpenClaw, Cursor and Aider cannot be driven: here every agent asks you before it runs a command or changes a
-file, and those tools have no way to ask first.
+Codex and Claude support structured advice for the workflow helper, Find skills, Advisor, catalog and connection advice.
+Choose a preferred engine in Settings. Circle relays the approval requests an engine raises; Codex's own policies can
+allow operations without an approval card. Supported protocol behavior and live verification are separate states.
+OpenClaw, Cursor and Aider are not driven by this app.
 
 **GitHub (optional).** Sign in through the GitHub CLI for private repositories, Actions and pull requests, and more
 searches when finding skills: `winget install --id GitHub.cli -e --source winget`, then
@@ -50,6 +60,22 @@ from the Desktop or Start menu; opening it again while it is open brings the sam
 
 Your data (projects list, templates, chats, Inbox, settings, the key vault) lives in the `data` folder next to the code.
 It is never uploaded and never part of git.
+
+For a packaged release, extract the release ZIP and run **Install for this user.cmd**. It verifies the manifest before
+staging a version in `%LOCALAPPDATA%\CircleStudio\app-<version>`; data stays in `%LOCALAPPDATA%\CircleStudio\data`.
+The Windows runtime package includes a checksum-verified Node binary and its license. Source checkouts keep their
+existing data location; `CIRCLE_DATA` overrides either mode. Local artifacts are unsigned until release signing is configured.
+Run `powershell -File scripts/install-package.ps1 -Repair` from a verified extracted package to restore damaged installed
+files and setup while preserving data. `-ActivateVersion <version>` verifies and activates an older retained version;
+keep a backup before using older code with newer data. Packaged copies check stable GitHub Releases and stage checksum-
+and manifest-verified downloads; an isolated candidate launch must pass before activation. Current artifacts are unsigned.
+
+This development build adds saved conversation archives, Codex history/model/account-limit discovery, a durable message
+queue with explicit restart recovery, Tasks & progress with review evidence and optional local achievements, and
+Settings → Storage & diagnostics with backup, isolated restore and previewed generated-file cleanup. See
+[connections.md](connections.md) for verified behavior and outstanding acceptance checks. `npm run demo` uses temporary
+folders and fake engines; `npm run package` builds a local Windows ZIP. Signing, publication and a clean-account
+installation test are separate release gates.
 
 ## Commands
 
@@ -80,8 +106,17 @@ npm run update       (or: git pull --ff-only, then open Circle Studio again: it 
 npm run doctor       shows whether an update is waiting
 ```
 
-A ZIP copy cannot update itself: download the new ZIP, unpack it over a new folder, copy your old `data` folder into
-it, and run the installer again.
+Runtime release ZIPs support staged updates with separate data and deferred activation while work is running. Legacy
+source ZIPs without a release manifest still need manual replacement with their data preserved. The per-user package
+registers repair/uninstall; removal retains data by default and requires a separate choice to remove it.
+
+Chat tiles can pin an exact saved conversation independently. Review handoff prepares an editable summary and a new
+draft without starting a model. Tasks retain typed review/test/file evidence; workflow versions can be pinned. Storage
+shows retention rules and previews generated-file cleanup; saved chats and pending approvals are excluded.
+
+For Circle-started Codex chats, Settings → Desktop offers completion notifications and a **Test Codex notification
+without a model call** button. Short runs notify too. A browser without notification permission permits Windows fallback;
+Windows may still suppress visual delivery. Separately running Codex terminals/apps are outside this notification path.
 
 ### Publishing a new version (for the maintainer)
 
@@ -105,7 +140,7 @@ Everyone who cloned sees **Update ready** within a day. Change `RELEASE` and `CH
 | Home | What needs you, what runs, and every project: workflow, git, your last conversation, 30 days of Claude use |
 | Mods | Your Claude Code mods (they change Claude Code itself: the chat's look, the prompt and context, how commands are checked) and plugins (skills, agents, commands, tools), sorted into For every project, Only this project and Off, with filters by what they change. Turn one on or off for one project (a reviewed diff of `.claude/settings.json`) or for every project (`claude plugin enable` or `disable --scope user`). Details shows what it brings and its context cost. Also a tab in each project |
 | Workflow | A graph: numbered stages on one line, agents on branch lines under their stage, the flow wrapping cleanly into the next row; hover or select a card and what it is linked to lights up; Tidy glides into place; a map in the corner for big teams. Helpers beside agents (a Haiku reader, when the agent decides or automatically above a context limit), and Patterns: ways to shape the team with their trade-offs, which fit your agents, Try on with Undo. The project's graph (the helper reads the folder, your building blocks and indexed pages before it proposes anything): Workflow (edit; drag from a card's dot to link, click a link to remove), Live, Versions. Checkpoints on the arrows. Workflow helper. Click "You" for the main session |
-| Chat | A real agent session in the project folder. Every command, edit and question asks you first. **Earlier conversations** lists your Claude Code conversations from the terminal in that folder: read them or continue them here |
+| Chat | A real agent session in the project folder. Circle shows requests raised by the selected engine; approval coverage depends on its policy and version. **Earlier conversations** lists saved Circle chats and supported provider history for reading or continuing. Codex CLI 0.163.0 has scoped live acceptance evidence in `docs/research/codex-2026-10-22.md`. |
 | Cost | Claude use for 30 days (by model, day and agent, at API prices), what loads before you type, each agent's model and price, and ways to spend less (apply a cheaper model, or let AI rearrange the workflow), all through a reviewed diff |
 | Health | What needs you now, in plain words; details underneath |
 | Let's begin | First run (and any time from the AI tools line in the menu): which AI tools you use, which are ready, the install and sign-in steps with a button that runs them |

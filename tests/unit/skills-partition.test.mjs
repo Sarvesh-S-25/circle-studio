@@ -17,8 +17,9 @@ function setup() {
 test('normalizePlacement: defaults, order, and what it refuses', () => {
   assert.deepEqual(normalizePlacement(), { partition: 'shared', engines: ALL });
   assert.deepEqual(normalizePlacement({ partition: 'gemini', engines: ['gemini', 'claude'] }), { partition: 'gemini', engines: ['claude', 'gemini'] });
-  assert.deepEqual(PARTITIONS, ['shared', 'claude', 'copilot', 'gemini']);
-  for (const bad of [{ partition: 'codex' }, { partition: 'x' }, { engines: ['gpt'] }, { engines: 'claude' }]) {
+  assert.deepEqual(PARTITIONS, ['shared', 'claude', 'codex', 'copilot', 'gemini']);
+  assert.equal(normalizePlacement({ partition: 'codex' }).partition, 'codex');
+  for (const bad of [{ partition: 'x' }, { engines: ['gpt'] }, { engines: 'claude' }]) {
     assert.throws(() => normalizePlacement(bad), (e) => e.code === 'bad_request', JSON.stringify(bad));
   }
 });
@@ -54,7 +55,7 @@ test('save keeps or changes the placement; a new skill starts shared', () => {
     assert.match(fs.readFileSync(`${library.dir}/one/SKILL.md`, 'utf8'), /New body/, 'a placement-only save leaves the file alone');
     assert.throws(() => library.save('one', undefined, {}), (e) => /Send skillMd/.test(e.message));
     assert.throws(() => library.save('brand-new', undefined, { partition: 'claude' }), (e) => /skillMd must be text/.test(e.message));
-    assert.throws(() => library.save('one', md('one'), { partition: 'codex' }), (e) => e.code === 'bad_request');
+    assert.throws(() => library.save('one', md('one'), { partition: 'unsupported' }), (e) => e.code === 'bad_request');
     assert.equal(library.get('one').partition, 'gemini');
   } finally { done(); }
 });

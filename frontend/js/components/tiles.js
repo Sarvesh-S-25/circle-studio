@@ -8,7 +8,7 @@ import { openRequest } from './requests.js';
 import { renderMarkdown } from '../markdown.js';
 
 export const KINDS = {
-  limits: { title: 'Limits', about: 'How much of your Claude plan\'s 5-hour window and week is used, and when each starts again.', sizes: ['s', 'm', 'l'] },
+  limits: { title: 'Limits', about: 'Account usage windows for the selected provider, with reset times and reading freshness.', sizes: ['s', 'm', 'l'] },
   pulse: { title: 'Activity ring', about: 'See at a glance which projects are working (the ring turns), waiting for you (amber) or just done.', sizes: ['s', 'm', 'l'] },
   status: { title: 'Agents', about: 'A ring per agent: working, waiting for you, done or idle.', sizes: ['s', 'm', 'l'], project: true },
   spend: { title: 'Spending', about: 'Use per provider over 30 days: Claude priced, Codex tokens, the others turns.', sizes: ['s', 'm', 'l'] },
@@ -81,7 +81,7 @@ const hhmm = (d) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit
 function limitsTile(tile, ctx) {
   if (!ctx.limits) return [head('Limits', 'clock'), h('p', { class: 'cs-tile__quiet' }, 'Loading...')];
   const l = ctx.limits.limits;
-  const windows = [['5 hours', l?.fiveHour, false], ['Week', l?.week, true]].filter(([, w]) => w);
+  const windows = l?.windows ? l.windows.map((w) => [w.label, w, w.durationMins >= 1440]) : [['5 hours', l?.fiveHour, false], ['Week', l?.week, true]].filter(([, w]) => w);
   if (!windows.length) {
     return [head('Limits', 'clock'), h('p', { class: 'cs-tile__quiet' }, ctx.limits?.tap?.on ? 'Shows after your next Claude answer, here or in your terminal.' : 'Shows after Claude answers here. For your terminal too, turn it on in Widgets.')];
   }
@@ -89,9 +89,10 @@ function limitsTile(tile, ctx) {
   const rows = windows.map(([label, w, long]) => {
     const reset = w.resetsAt ? new Date(w.resetsAt) : null;
     const over = reset && reset.getTime() <= now;
-    const pct = over ? 0 : w.pct;
+    const stale = over || (l.at && now - Date.parse(l.at) > 15 * 60_000);
+    const pct = stale ? null : w.pct;
     const when = !reset ? '' : long ? reset.toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : hhmm(reset);
-    return { label, pct, tone: over ? 'ok' : limTone(pct), value: over ? 'new' : `${pct}%`, resets: over ? `started again at ${when}` : when ? `resets ${when}` : '' };
+    return { label, pct, tone: stale ? 'warn' : limTone(pct), value: stale ? 'Refresh needed' : `${pct}%`, resets: over ? `reset passed at ${when}; awaiting reading` : when ? `resets ${when}` : '' };
   });
   const read = `Read ${hhmm(new Date(l.at))} ${l.source === 'terminal' ? 'from your terminal' : 'from a chat here'}`;
   if (tile.size === 's') {
@@ -246,13 +247,13 @@ function chatTile(tile, ctx) {
   const pick = projectPicker(tile, ctx);
   if (!c) return [head('Chat', 'chat', pick), notYet(tile, ctx)];
   // the title opens the chat (the whole conversation, to reply)
-  const top = h('div', { class: 'cs-tile__head' }, icon('chat', 's'), h('button', { class: 'cs-tile__titlebtn', type: 'button', title: 'Open this chat in Circle Studio', onclick: () => ctx.openApp(`#/projects/${c.project.id}/chat`) }, pick ? 'Chat' : c.project?.name || 'Chat', icon('external', 's')), h('span', { class: 'cs-grow' }), pick);
+  const top = h('div', { class: 'cs-tile__head' }, icon('chat', 's'), h('button', { class: 'cs-tile__titlebtn', type: 'button', title: 'Open this chat in Circle Studio', onclick: () => ctx.openApp(`#/projects/${c.project.id}/chat/${c.engine || 'claude'}/${c.conversationId || '_'}${c.selected?.startsWith('node:') ? `/${c.selected.slice(5)}` : ''}`) }, pick ? 'Chat' : c.project?.name || 'Chat', icon('external', 's')), h('span', { class: 'cs-grow' }), pick);
   if (!c.threads?.length && tile.size === 's') return [top, h('p', { class: 'cs-tile__quiet' }, c.empty || 'No chats in this project yet.')];
   if (tile.size === 's') {
     const last = c.messages?.at(-1);
     return [h('div', { class: 'cs-tile__head' }, icon('chat', 's'), h('span', { class: 'cs-tile__title' }, c.project?.name || 'Chat')),
       last ? h('p', { class: 'cs-tile__said cs-tile__said--s' }, h('strong', {}, `${last.who}: `), last.text) : h('p', { class: 'cs-tile__quiet' }, c.empty || 'Nothing said yet.'),
-      h('button', { class: 'cs-tile__cta', type: 'button', onclick: () => ctx.openApp(`#/projects/${c.project.id}/chat`) }, 'Reply')];
+      h('button', { class: 'cs-tile__cta', type: 'button', onclick: () => ctx.openApp(`#/projects/${c.project.id}/chat/${c.engine || 'claude'}/${c.conversationId || '_'}${c.selected?.startsWith('node:') ? `/${c.selected.slice(5)}` : ''}`) }, 'Reply')];
   }
   const threads = h('div', { class: 'cs-tile__threads', role: 'group', 'aria-label': 'Chats' }, (c.threads || []).map((t) => h('button', {
     class: 'cs-tile__thread', type: 'button', 'aria-pressed': String(t.id === c.selected), title: `${t.label}${t.lastAt ? ` · ${timeAgo(t.lastAt)}` : ''} · ${t.source}`,
@@ -266,7 +267,7 @@ function chatTile(tile, ctx) {
   const rows = shownMsgs.map((m) => {
     const same = prev === m.who;
     prev = m.who;
-    return h('li', { class: ['cs-tile__msg', m.mine && 'cs-tile__msg--mine', m.live && 'cs-tile__msg--live', same && 'cs-tile__msg--cont'] },
+    return h('li', { dataset: m.live ? { chatKey: liveKey(c) } : {}, class: ['cs-tile__msg', m.mine && 'cs-tile__msg--mine', m.live && 'cs-tile__msg--live', same && 'cs-tile__msg--cont'] },
       same ? null : h('span', { class: 'cs-tile__who' }, m.who, full && m.at ? h('span', { class: 'cs-tile__when' }, ` · ${timeAgo(m.at)}`) : null),
       full && m.md && !m.live ? h('div', { class: 'cs-tile__md' }, renderMarkdown(m.md)) : h('span', { class: 'cs-tile__said' }, m.text),
       full && m.md && m.tools?.length ? h('span', { class: 'cs-tile__tools' }, `Used ${m.tools.join(', ')}`) : null);
@@ -278,8 +279,8 @@ function chatTile(tile, ctx) {
   const onMain = (c.selected || 'main') === 'main';
   const earlierOpen = onMain && ctx.earlier?.get(c.project.id);
   // one chat only (no workflow agents): no chip to switch, so the messages get the room
-  return [top, c.threads?.length > 1 ? threads : null, onMain ? chatBar(tile, c, ctx) : null,
-    earlierOpen ? earlierList(c, ctx) : null,
+  return [top, c.threads?.length > 1 ? threads : null, onMain ? chatBar(tile, c, ctx) : null, c.conversationId ? h('button', { class: 'cs-tile__linkbtn', type: 'button', onclick: () => ctx.setConversation(tile, c.pinned ? null : c.conversationId, c.engine) }, c.pinned ? 'Unpin conversation' : 'Pin this conversation') : null,
+    earlierOpen ? earlierList(c, ctx, tile) : null,
     !earlierOpen && c.title && tile.size === 'l' ? h('div', { class: 'cs-tile__muted' }, c.title) : null,
     earlierOpen ? null : msgs, composer(tile, c, ctx)];
 }
@@ -299,13 +300,14 @@ function chatBar(tile, c, ctx) {
     if (open) { ctx.earlier.delete(pid); ctx.redraw(); return; }
     ctx.earlier.set(pid, { list: null, error: null });
     ctx.redraw();
-    try { ctx.earlier.get(pid).list = (await api.history(pid, '')).conversations || []; } catch (e) { if (ctx.earlier.has(pid)) ctx.earlier.get(pid).error = e.message; }
+    try { ctx.earlier.get(pid).list = (await api.history(pid, '', c.engine || 'claude')).conversations || []; } catch (e) { if (ctx.earlier.has(pid)) ctx.earlier.get(pid).error = e.message; }
     if (ctx.earlier.has(pid)) ctx.redraw();
   };
   const fresh = async () => {
     if (busy) return;
-    try { for (const engine of ['', 'codex', 'gemini', 'copilot']) await api.resetChat(pid, '', engine); } catch (e) { ctx.earlier.set(pid, { list: [], error: e.message }); ctx.redraw(); return; }
+    try { await api.resetChat(pid, '', c.engine || 'claude'); } catch (e) { ctx.earlier.set(pid, { list: [], error: e.message }); ctx.redraw(); return; }
     ctx.earlier.delete(pid);
+    if (c.pinned) await ctx.setConversation(tile, null, c.engine);
     await ctx.reload();
     document.querySelector('.cs-tile__input')?.focus({ preventScroll: true });
   };
@@ -320,15 +322,16 @@ function chatBar(tile, c, ctx) {
     h('button', { class: 'cs-tile__linkbtn', type: 'button', disabled: busy || undefined, title: 'Start a new chat. Earlier ones stay under Earlier chats.', onclick: fresh }, icon('plus', 's'), 'New chat'));
 }
 
-function earlierList(c, ctx) {
+function earlierList(c, ctx, tile) {
   const pid = c.project.id;
   const e = ctx.earlier.get(pid);
   if (e.error) return h('p', { class: 'cs-tile__quiet' }, e.error);
   if (!e.list) return h('p', { class: 'cs-tile__quiet' }, 'Reading the conversations in this folder...');
   if (!e.list.length) return h('p', { class: 'cs-tile__quiet' }, 'No conversations in this folder yet. Write below to start one.');
   const pickOne = async (conv) => {
-    try { await api.linkChat(pid, null, conv.id); } catch (err) { e.error = err.message; ctx.redraw(); return; }
+    try { await api.linkChat(pid, null, conv.id, { engine: c.engine, source: conv.source || '' }); } catch (err) { e.error = err.message; ctx.redraw(); return; }
     ctx.earlier.delete(pid);
+    if (c.pinned) await ctx.setConversation(tile, null, c.engine);
     await ctx.reload();
     document.querySelector('.cs-tile__input')?.focus({ preventScroll: true });
   };
@@ -340,7 +343,7 @@ function earlierList(c, ctx) {
 
 /* ---- replying from the tile: which engine answers, a one-line box, the answer as it comes ------------------------ */
 const ENGINE_NAME = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini', copilot: 'Copilot' };
-const liveKey = (c) => `${c.project.id}|${c.selected || 'main'}`;
+const liveKey = (c) => `${c.project.id}|${c.selected || 'main'}|${c.engine || 'claude'}|${c.conversationId || c.continueId || 'active'}`;
 
 function composer(tile, c, ctx) {
   if (!c.project) return null;
@@ -350,29 +353,30 @@ function composer(tile, c, ctx) {
   const nodeId = c.selected?.startsWith('node:') ? c.selected.slice(5) : null;
   const usable = (ctx.engines || []).filter((e) => e.usable);
   const prefKey = `chat-engine:${c.project.id}:main`;
-  let engine = nodeId ? c.engine || 'claude' : (ctx.enginePref(prefKey) || c.engine || 'claude');
-  if (!nodeId && usable.length && !usable.some((e) => e.id === engine)) engine = usable[0].id;
+  let engine = nodeId ? c.engine || 'claude' : (tile.engine || c.engine || ctx.enginePref(prefKey) || 'claude');
+  const unavailable = !usable.some((e) => e.id === engine);
   // carrying on a Claude Code conversation: Claude answers, it has that conversation
   const carry = !nodeId && c.continueId;
   if (carry) engine = 'claude';
-  const engineEl = nodeId || carry || usable.length < 2
+  const engineEl = nodeId || carry || (usable.length < 2 && !unavailable)
     ? h('span', { class: 'cs-tile__engine', title: nodeId ? 'This agent\'s engine, from the workflow' : 'The engine that answers' }, h('span', { class: ['cs-tile__enginedot', live && 'cs-tile__enginedot--on'], 'aria-hidden': 'true' }), ENGINE_NAME[engine] || engine)
-    : h('select', { class: 'cs-tile__engine cs-tile__engine--pick', 'aria-label': 'Engine that answers', disabled: Boolean(live) || undefined, onchange: (e) => { ctx.setEnginePref(prefKey, e.target.value); ctx.redraw(); } },
-      usable.map((e) => h('option', { value: e.id, selected: e.id === engine || undefined }, e.label)));
+    : h('select', { class: 'cs-tile__engine cs-tile__engine--pick', 'aria-label': 'Engine that answers', disabled: Boolean(live) || undefined, onchange: (e) => { ctx.setEnginePref(prefKey, e.target.value); ctx.setEngine(tile, e.target.value); } },
+      usable.map((e) => h('option', { value: e.id, selected: e.id === engine || undefined }, e.label)), unavailable ? h('option', { value: engine, selected: true, disabled: true }, `${ENGINE_NAME[engine] || engine} (unavailable)`) : null);
   const input = h('input', {
-    class: 'cs-tile__input', type: 'text', maxlength: '4000', autocomplete: 'off', value: ctx.drafts.get(key) || '',
+    class: 'cs-tile__input', type: 'text', maxlength: '4000', autocomplete: 'off', value: ctx.drafts.get(key) ?? pref(`widget-draft:${key}`, ''),
     placeholder: live ? `${ENGINE_NAME[engine] || engine} is working…` : `Message ${nodeId ? c.threads.find((t) => t.id === c.selected)?.label || 'the agent' : ENGINE_NAME[engine] || engine}`,
-    'aria-label': 'Your message', disabled: Boolean(live) || undefined,
-    oninput: (e) => ctx.drafts.set(key, e.target.value),
+    'aria-label': unavailable ? `${ENGINE_NAME[engine] || engine} is unavailable; open Settings to sign in` : 'Your message', disabled: Boolean(live) || unavailable || undefined,
+    oninput: (e) => { ctx.drafts.set(key, e.target.value); setPref(`widget-draft:${key}`, e.target.value); },
     onkeydown: (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); go(); } },
   });
   const go = async () => {
     const text = input.value.trim();
-    if (!text || live) return;
+    if (!text || live || unavailable) return;
     ctx.drafts.delete(key);
+    setPref(`widget-draft:${key}`, '');
     // the conversation shown is one from the terminal or an IDE: take it up first, so the reply carries it on
     if (carry) { try { await api.linkChat(c.project.id, null, c.continueId); } catch { /* the send says what is wrong */ } }
-    ctx.sendChat({ key, projectId: c.project.id, nodeId, engine, text });
+    ctx.sendChat({ key, projectId: c.project.id, nodeId, engine, model: c.model, reasoning: c.reasoning, conversationId: c.conversationId, text });
   };
   return h('div', { class: 'cs-tile__compose' }, engineEl, input,
     live
@@ -524,17 +528,22 @@ export function createTileData({ openApp }) {
     /** True while you type in a chat tile or a reply is on its way: a timed refresh then waits, so nothing jumps. */
     holding: () => ctx.live.size > 0 || Boolean(ctx.earlier?.size) || Boolean(document.activeElement?.closest?.('.cs-tile__compose')),
     /** Send from a chat tile: the same /api/chat as the Chat tab, so approvals and questions pop up as usual. */
-    async sendChat({ key, projectId, nodeId, engine, text }) {
+    async sendChat({ key, projectId, nodeId, engine, model, reasoning, conversationId, text }) {
       const live = { you: text, text: '', engine, error: null, abort: new AbortController() };
       ctx.live.set(key, live);
       ctx.redraw();
-      const said = () => document.querySelectorAll('.cs-tile__msg--live .cs-tile__said').forEach((el) => { el.textContent = live.text || '…'; });
+      const said = () => document.querySelectorAll('.cs-tile__msg--live .cs-tile__said').forEach((el) => { if (el.closest('[data-chat-key]')?.dataset.chatKey !== key) return; el.textContent = live.text || '…'; });
       try {
         // the model you picked for this engine in the Chat tab, if any
-        await api.chat({ projectId, nodeId: nodeId || undefined, engine, model: pref(`chat-model:${engine}`, '') || undefined, message: text }, (name, d) => {
+        await api.chat({ projectId, nodeId: nodeId || undefined, engine, model: model || pref(`chat-model:${engine}`, '') || undefined, reasoning: reasoning || undefined, conversationId: conversationId || undefined, message: text }, (name, d) => {
           if (name === 'text') { live.text += d.delta || ''; said(); } else if (name === 'error') live.error = d.message;
         }, live.abort.signal);
-      } catch (e) { live.error = e.message; }
+      } catch (e) {
+        if (e.code === 'busy') {
+          try { await api.queueChat({ projectId, nodeId: nodeId || null, engine, model: model || pref(`chat-model:${engine}`, '') || undefined, reasoning: reasoning || undefined, conversationId: conversationId || undefined, message: text, clientId: crypto.randomUUID() }); live.text = 'Queued for this conversation. It remains available in Chat if this widget closes.'; }
+          catch (error) { live.error = error.message; }
+        } else live.error = e.message;
+      }
       if (live.error) { ctx.redraw(); await new Promise((r) => setTimeout(r, 4000)); }
       ctx.live.delete(key);
       await ctx.reload();
@@ -549,6 +558,8 @@ export function createTileData({ openApp }) {
     nameOf: (id) => state.projects.find((p) => p.id === id)?.name || id,
     openApp,
     setProject: () => {},
+    setEngine: () => {},
+    setConversation: () => {},
     setNode: () => {},
     redraw: () => {},
     /** Mark some notices read (ids), or all (null), then draw again. */
@@ -560,7 +571,12 @@ export function createTileData({ openApp }) {
       const ids = new Set(tiles.filter((t) => KINDS[t.kind]?.project && t.kind !== 'chat').map((t) => t.projectId || ctx.defaultProject()).filter(Boolean));
       const jobs = [api.stats().then((s) => { ctx.stats = s; }).catch(() => {})];
       for (const id of ids) jobs.push(api.pulse(id).then((p) => pulses.set(id, p)).catch(() => {}));
-      for (const t of tiles.filter((x) => x.kind === 'chat')) jobs.push(api.widgetChat(t.projectId || ctx.defaultProject(), t.nodeId || 'main', t.size).then((c) => chats.set(t, c)).catch(() => {}));
+      const chatJobs = new Map();
+      for (const t of tiles.filter((x) => x.kind === 'chat')) {
+        const key = [t.projectId || ctx.defaultProject(), t.nodeId || 'main', t.size, t.engine || '', t.conversationId || ''].join('|');
+        if (!chatJobs.has(key)) chatJobs.set(key, api.widgetChat(t.projectId || ctx.defaultProject(), t.nodeId || 'main', t.size, t.engine || '', t.conversationId || ''));
+        jobs.push(chatJobs.get(key).then((c) => chats.set(t, c)).catch(() => {}));
+      }
       if (!ctx.engines && tiles.some((t) => t.kind === 'chat')) jobs.push(api.engines().then((r) => { ctx.engines = r.engines; }).catch(() => {}));
       if (tiles.some((t) => t.kind === 'limits')) jobs.push(api.limits().then((l) => { ctx.limits = l; }).catch(() => {}));
       if (tiles.some((t) => t.kind === 'mods')) jobs.push(api.mods('').then((r) => { ctx.mods = r.mods; }).catch(() => {}));

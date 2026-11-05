@@ -66,7 +66,7 @@ export function listAdrs(root) {
 
 /* ---- board (2.10) -------------------------------------------------------------------------------- */
 
-export function readBoard(root) {
+export function readBoard(root, { limit = 8 } = {}) {
   const text = readProjectText(root, P.board);
   if (text == null) return { exists: false, rows: [], dropped: [], nextId: 'TX-001', open: 0 };
   const rows = [];
@@ -80,8 +80,10 @@ export function readBoard(root) {
   const max = [...rows, ...dropped].reduce((m, r) => Math.max(m, Number(/\d+/.exec(r.id)?.[0] || 0)), 0);
   return {
     exists: true,
-    rows: rows.slice(0, 8),
+    rows: rows.slice(0, Math.min(2000, limit)),
     total: rows.length,
+    done: rows.filter((r) => /^(done|closed)\b/i.test(r.status)).length,
+    cancelled: rows.filter((r) => /^(cancelled|superseded)\b/i.test(r.status)).length,
     dropped,
     nextId: `TX-${String(max + 1).padStart(3, '0')}`,
     open: rows.filter((r) => !/^(done|closed|cancelled|superseded)/i.test(r.status)).length,
@@ -136,6 +138,11 @@ export async function computeHealth(root, { projectId } = {}) {
   const items = [];
   const add = (i) => items.push(i);
   const team = inspectTeam(root);
+
+  const codexInstructions = readProjectText(root, 'AGENTS.md');
+  if (codexInstructions != null) add({ id: 'codex-instructions', group: 'fine', severity: 'ok', title: 'Shared agent instructions are available', detail: 'AGENTS.md can be read by Codex. Claude agent files and models.json are optional unless this folder uses that team format.' });
+  const codexConfig = readProjectText(root, '.codex/config.toml');
+  if (codexConfig != null) add({ id: 'codex-config', group: scanSecrets(codexConfig).length ? 'now' : 'fine', severity: scanSecrets(codexConfig).length ? 'danger' : 'info', title: scanSecrets(codexConfig).length ? 'A possible key is written in Codex project configuration' : 'Codex project configuration is present', detail: 'Presence does not prove the CLI trusts or loads this file. Check effective settings in Codex before relying on its connections.' });
 
   // work paused (freeze.json, improvement.md 2.5)
   const freeze = describeFreeze(readProjectText(root, P.freeze));
@@ -231,7 +238,7 @@ export async function computeHealth(root, { projectId } = {}) {
     add({ id: 'board', group: 'look', severity: 'warn', title: `${plural(board.dropped.length, 'task')} ${board.dropped.length === 1 ? 'is' : 'are'} invisible on the team's dashboard`, detail: 'A "|" inside the text broke the row. The team never sees it.', tech: `${board.dropped.map((d) => `${d.id} has ${d.cells} cells`).join('; ')}. The dashboard needs exactly six; write "\\|" for a pipe.` });
   } else if (board.exists) add({ id: 'board', group: 'fine', severity: 'info', title: `${plural(board.open, 'open task')} on the board`, detail: `${plural(board.total ?? 0, 'task')} in docs/tasks/BOARD.md.` });
 
-  if (!team.files.brief) add({ id: 'brief', group: 'look', severity: 'info', title: 'The team has no brief to read', detail: 'Write it from the Workflow tab; it goes into docs/brief.md after you see the diff.', link: projectId ? { label: 'Open the Workflow tab', href: `#/projects/${projectId}/workflow` } : undefined });
+  if (!team.files.brief && !codexInstructions) add({ id: 'brief', group: 'look', severity: 'info', title: 'The team has no brief to read', detail: 'Write it from the Workflow tab; it goes into docs/brief.md after you see the diff.', link: projectId ? { label: 'Open the Workflow tab', href: `#/projects/${projectId}/workflow` } : undefined });
   for (const p of team.problems) add({ id: 'problem', group: 'look', severity: 'warn', title: `${p.file} could not be read`, detail: 'The team may ignore this file until it is fixed by hand.', tech: p.message });
 
   const order = { now: 0, look: 1, fine: 2 };

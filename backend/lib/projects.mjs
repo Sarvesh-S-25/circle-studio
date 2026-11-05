@@ -11,8 +11,9 @@ const FILE = 'registry.json';
 /** What the human allowed Circle Studio to do in a project folder. Reading is implied by adding it. */
 // write, run, claude: what Circle Studio may do there. autoEdits, autoReadsOutside: what an agent may do without
 // asking (an edit inside the folder; reading a file outside it). Off unless you turn them on.
-export const PERMISSION_KEYS = ['write', 'run', 'claude', 'autoEdits', 'autoReadsOutside'];
-export const normalizePermissions = (p) => Object.fromEntries(PERMISSION_KEYS.map((k) => [k, p?.[k] === true]));
+export const PERMISSION_KEYS = ['write', 'run', 'engine', 'claude', 'autoEdits', 'autoReadsOutside'];
+// `claude` remains a compatibility alias for older clients and registries; `engine` is canonical when supplied.
+export const normalizePermissions = (p) => Object.fromEntries(PERMISSION_KEYS.map((k) => [k, ['engine', 'claude'].includes(k) ? (p?.engine ?? p?.claude) === true : p?.[k] === true]));
 
 function slugId(name) {
   const s = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 30);
@@ -64,7 +65,7 @@ export class Projects {
   resolve(id, { write = false, need } = {}) {
     const p = this.get(id);
     if (!p.exists) throw notFound(`The folder for "${p.name}" no longer exists: ${p.path}`);
-    const label = { write: 'change files in', claude: 'send text to an engine from' };
+    const label = { write: 'change files in', engine: 'send text to an engine from', claude: 'send text to an engine from' };
     for (const k of [write ? 'write' : null, need].filter(Boolean)) {
       if (!p.permissions[k]) throw forbidden(`You have not allowed Circle Studio to ${label[k] || k} "${p.name}". Turn it on under Permissions.`, { permission: k });
     }

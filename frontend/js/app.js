@@ -14,6 +14,7 @@ import { initWindowDrop } from './components/dnd.js';
 import { toast, modalOpen } from './components/overlay.js';
 
 const VIEWS = {
+  maintenance: () => import('./views/maintenance.js'),
   home: () => import('./views/home.js'),
   project: () => import('./views/project.js'),
   library: () => import('./views/library.js'),
@@ -27,12 +28,13 @@ const VIEWS = {
   mods: () => import('./views/mods.js'),
 };
 
-const TABS = ['workflow', 'team', 'skills', 'connections', 'mods', 'health', 'cost', 'chat'];
+const TABS = ['workflow', 'team', 'skills', 'connections', 'mods', 'health', 'cost', 'chat', 'progress'];
 
 function parseRoute(hash) {
   const parts = (hash || '#/').replace(/^#\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
   if (!parts.length) return { view: 'home', params: {} };
-  if (parts[0] === 'projects' && parts[1]) return { view: 'project', params: { id: parts[1], tab: TABS.includes(parts[2]) ? parts[2] : 'workflow' } };
+  if (parts[0] === 'maintenance') return { view: 'maintenance', params: {} };
+  if (parts[0] === 'projects' && parts[1]) return { view: 'project', params: { id: parts[1], tab: TABS.includes(parts[2]) ? parts[2] : 'workflow', chatEngine: ['claude', 'codex', 'copilot', 'gemini'].includes(parts[3]) ? parts[3] : null, conversationId: /^[0-9a-f-]{36}$/i.test(parts[4] || '') ? parts[4] : null, chatNode: /^[A-Za-z0-9_-]{1,60}$/.test(parts[5] || '') ? parts[5] : null } };
   if (parts[0] === 'library' && parts[1]) return { view: 'skill', params: { name: parts[1] } };
   if (parts[0] === 'library') return { view: 'library', params: {} };
   if (parts[0] === 'import') return { view: 'library', params: { importOpen: true } };

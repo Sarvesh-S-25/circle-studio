@@ -2,6 +2,19 @@
   "_comment": "The shared contract between frontend/ and backend/. Every HTTP route the backend serves under /api is listed here and nothing else; every request the frontend builds targets one of these. tests/contract/routes.test.mjs enforces both directions and fails closed on any path it cannot read as a literal.",
   "version": 1,
   "routes": [
+    { "id": "system.notifications.test", "method": "POST", "path": "/api/system/notifications/test", "doc": "Request one clearly labeled dummy native notification without starting a model turn; reports submission rather than claiming OS delivery." },
+    { "id": "chat.queue.get", "method": "GET", "path": "/api/chat/queue", "doc": "Durable queued messages for a project chat slot; targets are captured at submission." },
+    { "id": "chat.queue.save", "method": "POST", "path": "/api/chat/queue", "doc": "Enqueue a message with an idempotency key, or edit/cancel/resume one before it starts." },
+    { "id": "system.diagnostics", "method": "GET", "path": "/api/system/diagnostics", "doc": "Local Node process memory and work counters; no telemetry." },
+    { "id": "storage.get", "method": "GET", "path": "/api/storage", "doc": "Circle-owned data sizes by category; excludes provider histories." },
+    { "id": "storage.reindex", "method": "POST", "path": "/api/storage/reindex", "doc": "Rebuild derived saved-conversation indexes without changing transcripts or selections; only while no run/request is active." },
+    { "id": "storage.backup", "method": "POST", "path": "/api/storage/backup", "doc": "Export local records with checksums, excluding credentials and vault keys." },
+    { "id": "storage.download", "method": "GET", "path": "/api/storage/download/:token", "doc": "Download a prepared, expiring backup as a same-origin JSON attachment. No credential records are included." },
+    { "id": "storage.cleanup", "method": "POST", "path": "/api/storage/cleanup", "doc": "Preview generated files older than seven days, then delete only the unchanged previewed cache, log and chat-view files." },
+    { "id": "projects.chat.select", "method": "POST", "path": "/api/projects/:id/chat/select", "doc": "Persist the selected provider and model for this project/node, without starting a turn." },
+    { "id": "storage.restore", "method": "POST", "path": "/api/storage/restore", "doc": "Preview a backup, then restore and verify into an isolated data folder." },
+    { "id": "projects.progress.get", "method": "GET", "path": "/api/projects/:id/progress", "doc": "Tasks, acceptance evidence, stage completion and optional local achievements." },
+    { "id": "projects.progress.save", "method": "POST", "path": "/api/projects/:id/progress", "doc": "Create or update a local task; completion requires review and evidence." },
     {
       "id": "app.code",
       "method": "GET",
@@ -570,13 +583,13 @@
       "id": "permhook.get",
       "method": "GET",
       "path": "/api/permhook",
-      "doc": "Whether Claude Code sessions in terminals and editors ask on the desktop cards (the PermissionRequest hook), with the change it makes."
+      "doc": "Terminal PermissionRequest hook status and preview. Optional engine=claude|codex (default claude). Codex returns trustRequired and instructions."
     },
     {
       "id": "permhook.set",
       "method": "POST",
       "path": "/api/permhook",
-      "doc": "Turn it on or off: {on}. Backs up ~/.claude/settings.json; other hooks stay."
+      "doc": "Turn terminal approvals on or off: {on, engine?}. Backs up Claude settings.json or Codex hooks.json, preserving other hooks. New Codex hooks require review/trust through /hooks."
     },
     {
       "id": "limits.get",

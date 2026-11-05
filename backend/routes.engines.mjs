@@ -13,6 +13,7 @@ import { searchHelp, guidePrompt, guideFolder, askEngine } from './lib/guide.mjs
 import { quickAttention } from './lib/health.mjs';
 import { SETUP, openSetupTerminal } from './lib/engines/setup.mjs';
 import { ghStatus, ghSignOut } from './lib/ghcli.mjs';
+import { notificationAllowed } from './lib/notices.mjs';
 
 const withSetup = (e) => ({ ...e, setup: SETUP[e.id] || null });
 
@@ -57,11 +58,14 @@ export function buildEngineHandlers(app) {
       if (!STATUS.has(status)) throw badRequest('status must be pending, all, allowed, denied, answered, expired or auto-denied.');
       const projectId = query.get('projectId') || undefined;
       if (projectId) projects.get(projectId);
+      if (query.get('archived') === '1') { if (!projectId) throw badRequest('Choose a project to read its archived audit.'); return inbox.archivePage(projectId, query.get('cursor')); }
       return { requests: inbox.list({ status, projectId }) };
     },
     'requests.respond': ({ params, body }) => ({ request: sessions.respond(params.id, body) }),
     // From the hook: a Claude Code session outside Circle Studio asks to use a tool (or asks a question).
     'hooks.permission': ({ body }) => {
+      const engine = body?.engine || 'claude';
+      if (!['claude', 'codex'].includes(engine)) throw badRequest('Terminal hooks support claude or codex.');
       const tool = str(body?.tool_name, 'tool_name', 80);
       const folder = str(body?.cwd, 'cwd', 1000);
       if (!path.isAbsolute(folder)) throw badRequest('cwd must be a full path.');
@@ -69,7 +73,7 @@ export function buildEngineHandlers(app) {
       const sessionId = typeof body?.session_id === 'string' && /^[0-9a-f-]{8,64}$/i.test(body.session_id) ? body.session_id : null;
       // the project it belongs to, when it is one of yours; else it is kept apart, under the folder's name
       const p = projects.list().filter((x) => x.exists && inside(folder, x.path)).sort((a, b) => b.path.length - a.path.length)[0];
-      const { rec, done } = sessions.externalRequest({ projectId: p ? p.id : '_terminal', folder, tool, input, sessionId });
+      const { rec, done } = sessions.externalRequest({ projectId: p ? p.id : '_terminal', folder, tool, input, sessionId, engine });
       const o = { done, result: null, seen: Date.now() };
       done.then((r) => { o.result = r; });
       outside.set(rec.id, o);
@@ -97,19 +101,23 @@ export function buildEngineHandlers(app) {
     'events.stream': async ({ query, sse, signal }) => {
       const stream = sse();
       app.viewers.count++; // an open window: it shows its own popups, so the server does not notify Windows
+      const canNotify = !['denied', 'default', 'unsupported'].includes(query.get('notifications'));
+      if (canNotify) app.viewers.notifiers++;
       // what the window shows, so opening it again brings this one forward instead of a second window
       const key = query.get('window');
-      const forget = key && /^[a-z]+(:[A-Za-z0-9_-]{0,60}){0,3}$/.test(key) ? app.addWindow(key, (name, data) => stream.send(name, data)) : () => {};
+      stream.send('sync', { requests: inbox.list({ status: 'pending' }).reverse() });
+      const forget = key && /^[a-z]+(:[A-Za-z0-9_-]{0,180}){0,4}$/.test(key) ? app.addWindow(key, (name, data) => stream.send(name, data)) : () => {};
       // a request a desktop card already shows carries carded: the window then shows no Windows notification of its own
       const tag = (name, data) => (name === 'request' ? { ...data, carded: Boolean(app.carded?.()) } : data);
       for (const r of inbox.list({ status: 'pending' }).reverse()) stream.send('request', tag('request', r));
       const off = sessions.subscribe((name, data) => stream.send(name, tag(name, data)));
-      const offNotice = app.notices ? app.notices.subscribe((n) => stream.send('notice', n)) : () => {};
+      const offNotice = app.notices ? app.notices.subscribe((n) => stream.send('notice', { ...n, notify: !n.eventId?.startsWith('test:') && app.settings.get().desktopAlerts !== false && notificationAllowed(app.settings.get(), n.kind), carded: n.kind === 'done' && Boolean(app.carded?.()) })) : () => {};
       await new Promise((resolve) => { if (signal.aborted) resolve(); else signal.addEventListener('abort', resolve, { once: true }); });
       off();
       offNotice();
       forget();
       app.viewers.count = Math.max(0, app.viewers.count - 1);
+      if (canNotify) app.viewers.notifiers = Math.max(0, app.viewers.notifiers - 1);
       stream.end();
     },
 
@@ -124,11 +132,12 @@ export function buildEngineHandlers(app) {
       if (!ENGINE_IDS.includes(engineId)) throw badRequest(`engine must be one of ${ENGINE_IDS.join(', ')}.`);
       const nodeId = body?.nodeId === undefined || body.nodeId === null ? null : body.nodeId;
       if (nodeId !== null && !(typeof nodeId === 'string' && NAME_RE.test(nodeId))) throw badRequest('nodeId is not valid.');
-      const model = typeof body?.model === 'string' && /^[A-Za-z0-9._:-]{1,60}$/.test(body.model) ? body.model : undefined;
+      const model = typeof body?.model === 'string' && /^[A-Za-z0-9._:-]{1,100}$/.test(body.model) ? body.model : undefined;
+      if (body?.model && model === undefined) throw badRequest('Choose a valid model identifier.');
       await sessions.preflight({ projectId, nodeId, engineId });
       const stream = sse();
       try {
-        await sessions.runTurn({ projectId, nodeId, engineId, model, message, newSession: body?.newSession === true, emit: (name, data) => stream.send(name, data) });
+        await sessions.runTurn({ projectId, nodeId, engineId, model, reasoning: body?.reasoning, conversationId: body?.conversationId, message, newSession: body?.newSession === true, emit: (name, data) => stream.send(name, data) });
       } catch (e) {
         stream.send('error', { code: e.code || 'internal', message: redact(String(e.message || e)).slice(0, 400) });
       }
@@ -146,7 +155,7 @@ export function buildEngineHandlers(app) {
       const topics = searchHelp(message).map(({ id, title, text, href }) => ({ id, title, text, href }));
       if (body?.engine === 'none') return { topics, reply: null, engine: null };
       const list = await engines.list();
-      const order = [body?.engine, 'claude', 'codex', 'copilot', 'gemini'].filter((x) => typeof x === 'string');
+      const order = [body?.engine, app.settings.get().preferredEngine, 'claude', 'codex', 'copilot', 'gemini'].filter((x) => typeof x === 'string');
       const pick = order.map((id) => list.find((e) => e.id === id && e.usable)).find(Boolean);
       if (!pick) return { topics, reply: null, engine: null, note: 'No engine is signed in, so only the built-in help answers. Settings shows how to sign in.' };
       const projectsNow = projects.list().filter((p) => p.exists).slice(0, 8);
@@ -170,7 +179,7 @@ export function buildEngineHandlers(app) {
         text = str(src.text, 'text', 400 * 1024);
         if (Buffer.byteLength(text) > 400 * 1024) throw tooLarge('The text is larger than 400 KB.');
       } else if (src.type === 'project') {
-        const p = projects.resolve(str(src.projectId, 'projectId', 60), { need: 'claude' });
+        const p = projects.resolve(str(src.projectId, 'projectId', 60), { need: 'engine' });
         root = p.root;
         const rel = toPosix(str(src.path, 'path', 500));
         if (isSensitiveName(rel)) throw forbidden('That file may hold secrets and is not sent.');
@@ -192,9 +201,8 @@ export function buildEngineHandlers(app) {
         throw badRequest(`This file contains ${found.length} thing${found.length === 1 ? '' : 's'} that look like secrets. Nothing was sent.`, { secrets: found.slice(0, 20).map((f) => ({ kind: f.kind, line: f.line, preview: f.preview })) });
       }
       if (found.length) text = redact(text);
-      const model = MODELS.includes(body?.model) ? body.model : undefined;
-      await claude.requireReady();
-      const r = await claude.advise({ key: 'advisor', prompt: advisorPrompt(name, text), model, root });
+      const model = typeof body?.model === 'string' && /^[A-Za-z0-9._:-]{1,100}$/.test(body.model) ? body.model : undefined;
+      const r = await app.advice.run({ key: 'advisor', engine: body?.engine, prompt: advisorPrompt(name, text), model, root });
       const d = r.data;
       return {
         file: { name, bytes: Buffer.byteLength(text), masked: found.length },

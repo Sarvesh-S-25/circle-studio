@@ -63,7 +63,7 @@ export function activityStats(root, now = Date.now()) {
 
 export function projectStats(project, chat, now = Date.now()) {
   const base = { id: project.id, name: project.name, path: project.path, exists: project.exists, permissions: project.permissions, isTeamProject: project.isTeamProject, lastOpenedAt: project.lastOpenedAt };
-  const chatStats = {
+  const chatStats = chat.summary || {
     messages: chat.messages.length,
     costUsd: chat.messages.reduce((n, m) => n + (typeof m.costUsd === 'number' ? m.costUsd : 0), 0),
     lastAt: chat.messages.length ? chat.messages[chat.messages.length - 1].at : null,
@@ -86,7 +86,7 @@ export function projectStats(project, chat, now = Date.now()) {
     tiers,
     mains,
     adr: { accepted: adrs.filter((a) => a.status === 'accepted').length, proposed: adrs.filter((a) => a.status === 'proposed').length, other: adrs.filter((a) => !['accepted', 'proposed'].includes(a.status)).length },
-    board: { open: board.open, total: board.total ?? 0, done: Math.max(0, (board.total ?? 0) - board.open) },
+    board: { open: board.open, total: board.total ?? 0, done: board.done || 0, cancelled: board.cancelled || 0 },
     frozen: freeze.frozen,
     activity: activityStats(project.path, now),
     chat: chatStats,
@@ -95,7 +95,7 @@ export function projectStats(project, chat, now = Date.now()) {
 }
 
 export function computeStats(app, now = Date.now()) {
-  const projects = app.projects.list().map((p) => projectStats(p, app.chats.get(p.id), now));
+  const projects = app.projects.list().map((p) => projectStats(p, { summary: app.chats.summary(p.id) }, now));
   const names = new Map(projects.map((p) => [p.id, p.name]));
   const running = [
     ...app.sessions.active().map((r) => ({ source: 'circle', kind: r.kind, projectId: r.projectId, name: r.projectId ? names.get(r.projectId) || r.projectId : 'Advisor', startedAt: r.startedAt })),

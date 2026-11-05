@@ -4,6 +4,11 @@ rem Nothing needs administrator rights and nothing is downloaded. To remove it: 
 setlocal
 cd /d "%~dp0"
 title Circle Studio setup
+if exist "%~dp0runtime\node.exe" (
+  "%~dp0runtime\node.exe" "%~dp0scripts\circle.mjs" install %*
+  pause
+  exit /b
+)
 where node >nul 2>nul
 if errorlevel 1 (
   echo.

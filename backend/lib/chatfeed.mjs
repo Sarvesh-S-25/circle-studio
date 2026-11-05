@@ -4,6 +4,7 @@
 // One thread is shown at a time, its last few messages, clipped. Read only, from this PC.
 import { listConversations, readConversation, agentRuns } from './cchistory.mjs';
 import { redact } from './secrets.mjs';
+import { BoundedCache } from './cache.mjs';
 
 const THREAD_RE = /^(main|node:[A-Za-z0-9_-]{1,60}|run:[A-Za-z0-9 _.-]{1,80})$/;
 const clip = (t, n) => { const s = redact(String(t || '')).replace(/\s+/g, ' ').trim(); return s.length > n ? `${s.slice(0, n - 1)}…` : s; };
@@ -21,22 +22,27 @@ const ENGINE_NAME = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini', copilo
 const newest = (a, b) => (!a ? b : !b ? a : String(b.lastAt || '') > String(a.lastAt || '') ? b : a);
 
 export function createChatFeed({ claudeHome, chats, chatKey, workflowOf }) {
-  const cache = new Map(); // conversation file + its time -> messages (so a 15 second refresh does not reread big files)
+  const cache = new BoundedCache({ entries: 64, bytes: 1024 * 1024 });
   async function readCC(root, sessionId, run, lastAt) {
     const k = `${root}|${sessionId}|${run || ''}|${lastAt}`;
     if (cache.has(k)) return cache.get(k);
     const c = await readConversation(claudeHome, root, sessionId, { run, limit: 12 }).catch(() => null);
     const msgs = (c?.messages || []).filter((m) => m.role !== 'note');
-    if (cache.size > 60) cache.clear();
     cache.set(k, msgs);
     return msgs;
   }
-  const circle = (key) => { const c = chats.get(key); const m = (c.messages || []).filter((x) => x.role === 'user' || x.role === 'assistant'); return m.length ? { messages: m.slice(-12), lastAt: m.at(-1).at || null } : null; };
+  const circle = (key) => { const c = chats.get(key); const m = (c.messages || []).filter((x) => x.role === 'user' || x.role === 'assistant'); return m.length ? { messages: m.slice(-12), lastAt: m.at(-1).at || null, conversationId: c.conversationId || null } : null; };
 
   /** { threads: [{ id, label, lastAt, source }], selected, messages: [{ who, mine, text, at }], title } */
-  async function chatOf(project, { nodeId = 'main', size = 'm' } = {}) {
+  async function chatOf(project, { nodeId = 'main', size = 'm', engine = null, conversationId = null } = {}) {
     const want = THREAD_RE.test(String(nodeId || '')) ? nodeId : 'main';
     if (!project?.exists) return { threads: [], selected: null, messages: [], empty: 'This folder is missing.' };
+    if (conversationId) {
+      const key = chatKey(project.id, want.startsWith('node:') ? want.slice(5) : null, engine);
+      const first = chats.read(key, conversationId, { limit: 1 });
+      const page = chats.read(key, conversationId, { offset: Math.max(0, first.totalMessages - (size === 'l' ? 12 : 3)), limit: 12 });
+      return { threads: [{ id: want, label: first.title || 'Pinned conversation', source: 'Circle Studio', engine }], selected: want, engine, conversationId, pinned: true, canReply: true, continueId: null, fresh: false, title: first.title, messages: page.messages.map((m) => ({ who: m.role === 'user' ? 'You' : ENGINE_NAME[engine] || engine, mine: m.role === 'user', text: clip(plain(m.text), size === 'l' ? 260 : 150), md: size === 'l' ? long(m.text, 2400) : null, at: m.at, tools: [...new Set((m.tools || []).map((t) => t.name))] })), empty: page.messages.length ? null : 'Nothing said in this pinned conversation yet.' };
+    }
     const convs = listConversations(claudeHome, project.path, { limit: 4 }).conversations;
     let wf = null;
     try { wf = workflowOf(project); } catch { /* no workflow yet */ }
@@ -48,12 +54,13 @@ export function createChatFeed({ claudeHome, chats, chatKey, workflowOf }) {
     // chosen to continue counts from the moment it was chosen, so it shows instead of an older conversation
     let mainCircle = null;
     for (const eng of Object.keys(ENGINE_NAME)) {
+      if (engine && eng !== engine) continue;
       const key = chatKey(project.id, null, eng);
       const c = circle(key);
       if (c) { mainCircle = newest(mainCircle, { ...c, engine: eng, src: 'circle' }); continue; }
       const raw = chats.get(key);
-      if (raw.linked) mainCircle = newest(mainCircle, { lastAt: raw.linked.at, cc: { id: raw.linked.id, title: raw.linked.title, lastAt: raw.linked.lastAt }, src: 'cc', chosen: true, engine: eng });
-      else if (raw.startedAt) mainCircle = newest(mainCircle, { lastAt: raw.startedAt, messages: [], src: 'circle', fresh: true, engine: eng });
+      if (raw.linked) mainCircle = newest(mainCircle, eng === 'claude' ? { lastAt: raw.linked.at, cc: { id: raw.linked.id, title: raw.linked.title, lastAt: raw.linked.lastAt }, src: 'cc', chosen: true, engine: eng } : { lastAt: raw.linked.at, messages: [], src: 'circle', chosen: true, engine: eng });
+      else if (raw.startedAt) mainCircle = newest(mainCircle, { lastAt: raw.startedAt, messages: [], src: 'circle', fresh: true, engine: eng, conversationId: raw.conversationId || null });
     }
     const mainCC = convs[0] ? { lastAt: convs[0].lastAt, cc: convs[0], src: 'cc' } : null;
     const own = chats.get(chatKey(project.id, null, 'claude'));
@@ -63,7 +70,7 @@ export function createChatFeed({ claudeHome, chats, chatKey, workflowOf }) {
     if (ownCC) mainCircle = { lastAt: [mainCircle.lastAt, ownCC.lastAt].sort().at(-1), cc: ownCC, src: 'cc', chosen: true, engine: 'claude' };
     // continued here but its file is not (or not yet) in the folder: what was said before it came, then what was said here
     else if (own.linked && mainCircle?.src === 'circle' && mainCircle.engine === 'claude') mainCircle = { ...mainCircle, before: own.linked };
-    const main = newest(mainCircle, mainCC);
+    const main = (engine && engine !== 'claude' ? mainCircle : mainCircle?.chosen || mainCircle?.fresh ? mainCircle : newest(mainCircle, mainCC)) || (engine ? { messages: [], src: 'circle', fresh: true, engine, lastAt: null } : null);
     // the main chat shows one of your Claude Code conversations that Circle Studio's chat is not already in: a reply
     // continues that conversation (it is chosen first), so what you see is what the agent remembers
     const continueId = main && main.src === 'cc' && !main.chosen && main.cc.id !== own.sessionId ? main.cc.id : null;
@@ -107,6 +114,7 @@ export function createChatFeed({ claudeHome, chats, chatKey, workflowOf }) {
     return {
       threads: threads.map(({ id, label, lastAt, source, engine }) => ({ id, label: clip(label, 40), lastAt, source, engine })),
       engine: sel.engine,
+      conversationId: d.conversationId || null,
       // you can reply to Circle Studio's own chats and to the main chat; an agent run inside a Claude Code conversation is answered there
       canReply: !sel.id.startsWith('run:'),
       selected: sel.id,

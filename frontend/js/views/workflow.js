@@ -155,6 +155,7 @@ export async function mount(el, pctx) {
   graph = mountGraph(graphHost, {
     workflow: current, mode: 'edit', modes: ['edit', 'live', 'versions'], projectId: project.id, versions: record.versions, head: record.head,
     onChange: markDirty, onOpenNode: openNode, onRestore: restore,
+    onPin: async (version, pinned) => { try { record = await api.saveWorkflow(project.id, { action: 'pin-version', version, pinned }); graph.setVersions(record.versions, record.head); } catch (error) { toast(error.message, { kind: 'danger' }); } },
     onMode: (m) => { mode = m; if (m === 'live') startLive(); else stopLive(); if (m === 'versions') { panel?.destroy(); panel = null; helper?.destroy(); helper = null; closePatterns(); } else if (!panel && !helper && !patterns) showHelper(); },
   });
 

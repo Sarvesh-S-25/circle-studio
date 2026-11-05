@@ -12,11 +12,12 @@ import { scanSecrets } from './secrets.mjs';
 import { P, TIERS, ENGINES, parseJson, roleEntry, readProjectText } from './team.mjs';
 import { buildBrief, rosterFromWorkflow } from './plan.mjs';
 import { ENGINE_IDS } from './workflow.mjs';
-import { renderProject, skillTargets, GEMINI_SKILLS_NOTE, CONDENSE, condenseHookEntry, condenseConfigText, condenseAgents, readerText, READER_ID } from './render.mjs';
+import { renderProject, skillTargets, GEMINI_SKILLS_NOTE, CONDENSE, condenseHookEntry, condenseConfigText, condenseAgents, readerText, READER_ID, AGENT_START, AGENT_END } from './render.mjs';
 import { GI_START, GI_END } from './gitblock.mjs';
 import { answerAlertText } from './alerts.mjs';
 import { PLUGIN_ID_RE } from './mods.mjs';
 import { starterFiles, STARTER_RE } from './modstarters.mjs';
+import { codexMcpText } from './codex-config.mjs';
 
 const LANES = ['frontend', 'backend', 'both', 'all'];
 
@@ -622,14 +623,33 @@ function opWorkflowWrite(ws, op, env) {
   if (!condensing && ws.read(CONDENSE.config) != null) ws.write(CONDENSE.config, condenseConfigText({ nodes: [] }));
   for (const f of files) {
     if (f.mergeHook) continue;
-    const content = typeof f.content === 'string' ? f.content : asContent(f.content);
+    let content = typeof f.content === 'string' ? f.content : asContent(f.content);
     const cur = ws.entry(f.path).after;
     if (cur !== null && SKILL_FILE.test(f.path) && !sameContent(cur, content)) { left.push(f.path); continue; }
-    if (cur !== null && f.path.startsWith(`${P.agentsDir}/`) && !sameContent(cur, content)) rewritten++;
+    if (typeof cur === 'string' && f.path.startsWith(`${P.agentsDir}/`) && !sameContent(cur, content)) {
+      if (op.overwriteAgents !== true) {
+        const start = cur.indexOf(AGENT_START); const end = cur.indexOf(AGENT_END);
+        if (start < 0 || end < start || cur.indexOf(AGENT_START, start + 1) >= 0) {
+          env.warn(`${f.path} has no unambiguous Circle-managed section and was left unchanged. Its hand-written instructions are preserved.`);
+          continue;
+        }
+        const desired = parseFrontMatter(content);
+        const old = parseFrontMatter(cur);
+        if (!old.ok || !desired.ok) { env.warn(`${f.path} has invalid front matter and was left unchanged.`); continue; }
+        const eol = detectEol(cur);
+        const block = content.slice(content.indexOf(AGENT_START), content.indexOf(AGENT_END) + AGENT_END.length).replace(/\r?\n/g, eol);
+        content = cur.slice(0, start) + block + cur.slice(end + AGENT_END.length);
+        for (const key of ['name', 'description', 'model', 'skills']) {
+          const field = desired.fields.get(key);
+          if (field) content = setFrontMatterField(content, key, field.value);
+        }
+      }
+      rewritten++;
+    }
     ws.write(f.path, content);
   }
   if (left.length) env.warn(`${left.length} installed skill file${left.length === 1 ? ' differs' : 's differ'} from the library and ${left.length === 1 ? 'was' : 'were'} left alone. Use "replace" on the skill to overwrite.`);
-  if (rewritten) env.warn(`${rewritten} agent file${rewritten === 1 ? '' : 's'} already existed and ${rewritten === 1 ? 'is' : 'are'} rewritten from the workflow. Check the diff for edits you made by hand.`);
+  if (rewritten) env.warn(`${rewritten} agent file${rewritten === 1 ? '' : 's'} updated. ${op.overwriteAgents ? 'Full replacement was explicitly requested; review all removed instructions.' : 'Text outside the Circle-managed sections was preserved.'}`);
   const claudeMd = ws.read('CLAUDE.md');
   if (files.some((f) => f.path.startsWith(`${P.agentsDir}/`)) && !/^@AGENTS\.md\s*$/m.test(claudeMd ?? '')) {
     env.warn('Claude does not read AGENTS.md by itself. Add the line @AGENTS.md to CLAUDE.md; Circle Studio does not write that file in an existing project.');
@@ -741,6 +761,7 @@ export const OPS = {
   'alert-answer': opAlertAnswer,
   'mcp-env-ref': opMcpEnvRef,
   'mcp-server-set': opMcpServerSet,
+  'codex-mcp-set': (ws, op, env) => { const file = '.codex/config.toml'; ws.write(file, codexMcpText(ws.read(file), op.server, op.config)); if (op.verify === true && op.config) { env.effect({ kind: 'verify-codex-connection', server: op.server }); env.warn('After saving, Circle starts this connection once to test it. A failed test restores the previous reviewed file contents.'); } env.warn('Codex must trust this project before project configuration is loaded. Configuration does not prove the server is authenticated or available in a run. Only Circle-managed sections are changed.'); },
   'mcp-env-set': opMcpEnvSet,
   'mcp-server-add': opMcpServerAdd,
   'mcp-server-remove': opMcpServerRemove,

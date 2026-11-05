@@ -1,16 +1,19 @@
 // Runtime configuration. Everything comes from environment variables with local defaults.
 import os from 'node:os';
 import path from 'node:path';
+import fs from 'node:fs';
 
 export const APP_ROOT = path.resolve(import.meta.dirname, '..');
 
 export function loadConfig(env = process.env) {
+  let installation = null;
+  try { installation = JSON.parse(fs.readFileSync(path.join(APP_ROOT, 'installation.json'), 'utf8').replace(/^\uFEFF/, '')); } catch { /* existing portable/source install */ }
   return {
     host: '127.0.0.1',
     port: Number(env.CIRCLE_PORT) || 4380,
     appRoot: APP_ROOT,
     frontendDir: path.join(APP_ROOT, 'frontend'),
-    dataDir: path.resolve(env.CIRCLE_DATA || path.join(APP_ROOT, 'data')),
+    dataDir: path.resolve(env.CIRCLE_DATA || (installation?.mode === 'installed' && path.isAbsolute(installation.dataDir || '') ? installation.dataDir : path.join(APP_ROOT, 'data'))),
     projectsRoot: path.resolve(env.CIRCLE_PROJECTS_ROOT || path.join(os.homedir(), 'Desktop')),
     claudeBin: env.CIRCLE_CLAUDE_BIN || 'claude',
     // Where Claude Code keeps its own transcripts (read only, to show the conversations the human had outside the app).

@@ -96,7 +96,7 @@ test('notices in the app: an agent that asks is kept even with a window open; re
     delete process.env.FAKE_CLAUDE;
     assert.equal((await s.call('POST', '/api/notices/read', { ids: ['not-an-id'] })).status, 400);
     const read = (await s.call('POST', '/api/notices/read', {})).json;
-    assert.deepEqual([read.changed, read.unread], [1, 0]);
+    assert.deepEqual([read.changed, read.unread], [2, 0], 'approval and short-run completion both remain in the audit');
     // every kind saves in every size, including the new ones
     const widgets = ['workflow', 'project', 'overview', 'chat', 'notices', 'running'].map((kind) => ({ kind, size: 's' }));
     assert.equal((await s.call('PUT', '/api/settings', { widgets })).status, 200);

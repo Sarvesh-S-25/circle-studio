@@ -381,7 +381,7 @@ function Paint-Talk($f) {
   if ($script:ovTalkHead) { $script:ovTalkHead.Text = $(if ($f.project) { "Chat  $([char]0x00B7)  $($f.project.name)$(if ($eng) { "  $([char]0x00B7)  $eng" })" } else { 'Chat' }) }
   $b = $f.bar
   if ($b) {
-    $who = [string]$b.engineLabel; if ($b.model -and $b.engine -eq 'claude') { $who += " $([char]0x00B7) $($b.model)" }
+    $who = [string]$b.engineLabel; if ($b.model) { $who += " $([char]0x00B7) $($b.model)" }
     if ($script:ovEngBtn) { $script:ovEngBtn.Content.Text = "$who  $([char]0x25BE)" }
     if ($script:ovHint) { $script:ovHint.Text = "Message $($b.engineLabel)$(if ($f.project) { " in $($f.project.name)" })  (/ for commands, like /usage)" }
     if ($script:ovWhere) {
@@ -462,14 +462,19 @@ function New-PreviousMenu {
         $dp = New-Object System.Windows.Controls.DockPanel
         $when = Text $(try { ([datetime]$c.lastAt).ToLocalTime().ToString('d MMM HH:mm') } catch { '' }) 11 $script:pal.soft; [System.Windows.Controls.DockPanel]::SetDock($when, 'Right'); [void]$dp.Children.Add($when)
         $tt = Text ([string]$c.title) 13; $tt.Margin = '0,0,10,0'; [void]$dp.Children.Add($tt)
-        $row.Content = $dp; $row.Tag = "/continue $k"; $row.ToolTip = 'Carry this conversation on here; the original stays as it was'
-        $row.Add_Click({ param($x, $y) Close-Drop; Send-Command ([string]$x.Tag) })
+        $row.Content = $dp; $row.Tag = @{ projectId = $e.UserState.projectId; engine = $e.UserState.engine; sessionId = $c.id; source = $c.source }; $row.ToolTip = 'Continue this exact saved conversation'
+        $row.Add_Click({ param($x, $y)
+          $target = $x.Tag; Close-Drop
+          $choose = New-Object System.Net.WebClient; $choose.Encoding = [Text.Encoding]::UTF8; $choose.Headers.Add('X-Circle', '1'); $choose.Headers.Add('Content-Type', 'application/json')
+          $choose.Add_UploadStringCompleted({ param($client, $result) $client.Dispose(); if ($result.Error) { Show-Reply @{ title = 'Could not select that conversation.'; lines = @('It may no longer be available. Open Chat to review the saved history.'); tone = 'warn' } } else { Fetch-Overlay } })
+          $choose.UploadStringAsync([Uri]"$base/api/projects/$([Uri]::EscapeDataString($target.projectId))/chat/link", 'POST', (@{ engine = $target.engine; sessionId = $target.sessionId; source = $target.source } | ConvertTo-Json -Compress))
+        })
         [void]$l.Children.Add($row)
       }
     } catch { [void]$l.Children.Add((Text 'Could not read them.' 12 $script:pal.soft)) }
   })
   $script:ovPrevList = $list
-  if ($script:ovProject) { $wc.DownloadStringAsync([Uri]"$base/api/projects/$([Uri]::EscapeDataString($script:ovProject))/history") }
+  if ($script:ovProject) { $engine = if ($script:ovFeed.bar.engine) { [string]$script:ovFeed.bar.engine } else { 'claude' }; $wc.DownloadStringAsync([Uri]"$base/api/projects/$([Uri]::EscapeDataString($script:ovProject))/history?engine=$([Uri]::EscapeDataString($engine))", @{ projectId = $script:ovProject; engine = $engine }) }
   return $b
 }
 
@@ -985,10 +990,20 @@ function Paint-Overlay($f) {
 
 function Fetch-Overlay {
   if (-not $script:ovUp) { return }
+  if ($script:overlayFetch) {
+    if (([DateTime]::UtcNow - $script:overlayFetchAt).TotalSeconds -lt 20) { return }
+    $script:overlayFetch.CancelAsync()
+    $script:overlayFetch.Dispose()
+    $script:overlayFetch = $null
+  }
   $wc = New-Object System.Net.WebClient
+  $script:overlayFetch = $wc
+  $script:overlayFetchAt = [DateTime]::UtcNow
   $wc.Encoding = [System.Text.Encoding]::UTF8
   $wc.Add_DownloadStringCompleted({
     param($s, $e)
+    if ($script:overlayFetch -ne $s) { $s.Dispose(); return }
+    $script:overlayFetch = $null
     $s.Dispose()
     if (-not $script:ovUp) { return }
     try {

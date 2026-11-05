@@ -43,6 +43,7 @@ export function mountPatterns(side, { project, getWorkflow, onApply, onOpenNode,
 
   const details = (p) => h('div', { class: 'cs-stack cs-stack--tight cs-small' },
     h('p', {}, p.summary),
+    h('p', { class: 'cs-soft' }, `Compatible engines: ${(p.engines || []).join(', ') || 'not specified'}. Hooks and model recommendations remain provider-specific.`),
     h('div', {}, h('strong', {}, 'Use it when'), h('ul', { class: 'cs-prose' }, p.useWhen.map((x) => h('li', {}, x)))),
     h('div', {}, h('strong', {}, 'Not when'), h('ul', { class: 'cs-prose' }, p.avoidWhen.map((x) => h('li', {}, x)))),
     h('p', {}, h('strong', {}, 'What it costs: '), p.costs),

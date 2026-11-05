@@ -14,6 +14,10 @@ import { ChangeManager } from './lib/changes.mjs';
 import { pickFolder } from './lib/pickfolder.mjs';
 import { codeFingerprint } from './lib/codeversion.mjs';
 import { Limits } from './lib/limits.mjs';
+import { createAdvice } from './lib/advice.mjs';
+import { Progress } from './lib/progress.mjs';
+import { Storage } from './lib/storage.mjs';
+import { ChatQueue } from './lib/queue.mjs';
 
 export function createApp(config, overrides = {}) {
   const store = new Store(config.dataDir);
@@ -31,9 +35,13 @@ export function createApp(config, overrides = {}) {
   });
   const app = { config, store, overrides, projects, library, plans, chats, github, fetchImpl: overrides.fetch || globalThis.fetch, pickFolder: overrides.pickFolder || pickFolder, codeAtStart: codeFingerprint(config.appRoot) };
   Object.assign(app, createWorkflowServices({ config, store }), createEngineServices({ config, store, projects, chats, overrides, app }));
-  Object.assign(app, createDesktopServices({ config, store, projects, sessions: app.sessions, overrides }));
+  Object.assign(app, createDesktopServices({ config, store, projects, sessions: app.sessions, overrides, advisoryCount: () => app.advice?.active.size || 0 }));
   app.vault = new Vault(store, overrides.vaultCodec);
   app.catalog = new Catalog(store);
+  app.advice = createAdvice(app);
+  app.progress = new Progress(store);
+  app.storage = new Storage(store);
+  app.queue = new ChatQueue({ store, sessions: app.sessions, projects });
   app.sessions.vaultEnv = (projectId) => app.vault.envFor(projectId);
   // the plan's limits, from every Claude run (the status line tap writes the same file)
   app.limits = new Limits(store);

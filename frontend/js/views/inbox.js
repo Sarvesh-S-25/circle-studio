@@ -36,6 +36,20 @@ export async function mount(el) {
   const filters = { status: 'all', project: '', kind: '', q: '' };
   const list = h('div', { class: 'cs-stack cs-stack--tight', role: 'list' });
   const count = h('span', { role: 'status' });
+  const archived = new Map();
+  const older = h('button', { class: 'cs-btn', type: 'button', onclick: async () => {
+    const projectId = filters.project;
+    if (!projectId) { toast('Choose a project to read its older audit records.'); return; }
+    const previous = archived.get(projectId);
+    if (previous?.nextCursor === null) { toast('All archived records for this project are loaded.'); return; }
+    older.disabled = true;
+    try {
+      const result = await api.requests('all', projectId, true, previous?.nextCursor || '');
+      archived.set(projectId, { requests: [...(previous?.requests || []), ...result.requests], nextCursor: result.nextCursor });
+      all.push(...result.requests); draw();
+      if (!result.requests.length) toast('There are no older archived records for this project.');
+    } catch (error) { toast(error.message, { kind: 'danger' }); } finally { older.disabled = false; }
+  } }, 'Load older project audit');
 
   const sel = (label, key, options) => h('label', { class: 'cs-field' }, h('span', { class: 'cs-field__label' }, label),
     h('select', { class: 'cs-select', onchange: (e) => { filters[key] = e.target.value; draw(); } }, options.map(([v, l]) => h('option', { value: v, selected: filters[key] === v || undefined }, l))));
@@ -109,7 +123,7 @@ export async function mount(el) {
   }
 
   async function load() {
-    try { all = (await api.requests('all')).requests; } catch (e) { list.replaceChildren(h('div', { class: 'cs-banner cs-banner--danger' }, e.message)); return; }
+    try { all = [...(await api.requests('all')).requests, ...[...archived.values()].flatMap((p) => p.requests)]; } catch (e) { list.replaceChildren(h('div', { class: 'cs-banner cs-banner--danger' }, e.message)); return; }
     // Team questions are read from files, so a failure here must not hide the agents' requests above.
     try { all = all.concat((await api.alerts('all')).alerts.map(alertRecord)); } catch { /* the request list is still right */ }
     all.sort((a, b) => (a.status === 'pending' ? 0 : 1) - (b.status === 'pending' ? 0 : 1) || String(b.at || '').localeCompare(String(a.at || '')));
@@ -126,7 +140,7 @@ export async function mount(el) {
       sel('Project', 'project', [['', 'All projects'], ...state.projects.map((p) => [p.id, p.name])]),
       sel('Kind', 'kind', [['', 'All kinds'], ['approval', 'Approvals'], ['question', 'Agent questions'], ['alert', 'Team questions']]),
       h('label', { class: 'cs-field cs-grow' }, h('span', { class: 'cs-field__label' }, 'Search'), search)),
-    list));
+    list, older));
   await load();
   return { destroy: () => { window.removeEventListener('circle:requests', onChange); window.removeEventListener('circle:alerts', onChange); } };
 }

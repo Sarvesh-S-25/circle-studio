@@ -79,12 +79,12 @@ export class Catalog {
         seen.add(id);
         const sourceText = redact(String(s.text || '')).replace(/\s+/g, ' ').trim();
         const prev = old.get(id);
-        const keep = prev && prev.sourceHash === hash(sourceText) && prev.summaryBy === 'haiku';
+        const keep = prev && prev.sourceHash === hash(sourceText) && ['haiku', 'codex', 'human'].includes(prev.summaryBy);
         entries.push({
           id, type: s.type, name: s.name, where: s.where || '', model: s.model || null, url: s.url || null,
           summary: keep ? prev.summary : clip(sourceText || s.name, 220),
           tags: keep ? prev.tags || [] : [],
-          summaryBy: keep ? 'haiku' : 'file',
+          summaryBy: keep ? prev.summaryBy : 'file',
           sourceHash: hash(sourceText),
           indexed: prev?.indexed || null,
         });
@@ -97,9 +97,9 @@ export class Catalog {
 
   /** Entries whose one-line description is missing, too long, or just their name. */
   // patterns come with their own wording: never sent to Haiku to be described
-  weak() { return this.read().entries.filter((e) => e.type !== 'pattern' && e.summaryBy !== 'haiku' && (e.summary.length < 25 || e.summary.length > 160 || e.summary === e.name)); }
+  weak() { return this.read().entries.filter((e) => e.type !== 'pattern' && !['haiku', 'codex', 'human'].includes(e.summaryBy) && (e.summary.length < 25 || e.summary.length > 160 || e.summary === e.name)); }
 
-  setSummaries(items) {
+  setSummaries(items, source = 'haiku') {
     return this.store.serial('catalog', () => {
       const cat = this.read();
       const by = new Map(items.map((i) => [i.id, i]));
@@ -108,7 +108,7 @@ export class Catalog {
         if (!i || typeof i.summary !== 'string' || !i.summary.trim()) continue;
         e.summary = clip(redact(i.summary.trim()), 200);
         e.tags = Array.isArray(i.tags) ? i.tags.filter((t) => typeof t === 'string').slice(0, 6).map((t) => t.toLowerCase().slice(0, 24)) : [];
-        e.summaryBy = 'haiku';
+        e.summaryBy = source;
       }
       this.store.writeJson('catalog.json', cat);
       return cat;
@@ -126,7 +126,7 @@ export class Catalog {
       if (!e) { e = { id: `link:${url}`, type: 'link', name: title || url, where: 'indexed by you', url, summary: '', tags: [], summaryBy: 'file', sourceHash: '' }; cat.entries.push(e); }
       e.indexed = { at: new Date().toISOString(), chunks: chunks.length, file: id };
       if (title) e.name = clip(title, 120);
-      if (e.summaryBy !== 'haiku') e.summary = clip(chunks[0] || url, 200).replace(/\s+/g, ' ');
+      if (!['haiku', 'codex', 'human'].includes(e.summaryBy)) e.summary = clip(chunks[0] || url, 200).replace(/\s+/g, ' ');
       this.store.writeJson('catalog.json', cat);
       return e;
     });

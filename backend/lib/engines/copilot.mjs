@@ -96,7 +96,7 @@ export function createCopilotAdapter({ loader: given, nodeBin = process.execPath
         emit('session', { sessionId: sid, model: model || 'auto', engine: 'copilot', runId });
         const started = Date.now();
         timer = setTimeout(() => { stopped = true; killTree(child); }, PROMPT_TIMEOUT_MS);
-        const res = await rpc.request('session/prompt', { sessionId: sid, prompt: [{ type: 'text', text: `${systemPrompt}\n\n${prompt}` }] });
+        const res = await rpc.request('session/prompt', { sessionId: sid, prompt: [{ type: 'text', text: `${systemPrompt}\n\n${prompt}` }] }, { timeoutMs: 0 });
         const u = res.usage || {};
         emit('usage', { inputTokens: u.inputTokens || 0, outputTokens: u.outputTokens || 0, contextTokens: null, contextWindow: null, costUsd: null });
         emit('done', { runId, sessionId: sid, ms: Date.now() - started, costUsd: null, stopReason: res.stopReason ?? null, models: [model || 'auto'], denials: 0, result: '' });

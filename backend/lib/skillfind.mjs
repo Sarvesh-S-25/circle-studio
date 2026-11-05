@@ -64,7 +64,7 @@ export function pickPrompt({ workflow, needs, candidates, have = [], message = '
     message ? `\nThe person adds: ${String(message).slice(0, 600)}` : '',
     '',
     '<candidates>',
-    ...candidates.map((c) => `${c.id} | ${c.repo.fullName} (${c.repo.official ? 'the official Anthropic collection' : `${c.repo.stars ?? 'unknown'} stars, updated ${String(c.repo.pushedAt || '').slice(0, 10) || 'unknown'}`}) | ${c.key}: ${String(c.description || 'no description').replace(/\s+/g, ' ').slice(0, 300)}`),
+    ...candidates.map((c) => `${c.id} | ${c.repo.fullName} (${c.repo.official ? 'an official provider collection' : `${c.repo.stars ?? 'unknown'} stars, updated ${String(c.repo.pushedAt || '').slice(0, 10) || 'unknown'}`}) | ${c.key}: ${String(c.description || 'no description').replace(/\s+/g, ' ').slice(0, 300)}`),
     '</candidates>',
   ].filter(Boolean).join('\n'));
 }
@@ -115,6 +115,7 @@ export function createSkillFinder({ github, advise }) {
       // the official collection, the best-known general collections, then the best match for each need. Only
       // collections people actually use (a star floor): a broad search without one finds unrelated repositories.
       addRepo({ url: OFFICIAL, fullName: 'anthropics/skills', stars: null, pushedAt: null, official: true });
+      addRepo({ url: 'https://github.com/openai/skills', fullName: 'openai/skills', stars: null, pushedAt: null, official: true });
       const search = async (q, n = 5) => {
         try { return (await cached(`search:${q}`, () => github.searchRepos(q, { perPage: n }))).filter((r) => !r.archived && !r.fork && r.stars >= MIN_STARS); } catch (e) { if (!skipped.some((x) => x.repo === 'GitHub search')) skipped.push({ repo: 'GitHub search', reason: `${e.message}${/rate limit/i.test(e.message) ? ' Searching again in a minute finds more.' : ''}` }); return []; }
       };

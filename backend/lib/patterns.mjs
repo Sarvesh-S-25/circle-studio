@@ -10,7 +10,7 @@ let cached = null;
 
 export function loadPatterns() {
   if (!cached) {
-    try { cached = JSON.parse(fs.readFileSync(FILE, 'utf8')).patterns || []; } catch { cached = []; }
+    try { cached = (JSON.parse(fs.readFileSync(FILE, 'utf8')).patterns || []).map((p) => ({ ...p, engines: p.apply?.reader || p.apply?.condense || p.id === 'cheap-model' ? ['claude'] : ['claude', 'codex', 'copilot', 'gemini'] })); } catch { cached = []; }
   }
   return cached;
 }

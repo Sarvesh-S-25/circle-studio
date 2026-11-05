@@ -109,6 +109,23 @@ test('codex detection: signed in, signed out, missing', async () => {
   assert.equal(codex().capabilities.liveVerified, false, 'Codex is labelled as not live-tested');
 });
 
+test('codex process exit after accepting a turn settles instead of waiting indefinitely', async () => {
+  const result = await Promise.race([turn(codex(), () => ({ decision: 'deny' }), { prompt: 'crash after accepting turn' }), new Promise((_, reject) => { const timer = setTimeout(() => reject(new Error('Exited turn never settled')), 5000); timer.unref(); })]);
+  assert.equal(result.outcome.status, 'error');
+  assert.match(result.events.find(([name]) => name === 'error')[1].message, /ended/);
+});
+
+test('codex read-only queries discover models, limits and project history without a model turn', async () => {
+  const adapter = codex();
+  assert.equal((await adapter.catalog())[0].id, 'dummy-codex-balanced');
+  const limits = await adapter.readLimits();
+  assert.equal(limits.rateLimits.primary.usedPercent, 24);
+  assert.ok(!JSON.stringify(limits).includes('dummy@example.invalid'));
+  const history = await adapter.listHistory({ cwd: process.cwd() });
+  assert.equal(history.conversations[0].id, 'fake-codex-history-1');
+  assert.equal((await adapter.readHistory({ cwd: process.cwd(), id: history.conversations[0].id })).messages.length, 2);
+});
+
 test('agy answers but cannot ask: a refused action is reported plainly', async () => {
   const ok = await turn(agy(), () => ({ decision: 'allow' }));
   assert.equal(ok.text, 'pong');

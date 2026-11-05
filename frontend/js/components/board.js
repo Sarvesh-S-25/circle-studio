@@ -7,6 +7,7 @@ import { initRequests } from './requests.js';
 import { initAlerts } from './alerts.js';
 import { openModal, toast } from './overlay.js';
 import { KINDS, renderTile, createTileData } from './tiles.js';
+import { tileWindowKey } from '../window-key.js';
 
 const POLL_MS = 15_000;
 const USAGE_MS = 5 * 60_000;
@@ -29,10 +30,14 @@ export async function mountSingleTile(root, { kind, size, projectId, openApp }) 
   if (!KINDS[kind]) { root.replaceChildren(h('p', { class: 'cs-tile__quiet' }, 'Unknown widget.')); return; }
   const n = new URLSearchParams(location.search).get('n');
   const tile = { kind, size: KINDS[kind].sizes.includes(size) ? size : KINDS[kind].sizes[0], projectId: projectId || null, ...(n ? { nodeId: n } : {}) };
+  tile.engine = new URLSearchParams(location.search).get('engine') || null;
+  tile.conversationId = new URLSearchParams(location.search).get('conversation') || null;
   const ctx = createTileData({ openApp });
   ctx.solo = true;
-  ctx.setProject = (t, id) => { t.projectId = id; delete t.nodeId; const u = new URL(location.href); u.searchParams.set('p', id); u.searchParams.delete('n'); history.replaceState(null, '', u); refresh(); };
-  ctx.setNode = (t, id) => { t.nodeId = id; const u = new URL(location.href); u.searchParams.set('n', id); history.replaceState(null, '', u); refresh(); };
+  ctx.setConversation = (t, id, engine) => { t.conversationId = id; t.engine = engine; const u = new URL(location.href); if (id) u.searchParams.set('conversation', id); else u.searchParams.delete('conversation'); u.searchParams.set('engine', engine); history.replaceState(null, '', u); location.reload(); };
+  ctx.setProject = (t, id) => { t.projectId = id; delete t.conversationId; delete t.nodeId; const u = new URL(location.href); u.searchParams.set('p', id); u.searchParams.delete('n'); u.searchParams.delete('conversation'); history.replaceState(null, '', u); location.reload(); };
+  ctx.setNode = (t, id) => { t.nodeId = id; delete t.conversationId; const u = new URL(location.href); u.searchParams.set('n', id); u.searchParams.delete('conversation'); history.replaceState(null, '', u); location.reload(); };
+  ctx.setEngine = (t, id) => { t.engine = id; delete t.conversationId; const u = new URL(location.href); u.searchParams.set('engine', id); u.searchParams.delete('conversation'); history.replaceState(null, '', u); location.reload(); };
   const draw = () => root.replaceChildren(h('div', { class: 'cs-solo' }, renderTile(tile, ctx)));
   ctx.redraw = draw;
   async function refresh(usage = false, { timed = false } = {}) { if (timed && ctx.holding()) return; await ctx.refresh([tile], { usage, skipUsage: !usage && !ctx.usage && kind !== 'spend' }); draw(); }
@@ -41,7 +46,7 @@ export async function mountSingleTile(root, { kind, size, projectId, openApp }) 
   draw();
   await loadShell();
   await refresh(true);
-  listen(() => refresh(false, { timed: true }), `tile:${kind}:${size}${projectId ? `:${projectId}` : ''}`);
+  listen(() => refresh(false, { timed: true }), tileWindowKey({ ...tile, projectId }));
   setInterval(() => { if (document.visibilityState === 'visible') refresh(false, { timed: true }); }, POLL_MS);
   setInterval(() => { if (document.visibilityState === 'visible') refresh(true); }, USAGE_MS);
 }
@@ -60,8 +65,10 @@ export async function mountBoard(root, { openApp, embedded = false }) {
   const save = async () => { try { await api.saveSettings({ widgets: tiles }); } catch (e) { toast(e.message, { kind: 'danger' }); } };
   // switching a tile's project or chat saves just that tile (the desktop widgets follow on their next refresh)
   const pick = (t, patch) => api.pickWidget(tiles.indexOf(t), patch).catch((e) => toast(e.message, { kind: 'danger' }));
-  ctx.setProject = (t, id) => { t.projectId = id; if (t.kind === 'chat') delete t.nodeId; pick(t, { projectId: id }); refresh(); };
-  ctx.setNode = (t, id) => { t.nodeId = id; pick(t, { nodeId: id }); refresh(); };
+  ctx.setProject = (t, id) => { t.projectId = id; delete t.conversationId; if (t.kind === 'chat') delete t.nodeId; pick(t, { projectId: id }); refresh(); };
+  ctx.setNode = (t, id) => { t.nodeId = id; delete t.conversationId; pick(t, { nodeId: id }); refresh(); };
+  ctx.setEngine = async (t, id) => { t.engine = id; delete t.conversationId; await pick(t, { engine: id }); refresh(); };
+  ctx.setConversation = async (t, id, engine) => { t.conversationId = id; t.engine = engine; await pick(t, { engine, conversationId: id }); refresh(); };
 
   function controls(t, i) {
     const k = KINDS[t.kind];
@@ -87,7 +94,7 @@ export async function mountBoard(root, { openApp, embedded = false }) {
   }
 
   function popOut(t) {
-    api.openWindow('tile', t.projectId || ctx.defaultProject() || undefined, undefined, { kind: t.kind, size: t.size }).catch(() => window.open(`/widget.html?w=${t.kind}&size=${t.size}${t.projectId ? `&p=${encodeURIComponent(t.projectId)}` : ''}`, '_blank'));
+    api.openWindow('tile', t.projectId || ctx.defaultProject() || undefined, undefined, { kind: t.kind, size: t.size, engine: t.engine, nodeId: t.nodeId, conversationId: t.conversationId }).catch(() => window.open(`/widget.html?w=${t.kind}&size=${t.size}${t.projectId ? `&p=${encodeURIComponent(t.projectId)}` : ''}${t.engine ? `&engine=${encodeURIComponent(t.engine)}` : ''}${t.nodeId ? `&n=${encodeURIComponent(t.nodeId)}` : ''}${t.conversationId ? `&conversation=${t.conversationId}` : ''}`, '_blank'));
   }
 
   function draw() {

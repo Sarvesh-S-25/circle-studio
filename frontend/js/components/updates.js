@@ -13,7 +13,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Update now: confirm, fast-forward, wait for the restarted server, reload. */
 export async function runUpdate() {
-  if (!(await confirmDialog({ title: 'Update Circle Studio now?', message: 'It moves this copy forward to the newest version and restarts. Your projects, data and any running chat are not touched, but a running chat stops.', confirmLabel: 'Update and restart' }))) return;
+  if (!(await confirmDialog({ title: 'Update Circle Studio now?', message: 'It moves this copy forward to the newest version and restarts. Finish active chats and pending requests first. Packaged updates verify a checksum and file manifest, test an isolated launch and preserve previous code and shared data. The release channel is currently unsigned.', confirmLabel: 'Update and restart' }))) return;
   const msg = h('p', {}, 'Updating...');
   const ctrl = openModal({ title: 'Updating Circle Studio', body: h('div', { class: 'cs-stack' }, h('div', { class: 'cs-loading' }, icon('spinner', 'm'), msg)), actions: [], dismissable: false });
   let r;

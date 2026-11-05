@@ -1,10 +1,12 @@
 // Importing skills from public GitHub repos. Only api.github.com and raw.githubusercontent.com are
 // ever contacted. Everything downloaded is inert data. Limits and shapes: docs/research/github-skills.md.
 import path from 'node:path';
-import { badRequest, notFound, tooLarge, upstream } from './errors.mjs';
+import { createHash, randomUUID } from 'node:crypto';
+import { badRequest, conflict, notFound, tooLarge, upstream } from './errors.mjs';
+import { redact } from './secrets.mjs';
 import { safeRelPath } from './paths.mjs';
 import { parseFrontMatter, fieldString } from './frontmatter.mjs';
-import { LIMITS, slugify } from './skills.mjs';
+import { LIMITS, slugify, ensureFrontMatter } from './skills.mjs';
 
 const OWNER_RE = /^[A-Za-z0-9_.-]{1,100}$/;
 const REF_RE = /^[A-Za-z0-9_./+-]{1,200}$/;
@@ -57,6 +59,9 @@ const encPath = (p) => p.split('/').map(encodeURIComponent).join('/');
 
 export function createGithub({ fetchImpl = globalThis.fetch, token = '', libraryDirLength = 0, exists = () => false } = {}) {
   const rate = { remaining: null, resetAt: null };
+  let importPlan = null; let importTimer = null;
+  const hashes = (files) => Object.fromEntries(files.map((f) => [f.path, createHash('sha256').update(f.buffer).digest('hex')]).sort(([a], [b]) => a.localeCompare(b)));
+  const sameHashes = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
   function remember(res) {
     const rem = res.headers.get('x-ratelimit-remaining');
@@ -165,13 +170,21 @@ export function createGithub({ fetchImpl = globalThis.fetch, token = '', library
           if (!safe.ok) { reason = `${safe.reason} in "${rel.slice(0, 80)}"`; break; }
         }
       }
-      skills.push({ key, dir, files: inside.map((e) => ({ path: e.path, rel: dir === '' ? e.path : e.path.slice(dir.length + 1), size: e.size || 0 })), bytes, skipped: reason });
+      skills.push({ key, dir, files: inside.map((e) => ({ path: e.path, rel: dir === '' ? e.path : e.path.slice(dir.length + 1), size: e.size || 0, sha: e.sha })), bytes, skipped: reason });
     }
     return { skills, skipped };
   }
 
   return {
     rate,
+    applyImport(id, library) {
+      if (!importPlan || importPlan.id !== id || Date.now() - importPlan.at > 120000) throw conflict('The import review expired. Preview again.');
+      const plan = importPlan; importPlan = null; clearTimeout(importTimer);
+      for (const item of plan.items) if (!sameHashes(hashes(library.files(item.key)), item.before)) throw conflict(`The local skill ${item.key} changed after review. Preview again.`);
+      const result = { imported: [], skipped: [], conflicts: [], rate: { ...rate } };
+      for (const item of plan.items) { library.put(item.key, item.files, item.source, { overwrite: item.overwrite }); result.imported.push(item.key); }
+      return result;
+    },
 
     /** Public repositories matching a search (one API call; GitHub allows about 10 searches a minute without a login). */
     async searchRepos(q, { perPage = 5 } = {}) {
@@ -219,13 +232,14 @@ export function createGithub({ fetchImpl = globalThis.fetch, token = '', library
     },
 
     /** Download the picked skill directories into the library. Per-skill failures do not stop the others. */
-    async fetch({ url, ref, picks, overwrite = false, rename = {}, library }) {
+    async fetch({ url, ref, picks, overwrite = false, rename = {}, library, preview = false }) {
       const parsed = parseGithubUrl(url);
       if (!Array.isArray(picks) || !picks.length || picks.length > 100) throw badRequest('Pick between 1 and 100 skills.');
       const { tree, ref: usedRef } = await loadTree(parsed, ref || undefined);
       const { skills } = findSkills(tree, '', parsed.repo);
       const byDir = new Map(skills.map((s) => [s.dir, s]));
-      const result = { imported: [], skipped: [], conflicts: [], rate: null };
+      const result = { imported: [], skipped: [], conflicts: [], rate: null, previews: [] };
+      const plan = { id: randomUUID(), at: Date.now(), items: [] }; const pickedKeys = new Set();
       let budget = LIMITS.requestBytes;
       for (const dir of picks) {
         const s = byDir.get(typeof dir === 'string' ? dir : dir?.dir);
@@ -234,17 +248,32 @@ export function createGithub({ fetchImpl = globalThis.fetch, token = '', library
         if (s.skipped) { result.skipped.push({ dir: label, reason: s.skipped }); continue; }
         if (s.bytes > budget) { result.skipped.push({ dir: label, reason: 'over the 40 MB limit for one import' }); continue; }
         const key = rename[s.key] ? slugify(rename[s.key]) : s.key;
+        if (pickedKeys.has(key)) throw badRequest('Two picked skills have the same destination name.'); pickedKeys.add(key);
         if (library.has(key) && !overwrite) { result.conflicts.push({ key, suggestion: `${key.slice(0, 60)}-2` }); continue; }
+        if (library.has(key) && !preview) throw conflict('Preview replacements before applying them. Local edits must be reviewed.');
         try {
-          const files = await pool(s.files, 4, async (f) => ({ path: f.rel, buffer: await rawFile(parsed.owner, parsed.repo, usedRef, f.path) }));
-          library.put(key, files, { type: 'github', url: `https://github.com/${parsed.owner}/${parsed.repo}`, ref: usedRef, path: s.dir }, { overwrite });
+          const files = await pool(s.files, 4, async (f) => {
+            const buffer = await rawFile(parsed.owner, parsed.repo, usedRef, f.path);
+            if (/^[a-f0-9]{40}$/i.test(f.sha || '') && createHash('sha1').update(`blob ${buffer.length}\0`).update(buffer).digest('hex') !== f.sha) throw conflict('The upstream branch changed during download. Preview again.');
+            return { path: f.rel, buffer };
+          });
+          for (const file of files) if (file.path.toLowerCase() === 'skill.md') { file.path = 'SKILL.md'; const normalized = ensureFrontMatter(file.buffer.toString('utf8'), key); if (normalized.wrapped) file.buffer = Buffer.from(normalized.text); }
+          const source = { type: 'github', url: `https://github.com/${parsed.owner}/${parsed.repo}`, ref: usedRef, path: s.dir, treeRevision: /^[a-f0-9]{40}$/i.test(tree.sha || '') ? tree.sha : null, fileHashes: hashes(files) };
+          if (preview) {
+            const local = library.files(key); const before = hashes(local); const previous = library.has(key) ? library.get(key).source?.fileHashes : null;
+            const old = new Map(local.map((f) => [f.path, f.buffer])); const next = new Map(files.map((f) => [f.path, f.buffer]));
+            const text = (buffer) => !buffer ? null : buffer.includes(0) ? '[binary file]' : redact(buffer.toString('utf8')).slice(0, 12000);
+            result.previews.push({ key, locallyModified: previous ? !sameHashes(before, previous) : local.length ? null : false, revision: source.treeRevision, files: [...new Set([...old.keys(), ...next.keys()])].filter((p) => !old.get(p)?.equals(next.get(p))).map((p) => ({ path: p, before: text(old.get(p)), after: text(next.get(p)), beforeBytes: old.get(p)?.length || 0, afterBytes: next.get(p)?.length || 0 })) });
+            plan.items.push({ key, files, source, before, overwrite });
+          } else library.put(key, files, source, { overwrite });
           budget -= s.bytes;
-          result.imported.push(key);
+          if (!preview) result.imported.push(key);
         } catch (e) {
           result.skipped.push({ dir: label, reason: e.message });
         }
       }
       result.rate = { ...rate };
+      if (preview) { importPlan = plan; clearTimeout(importTimer); importTimer = setTimeout(() => { if (importPlan?.id === plan.id) importPlan = null; }, 120000); importTimer.unref(); result.planId = plan.id; result.expiresInSeconds = 120; }
       return result;
     },
   };

@@ -93,6 +93,6 @@ export function agentStates({ root, workflow, live, pending, claudeHome, now = D
     if (run) state = run.status === 'waiting' ? 'waiting' : 'working';
     if (waits.length) state = 'waiting';
     const detail = waits[0]?.title || (state === 'working' && act && act.t === t ? act.summary || act.event : '') || tr?.summary || act?.summary || '';
-    return { id: a.id, title: a.title, engine: a.engine, model: run?.model || a.model, state, word: word[state], detail, at: t ? new Date(t).toISOString() : null, contextPct: run?.contextPct ?? null };
+    return { id: a.id, title: a.title, engine: run?.engine || waits[0]?.engine || a.engine, model: run?.model || a.model, state, word: word[state], evidence: run ? 'live' : waits.length ? 'request' : t ? 'recent-activity' : 'none', detail, at: t ? new Date(t).toISOString() : null, contextPct: run?.contextPct ?? null };
   });
 }

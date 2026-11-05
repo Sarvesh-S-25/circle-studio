@@ -108,6 +108,25 @@ export async function mount(el) {
     return row;
   }
 
+  function codexAsksRow() {
+    const row = h('div', { class: 'cs-stack cs-stack--tight' });
+    const draw = async () => {
+      try {
+        const st = await api.permHook('codex');
+        row.replaceChildren(st.canSet ? sw('Answer Codex in my terminal from the desktop', st.on, async (on) => {
+          if (on && !(await new Promise((resolve) => openModal({
+            title: 'Connect Codex terminal approvals?',
+            body: h('div', { class: 'cs-stack' }, h('p', {}, 'Adds a PermissionRequest hook to ~/.codex/hooks.json. A backup is saved first. Other hooks stay in place.'), h('pre', { class: 'cs-cmd' }, st.after || ''), h('p', {}, 'Restart Codex and open /hooks to review and trust this hook. Until trusted, Codex skips it. If Circle is unavailable, approval stays in your terminal.')),
+            actions: [{ label: 'Cancel', onClick: (c) => c.close(false) }, { label: 'Connect', kind: 'primary', onClick: (c) => c.close(true) }], onClose: (v) => resolve(v === true),
+          })))) { draw(); return; }
+          try { const result = await api.setPermHook(on, 'codex'); toast(on ? result.instructions : 'Codex terminal bridge removed.', { kind: 'info', ms: 15000 }); } catch (e) { toast(e.message, { kind: 'danger' }); }
+          draw();
+        }, st.instructions || 'Brings Codex shell, file and MCP approvals to the desktop. Requires a Codex version with PermissionRequest hooks.') : h('p', { class: 'cs-soft' }, st.why));
+      } catch (e) { row.replaceChildren(h('p', { class: 'cs-soft' }, e.message)); }
+    };
+    draw(); return row;
+  }
+
   /* ---- desktop: alerts, start at login, shortcuts ---------------------------------------------------- */
   const desk = h('div', { class: 'cs-stack' }, h('p', { class: 'cs-soft' }, 'Loading...'));
   const sw = (label, checked, on, hint) => h('div', { class: 'cs-stack cs-stack--tight' }, h('label', { class: 'cs-switch' }, h('input', { class: 'cs-switch__input', type: 'checkbox', checked: checked || undefined, onchange: (e) => on(e.target.checked, e.target) }), h('span', { class: 'cs-switch__track' }), h('span', {}, label)), hint ? h('span', { class: 'cs-soft cs-small' }, hint) : null);
@@ -127,11 +146,17 @@ export async function mount(el) {
         if (on) { const p = await enableAlerts(); if (p === 'denied') { toast('Notifications are blocked for this window. Allow them in the site settings.', { kind: 'warn' }); } }
         drawDesktop();
       }, `A Windows notification when this window is in the background, and when no Circle Studio window is open at all. ${permNote}`),
+      sw('Notify me when a chat finishes', s.settings.desktopNotifications?.done !== false, async (on) => { await api.saveSettings({ desktopNotifications: { done: on } }); drawDesktop(); }, 'Includes short Codex turns. Background notifications and completion cards open the original saved conversation. Urgent approval and question cards are controlled separately.'),
+      h('button', { class: 'cs-btn', type: 'button', onclick: async (event) => { const button = event.currentTarget; button.disabled = true; try { const r = await api.testNotification('codex'); toast(r.reason, { kind: r.requested ? 'info' : 'warn', ms: 12000 }); } catch (error) { toast(error.message, { kind: 'danger' }); } finally { button.disabled = false; } } }, 'Test Codex notification without a model call'),
+      sw('Notify me about app updates', s.settings.desktopNotifications?.update !== false, async (on) => { await api.saveSettings({ desktopNotifications: { update: on } }); drawDesktop(); }, 'Update notices remain in the Notifications list even when their desktop toast is off.'),
+      sw('Quiet hours for completion and update notifications', s.settings.desktopNotifications?.quietHours === true, async (on) => { await api.saveSettings({ desktopNotifications: { quietHours: on, start: s.settings.desktopNotifications?.start || '22:00', end: s.settings.desktopNotifications?.end || '07:00' } }); drawDesktop(); }, 'Uses this PC’s local time. Approval requests and questions remain urgent.'),
+      h('div', { class: 'cs-row cs-row--wrap' }, h('label', { class: 'cs-field' }, 'Quiet from', h('input', { class: 'cs-input', type: 'time', value: s.settings.desktopNotifications?.start || '22:00', onchange: async (event) => { try { await api.saveSettings({ desktopNotifications: { start: event.target.value } }); } catch (error) { toast(error.message, { kind: 'danger' }); } } })), h('label', { class: 'cs-field' }, 'Until', h('input', { class: 'cs-input', type: 'time', value: s.settings.desktopNotifications?.end || '07:00', onchange: async (event) => { try { await api.saveSettings({ desktopNotifications: { end: event.target.value } }); } catch (error) { toast(error.message, { kind: 'danger' }); } } }))),
       sc ? sw('Ask me on the desktop', s.settings.desktopAsks !== false, async (on) => {
         try { await api.desktopWidgets('asks', { on }); toast(on ? 'An agent\'s question now pops up on your desktop as a card you answer there.' : 'Questions no longer pop up on the desktop.', { kind: 'ok' }); } catch (e) { toast(e.message, { kind: 'danger' }); }
         drawDesktop();
       }, 'When an agent asks to run something or has a question, a card appears at the bottom right of your screen, above other windows, with Allow and Deny (or the answers to pick). No need to open the Inbox.') : null,
       sc ? termAsksRow() : null,
+      sc ? codexAsksRow() : null,
       sc ? sw('Start Circle Studio when I sign in to Windows', sc.startup, async (on) => {
         try { await api.shortcut({ where: 'startup', remove: !on }); toast(on ? 'Circle Studio starts at sign-in, in the background (no window).' : 'It no longer starts at sign-in.', { kind: 'ok' }); } catch (e) { toast(e.message, { kind: 'danger' }); }
         drawDesktop();
@@ -171,8 +196,10 @@ export async function mount(el) {
     h('section', { class: 'cs-card cs-stack', 'aria-labelledby': 's-desk' }, h('h2', { class: 'cs-h2', id: 's-desk' }, 'Desktop'), desk),
     h('section', { class: 'cs-card cs-stack', 'aria-labelledby': 's-upd' }, h('h2', { class: 'cs-h2', id: 's-upd' }, 'Updates'), updateSection()),
     h('section', { class: 'cs-stack', 'aria-labelledby': 's-eng' }, h('div', { class: 'cs-row cs-row--between' }, h('h2', { class: 'cs-h2', id: 's-eng' }, 'Engines'), h('button', { class: 'cs-btn', type: 'button', onclick: recheck }, icon('refresh', 's'), 'Check all again')),
+      h('label', { class: 'cs-field' }, h('span', { class: 'cs-field__label' }, 'Preferred engine'), h('select', { class: 'cs-select', 'aria-label': 'Preferred engine', onchange: async (e) => { try { await api.saveSettings({ preferredEngine: e.target.value }); state.preferredEngine = e.target.value; toast('Preferred engine saved.', { kind: 'ok' }); } catch (error) { toast(error.message, { kind: 'danger' }); } } }, ['claude', 'codex', 'gemini', 'copilot'].map((id) => h('option', { value: id, selected: id === (state.preferredEngine || 'claude') || undefined }, id)))),
       h('p', { class: 'cs-soft' }, 'The AI tools Circle Studio can drive, each through your own sign-in in a terminal. No API key is used or stored. ', h('a', { href: '#/start' }, "Set one up (Let's begin)")), engines),
     h('section', { class: 'cs-card cs-stack', 'aria-labelledby': 's-where' }, h('h2', { class: 'cs-h2', id: 's-where' }, 'Where things live'),
+      h('a', { class: 'cs-btn', href: '#/maintenance' }, 'Storage, backup & diagnostics'),
       h('table', { class: 'cs-table' }, h('tbody', {},
         row('Address', h('code', {}, `http://127.0.0.1:${hl.port}`)),
         row('Data folder (templates, library, chats, Inbox)', h('code', {}, hl.dataDir)),

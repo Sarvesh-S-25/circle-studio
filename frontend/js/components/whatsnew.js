@@ -6,9 +6,19 @@ import { pref, setPref, state, subscribe } from '../state.js';
 import { openModal, toast } from './overlay.js';
 
 /** Change this id when there is something new to tell. */
-export const RELEASE = '2026-10-19-bar-limits';
+export const RELEASE = '1.3.2';
 
 const CHANGES = [
+  ['check', 'Recover after sleep and server crashes', 'Desktop polling stays responsive while requests wait and retains your tiles during temporary outages. Stalled browser connections reconnect and resync approvals. Shortcut launches supervise the background server and recover crashes; Stop keeps it stopped.'],
+  ['terminal', 'Codex terminal approvals on the desktop', 'Settings can connect Codex PermissionRequest hooks, with a backup and support for existing hooks. Restart Codex and review and trust the hook through /hooks before it runs. If Circle is unavailable, Codex keeps its terminal approval prompt.'],
+  ['terminal', 'Return from Terminal to the right conversation', 'Terminal receives the displayed saved conversation and reasoning choice. A pending Codex copy gets its own provider thread before opening; other saved chats stay selected. Failed sends preserve your message as a draft. Windows test notifications now wait for actual submission instead of only reporting that a helper started.'],
+  ['chat', 'Codex notifications, including quick answers', 'Finished Circle chats keep an exact conversation link. Short Codex runs notify too, and a browser without notification permission permits Windows fallback. Settings has a test button that makes no model call. Terminal approvals need the separate Codex hook connection.'],
+  ['chat', 'Pin a conversation and review a handoff', 'Each chat tile can pin its own saved conversation. Provider, model and reasoning follow your selection. Review handoff prepares an editable context summary and a new draft; it preserves the source and sends nothing until you choose.'],
+  ['check', 'Keep review evidence and workflow versions', 'Task evidence keeps its kind and reference. Pin workflow versions, compare their changes, and load older completed request audit records. Supported team questions can be answered from a native card after reviewing the file change.'],
+  ['folder', 'Less history reading and easier packaged updates', 'Large saved chats read only requested pages with bounded caches. Generated-file retention is configurable and backup downloads stream from disk. Runtime packages stage and verify updates before activation, with repair and data-preserving removal. Current builds are unsigned.'],
+  ['chat', 'Codex conversations and account limits', 'Codex discovers available models, reads local thread history, and shows provider-specific limits. Saved Circle conversations survive New chat and support archive, paging and export. Engine approval policies are shown explicitly; real-account acceptance is tracked separately.'],
+  ['check', 'Tasks with evidence and optional achievements', 'Tasks & progress separates activity from accepted work. Record review evidence, dependencies and outcomes. Local achievements are optional, exportable and resettable; spending tokens never earns one.'],
+  ['folder', 'Storage, diagnostics and safer recovery', 'Settings opens memory and storage diagnostics, backup and isolated restore, and previewed cleanup of old generated files. Queued messages preserve their target, and interrupted partial answers are recovered without automatically replaying work.'],
   ['chat', 'The bar: a real terminal, once not twice, and your limits',
     'In the bar (Ctrl+Alt+C), Terminal now always opens a real terminal with that chat (it brought up the editor before). Your message shows once while Claude answers. A Plan limits panel shows the 5 hours and the week, and the bar\'s line says them too.'],
   ['check', 'Answer Claude Code in your terminal from the desktop',
@@ -30,7 +40,7 @@ export function openWhatsNew() {
   const body = h('div', { class: 'cs-stack' },
     h('section', { class: 'cs-stack cs-stack--tight', 'aria-labelledby': 'wn-do' }, h('h3', { class: 'cs-h3', id: 'wn-do' }, 'What to do now'), todo),
     h('section', { class: 'cs-stack cs-stack--tight', 'aria-labelledby': 'wn-new' }, h('h3', { class: 'cs-h3', id: 'wn-new' }, 'What changed'),
-      h('ul', { class: 'cs-whatsnew' }, CHANGES.map(([ic, title, text]) => h('li', {}, h('span', { class: 'cs-whatsnew__icon' }, icon(ic, 'm')), h('div', {}, h('strong', {}, title), h('p', { class: 'cs-soft cs-small' }, text)))))),
+      h('ul', { class: 'cs-whatsnew' }, CHANGES.slice(0, 7).map(([ic, title, text]) => h('li', {}, h('span', { class: 'cs-whatsnew__icon' }, icon(ic, 'm')), h('div', {}, h('strong', {}, title), h('p', { class: 'cs-soft cs-small' }, text)))))),
     h('p', { class: 'cs-soft cs-small' }, 'Nothing in your projects changes by itself: files are only written after you review them. You can open this again from Settings.'));
   const ctrl = openModal({ title: 'What\'s new in Circle Studio', size: 'wide', body, actions: [{ label: 'Got it', kind: 'primary', onClick: (c) => c.close(null) }] });
   setPref('seen-release', RELEASE);

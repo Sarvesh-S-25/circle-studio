@@ -25,6 +25,7 @@ test('desktop: settings, pulse, git, shortcut validation, and toasts only while 
   const toasts = [];
   const s = await startServer({ toast: (t) => { toasts.push(t); return true; } });
   const root = makeMiniProject();
+  const ctl = new AbortController();
   try {
     const id = (await s.call('POST', '/api/projects', { path: root, permissions: ALL })).json.project.id;
 
@@ -64,7 +65,6 @@ test('desktop: settings, pulse, git, shortcut validation, and toasts only while 
     await run;
 
     // with a window open (an event stream), the window shows it: no Windows toast
-    const ctl = new AbortController();
     const stream = fetch(`${s.base}/api/events`, { signal: ctl.signal }).then((r) => r.body.getReader().read()).catch(() => {});
     for (let i = 0; i < 40 && s.app.viewers.count === 0; i++) await sleep(25);
     assert.equal(s.app.viewers.count, 1);
@@ -72,7 +72,7 @@ test('desktop: settings, pulse, git, shortcut validation, and toasts only while 
     let p2;
     for (let i = 0; i < 100 && !p2; i++) { p2 = (await s.call('GET', `/api/requests?status=pending&projectId=${id}`)).json.requests[0]; if (!p2) await sleep(50); }
     assert.ok(p2);
-    assert.equal(toasts.length, 1, 'no toast while a window is open');
+    assert.equal(toasts.filter((t) => /asks to go ahead/.test(t.title)).length, 1, 'no extra approval toast while a capable window is open');
     await s.call('POST', `/api/requests/${p2.id}/respond`, { decision: 'deny' });
     await run2;
     ctl.abort();
@@ -87,6 +87,7 @@ test('desktop: settings, pulse, git, shortcut validation, and toasts only while 
     assert.equal((await s.call('GET', '/api/alerts')).json.alerts.length, 1);
     assert.ok(toasts.some((t) => /team has a question/.test(t.title)), 'an open team question is announced');
   } finally {
+    ctl.abort();
     delete process.env.FAKE_CLAUDE;
     s.app.stopDesktop();
     await s.close();

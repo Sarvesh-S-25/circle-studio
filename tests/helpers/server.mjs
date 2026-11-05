@@ -64,6 +64,8 @@ export async function startServer({ fetch: fetchOverride, pickFolder, adapters, 
   return {
     base, port, call, raw, sse, app: s.app, dataDir, projectsRoot, claudeHome,
     async close() {
+      s.app.queue.stop();
+      s.app.advice.stopAll();
       await Promise.all([s.app.sessions.stopAll(), s.app.claude.stopAll()]);
       await new Promise((r) => s.server.close(r));
       rmDir(dataDir);

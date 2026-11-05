@@ -200,7 +200,7 @@ test('skills: found on GitHub for the agents, explained, nothing imported until 
     const r = await s.call('POST', `/api/projects/${id}/skills/discover`, { workflow: wf });
     assert.equal(r.status, 200, JSON.stringify(r.json));
     assert.deepEqual(r.json.needs, [{ need: 'Testing React components', search: 'react testing', agents: ['coder'] }], 'agents that do not exist are dropped');
-    assert.deepEqual(r.json.searched.sort(), ['acme/react-skills', 'anthropics/skills']);
+    assert.deepEqual(r.json.searched.sort(), ['acme/react-skills', 'anthropics/skills', 'openai/skills']);
     assert.deepEqual(r.json.suggestions.map((x) => x.key).sort(), ['react-testing', 'webapp-testing'], 'only real candidates, never an invented id');
     const rt = r.json.suggestions.find((x) => x.key === 'react-testing');
     assert.deepEqual([rt.plain, rt.why, rt.agents, rt.repo.fullName, rt.repo.stars, rt.dir], ['Helps an agent write tests.', 'The team writes React code.', ['coder'], 'acme/react-skills', 1200, 'react-testing']);
@@ -224,7 +224,7 @@ test('skills: found on GitHub for the agents, explained, nothing imported until 
     failSearch = true;
     s.app.skillFinder = null; // a fresh finder (no cached search)
     const f = (await s.call('POST', `/api/projects/${id}/skills/discover`, { workflow: wf })).json;
-    assert.deepEqual(f.searched, ['anthropics/skills']);
+    assert.deepEqual(f.searched, ['anthropics/skills', 'openai/skills']);
     assert.ok(f.skipped.some((x) => /rate limit|refused/i.test(x.reason)), JSON.stringify(f.skipped));
     assert.deepEqual(f.suggestions.map((x) => x.key), ['webapp-testing']);
   } finally {

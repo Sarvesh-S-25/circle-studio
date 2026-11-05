@@ -43,7 +43,7 @@ function spendTile(t, ctx) {
  * from 90%.
  */
 export function limitsView(l, now = Date.now()) {
-  if (!l || (!l.fiveHour && !l.week)) return null;
+  if (!l || (!l.fiveHour && !l.week && !l.windows?.length)) return null;
   const tone = (p) => (p >= 90 ? 'danger' : p >= 70 ? 'warn' : 'ok');
   const one = (w, label, long) => {
     if (!w) return null;
@@ -51,19 +51,20 @@ export function limitsView(l, now = Date.now()) {
     const over = reset && reset <= now;
     const at = reset ? new Date(reset) : null;
     const when = !at ? '' : long ? at.toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    return { label, pct: over ? 0 : w.pct, color: over ? 'ok' : tone(w.pct), value: over ? 'new' : `${w.pct}%`, resets: over ? `started again at ${when}` : when ? `resets ${when}` : '' };
+    const stale = over || (l.at && now - Date.parse(l.at) > 15 * 60_000);
+    return { label, pct: stale ? null : w.pct, stale: Boolean(stale), color: stale ? 'warn' : tone(w.pct), value: stale ? 'Refresh needed' : `${w.pct}%`, resets: over ? `reset passed at ${when}; awaiting reading` : when ? `resets ${when}` : '' };
   };
-  return { at: l.at, source: l.source, rows: [one(l.fiveHour, '5 hours', false), one(l.week, 'Week', true)].filter(Boolean) };
+  return { provider: l.provider || 'claude', at: l.at, source: l.source, rows: l.windows ? l.windows.map((w) => one(w, w.label, w.durationMins >= 1440)).filter(Boolean) : [one(l.fiveHour, '5 hours', false), one(l.week, 'Week', true)].filter(Boolean) };
 }
 
 function limitsTile(t, ctx) {
   const v = limitsView(ctx.limits, ctx.now());
-  if (!v) return { title: 'Limits', empty: 'Shows after Claude answers in Circle Studio, or turn on "From your terminal too" in the app (Widgets).', url: '#/widgets' };
+  if (!v) return { title: 'Limits', empty: 'No current reading for this provider. Refresh in Widgets or check sign-in.', url: '#/widgets' };
   const first = v.rows[0];
   const from = v.source === 'terminal' ? 'from your terminal' : 'from a chat here';
-  if (t.size === 's') return { title: 'Limits', big: `${first.pct}%`, bigState: first.color === 'danger' ? 'waiting' : null, sub: `${first.label} · ${first.resets}`, url: '#/widgets' };
+  if (t.size === 's') return { title: `${v.provider} limits`, big: first.value, bigState: first.color === 'danger' ? 'waiting' : null, sub: `${first.label} · ${first.resets}`, url: '#/widgets' };
   return {
-    title: 'Limits', rows: v.rows.map((r) => ({ label: r.label, color: r.color, value: r.value, pct: Math.max(2, r.pct) })),
+    title: `${v.provider} limits`, rows: v.rows.map((r) => ({ label: r.label, color: r.color, value: r.value, pct: r.pct == null ? 0 : Math.max(2, r.pct) })),
     note: [...v.rows.map((r) => `${r.label}: ${r.resets}`), `Read ${new Date(v.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ${from}`].join('  ·  '),
     url: '#/widgets',
   };
@@ -159,15 +160,16 @@ function chatTile(t, ctx) {
   const c = ctx.chatAt(t);
   if (!c) return { title: 'Chat', empty: 'No project yet.' };
   const name = c.project?.name || 'Chat';
+  const url = c.project ? `#/projects/${c.project.id}/chat/${c.engine || 'claude'}/${c.conversationId || '_'}${c.selected?.startsWith('node:') ? `/${c.selected.slice(5)}` : ''}` : '#/';
   if (t.size === 's') {
     const last = (c.messages || []).at(-1);
-    return { title: name, sub: last ? `${last.who}: ${last.text}` : c.empty || 'Nothing said yet.', empty: null, url: c.project ? `#/projects/${c.project.id}/chat` : '#/', chatWindow: c.project?.id || null };
+    return { title: name, sub: last ? `${last.who}: ${last.text}` : c.empty || 'Nothing said yet.', empty: null, url, chatWindow: c.project?.id || null };
   }
   return {
     title: name,
     chat: { selected: c.selected, threads: (c.threads || []).map((x) => ({ id: x.id, label: x.label, on: x.id === c.selected })), messages: c.messages || [], heading: c.title || null },
     empty: c.empty || null,
-    url: c.project ? `#/projects/${c.project.id}/chat` : '#/',
+    url,
     chatWindow: c.project?.id || null, // a click opens the project's chat window, to reply on the desktop
     engine: c.engine || null,
   };

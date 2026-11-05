@@ -1,0 +1,74 @@
+[
+  {
+    "start": 0,
+    "duration": 5,
+    "title": "Your AI team. Your decisions.",
+    "file": "compositions/opening.html"
+  },
+  {
+    "start": 5,
+    "duration": 10,
+    "title": "Connect your AI tools",
+    "file": "compositions/setup.html"
+  },
+  {
+    "start": 15,
+    "duration": 7.5,
+    "title": "Start with a folder",
+    "file": "compositions/project.html"
+  },
+  {
+    "start": 22.5,
+    "duration": 10,
+    "title": "Give the work a shape",
+    "file": "compositions/workflow.html"
+  },
+  {
+    "start": 32.5,
+    "duration": 7.5,
+    "title": "Give each agent a clear job",
+    "file": "compositions/agent.html"
+  },
+  {
+    "start": 40,
+    "duration": 12.5,
+    "title": "Ask for something concrete",
+    "file": "compositions/chat.html"
+  },
+  {
+    "start": 52.5,
+    "duration": 10,
+    "title": "Read the changes before writing",
+    "file": "compositions/review.html"
+  },
+  {
+    "start": 62.5,
+    "duration": 10,
+    "title": "Finish with evidence",
+    "file": "compositions/tasks.html"
+  },
+  {
+    "start": 72.5,
+    "duration": 7.5,
+    "title": "Give your team a useful skill",
+    "file": "compositions/skills.html"
+  },
+  {
+    "start": 80,
+    "duration": 7.5,
+    "title": "Keep the work in sight",
+    "file": "compositions/widgets.html"
+  },
+  {
+    "start": 87.5,
+    "duration": 7.5,
+    "title": "Try it with a real brief",
+    "file": "compositions/samples.html"
+  },
+  {
+    "start": 95,
+    "duration": 5,
+    "title": "Circle Studio",
+    "file": "compositions/ending.html"
+  }
+]

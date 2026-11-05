@@ -87,6 +87,7 @@ export function buildWorkflowHandlers(app) {
     'workflow.get': async ({ params }) => withWarnings(workflows.get(projects.get(params.id))),
     'workflow.save': async ({ params, body }) => {
       const project = projects.get(params.id);
+      if (body?.action === 'pin-version') return withWarnings(workflows.pin(project, str(body.version, 'version', 20), body.pinned === true));
       if (body?.write === true) projects.resolve(params.id, { write: true });
       const result = workflows.save(project, { workflow: body?.workflow, note: body?.note, bump: body?.bump });
       mirrorToPlan(project, result.workflow);
@@ -95,14 +96,13 @@ export function buildWorkflowHandlers(app) {
       return out;
     },
     'workflow.suggest': async ({ params, body }) => {
-      const project = projects.resolve(params.id, { need: 'claude' });
+      const project = projects.resolve(params.id, { need: 'engine' });
       const message = str(body?.message, 'message', 4000);
       const record = workflows.get(projects.get(params.id));
       const current = body?.workflow !== undefined ? normalizeWorkflow(body.workflow) : record.workflow;
       const history = Array.isArray(body?.history) ? body.history.filter((m) => m && typeof m.text === 'string').slice(-6) : [];
       const engineList = typeof app.engines?.list === 'function' ? await app.engines.list().then((r) => (Array.isArray(r) ? r : r?.engines) || []).catch(() => []) : [];
       const skills = library.list().map((s) => s.name);
-      await app.claude.requireReady();
       // what the helper reads besides the graph: the folder itself, the best-fitting building blocks, matching passages of indexed links
       const plan = plans.get(projects.get(params.id));
       const digest = projectDigest(project.root);
@@ -116,7 +116,7 @@ export function buildWorkflowHandlers(app) {
       const patterns = patternsForPrompt(current, { usage: measured?.byAgent || [], usableEngines: new Set(engineList.filter((e) => e.usable).map((e) => e.id)) });
       const prompt = helperPrompt({ workflow: current, plan, lanes: current.lanes, engines: engineList, skills, history, message, digest, blocks, passages, patterns });
       const model = ['haiku', 'sonnet', 'opus'].includes(body?.model) ? body.model : undefined;
-      const r = await app.claude.advise({ key: `helper:${project.id}`, prompt, model, root: project.root, schema: HELPER_SCHEMA, kind: 'helper', projectId: project.id });
+      const r = await app.advice.run({ key: `helper:${project.id}`, engine: body?.engine, prompt, model: body?.model || model, root: project.root, schema: HELPER_SCHEMA, kind: 'helper', projectId: project.id });
       const usable = new Set(engineList.filter((e) => e.usable).map((e) => e.id));
       return { ...helperResult(current, r.data, { skills, usable: engineList.length ? usable : undefined }), models: r.models, costUsd: r.costUsd, ms: r.ms, read: { digest: digest.length > 0, blocks: blocks.map((b) => `${b.type}: ${b.name}`), passages: passages.map((p) => p.title) } };
     },
@@ -135,7 +135,7 @@ export function buildWorkflowHandlers(app) {
     // Skills from GitHub for this workflow: Claude names what the team lacks, GitHub is searched (or the links the
     // human gave are read), Claude picks the few that fit and explains each. Imports nothing.
     'skills.discover': async ({ params, body }) => {
-      const project = projects.resolve(params.id, { need: 'claude' });
+      const project = projects.resolve(params.id, { need: 'engine' });
       const record = workflows.get(projects.get(params.id));
       const workflow = body?.workflow !== undefined ? normalizeWorkflow(body.workflow) : record.workflow;
       const message = typeof body?.message === 'string' ? body.message.slice(0, 2000) : '';
@@ -143,9 +143,8 @@ export function buildWorkflowHandlers(app) {
       const inProject = (() => { try { return fs.readdirSync(path.join(project.root, '.claude', 'skills'), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name); } catch { return []; } })();
       const fromPlugins = claudePlugins(config.userHome).flatMap((p) => p.skills);
       const have = [...new Set([...library.list().map((s) => s.name), ...inProject, ...fromPlugins])];
-      await app.claude.requireReady();
-      app.skillFinder ||= createSkillFinder({ github: app.github, advise: (prompt, schema, key, model) => app.claude.advise({ key, prompt, model, root: project.root, schema, kind: 'helper', projectId: project.id }) });
-      const r = await app.skillFinder.find({ workflow, digest: projectDigest(project.root), have, links, message: links.length ? '' : message, key: `skills:${project.id}` });
+      const finder = createSkillFinder({ github: app.github, advise: (prompt, schema, key, model) => app.advice.run({ key, engine: body?.engine, prompt, model, root: project.root, schema, kind: 'helper', projectId: project.id }) });
+      const r = await finder.find({ workflow, digest: projectDigest(project.root), have, links, message: links.length ? '' : message, key: `skills:${project.id}` });
       return { ...r, fromPlugins: [...new Set(fromPlugins)] };
     },
     'workflow.restore': async ({ params, body }) => {

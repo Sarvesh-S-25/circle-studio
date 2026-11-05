@@ -96,6 +96,7 @@ export async function mount(el, ctx) {
           s.vaultRefs.length ? h('span', { class: 'cs-pill cs-pill--ok' }, icon('lock', 's'), `key: ${s.vaultRefs.join(', ')}`) : null,
           twins.length ? h('span', { class: 'cs-pill cs-pill--warn', title: twins.map((t) => origin(t)).join(', ') }, 'set up twice') : null),
         h('span', { class: 'cs-small' }, origin(s), pc ? ` · ${s.file}` : ''),
+        h('span', { class: 'cs-small cs-soft' }, s.configurationCoverage || 'Configured; authentication and availability in the current chat are unverified.'),
         h('span', { class: 'cs-mono cs-small cs-soft cs-cx__cmd' }, s.transport === 'stdio' ? `${s.command} ${s.argsText || ''}` : s.url),
         twins.length ? h('span', { class: 'cs-small cs-soft' }, `Also ${twins.map((t) => origin(t).toLowerCase()).join(' and ')}: one copy is enough.${canRemove && twins.some(isBundled) ? ' The plugin keeps it working if you remove this one.' : ''}`) : null,
         hl?.text && hl.status !== 'checking' ? h('span', { class: 'cs-small' }, hl.text) : null,
@@ -259,6 +260,18 @@ export async function mount(el, ctx) {
   }
 
   el.append(h('div', { class: 'cs-stack cs-stack--loose cs-cx' },
+    h('details', { class: 'cs-card cs-stack' }, h('summary', {}, 'Codex configuration'),
+      h('p', { class: 'cs-soft cs-small' }, 'Project configuration is used only when Codex trusts the folder. Circle changes only its own managed sections and never rewrites unrelated TOML or inserts credentials.'),
+      h('button', { class: 'cs-btn', onclick: async (event) => {
+        const button = event.currentTarget; button.disabled = true;
+        try { const r = await api.connections(projectId || '', 'codex'); const info = r.effective; button.after(h('p', { class: 'cs-soft cs-small', role: 'status' }, info?.error || `${info?.note || 'Unavailable'} Configured names: ${(info?.servers || []).map((s) => `${s.name}${s.enabled ? '' : ' (disabled)'}`).join(', ') || 'none reported'}.`)); } catch (error) { toast(error.message, { kind: 'danger' }); } finally { button.disabled = false; }
+      } }, 'Check effective Codex configuration'),
+      projectId ? (() => {
+        const server = h('input', { class: 'cs-input', 'aria-label': 'Codex MCP server name', placeholder: 'server-name' });
+        const config = h('textarea', { class: 'cs-textarea cs-mono', 'aria-label': 'Codex MCP JSON configuration', rows: 4, placeholder: '{"command":"tool.exe","args":[],"env_vars":[]}' });
+        const preview = async (remove) => { try { const done = await reviewChanges({ projectId, ops: [{ op: 'codex-mcp-set', server: server.value.trim(), config: remove ? null : JSON.parse(config.value), verify: !remove }], title: 'Review Codex project connection', applyLabel: remove ? 'Remove managed connection' : 'Save reviewed connection' }); if (done && !done.rolledBack) { await load(); toast('Configuration saved. Use Test on the connection, then check effective Codex configuration. A failed test does not imply the project is trusted.', { kind: 'info' }); } } catch (error) { toast(error.message, { kind: 'danger' }); } };
+        return h('div', { class: 'cs-stack' }, h('label', { class: 'cs-field' }, 'Server name', server), h('label', { class: 'cs-field' }, 'Command or URL configuration (JSON)', config), h('div', { class: 'cs-row cs-row--wrap' }, h('button', { class: 'cs-btn', onclick: () => preview(false) }, 'Review Codex connection'), h('button', { class: 'cs-btn', onclick: () => preview(true) }, 'Review removal of managed connection')));
+      })() : null),
     pc ? null : h('div', { class: 'cs-stack cs-stack--tight' },
       h('p', { class: 'cs-soft' }, 'Tools this project\'s agents can use (MCP servers), such as a design tool, a database or a browser. Keys come from your ', h('a', { href: '#/keys' }, 'saved keys'), '. Before you add one, Circle Studio checks the project does not already have it (from every project\'s settings or a plugin).')),
     list));

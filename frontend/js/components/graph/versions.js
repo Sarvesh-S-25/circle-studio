@@ -3,7 +3,7 @@
 import { h, icon, timeAgo } from '../../dom.js';
 import { confirmDialog } from '../overlay.js';
 
-export function renderVersions(host, { versions = [], head, onRestore }) {
+export function renderVersions(host, { versions = [], head, onRestore, onPin }) {
   const ordered = versions.slice().reverse();
   let picked = head || ordered[0]?.version;
 
@@ -36,10 +36,12 @@ export function renderVersions(host, { versions = [], head, onRestore }) {
         } }, icon('undo', 's'), 'Restore this version')),
       h('p', { class: 'cs-soft cs-small' }, `${new Date(v.at).toLocaleString()}${v.parent ? ` · after v${v.parent}` : ''}`),
       v.note ? h('p', {}, v.note) : null,
+      onPin ? h('button', { class: 'cs-btn cs-btn--small', type: 'button', 'aria-pressed': String(v.pinned === true), onclick: () => onPin(v.version, !v.pinned) }, v.pinned ? 'Unpin this version' : 'Pin this version') : null,
+      h('p', { class: 'cs-soft cs-small' }, 'Up to 200 versions are retained. Pinned versions and the current version are protected.'),
       v.version === head
         ? h('p', { class: 'cs-soft' }, 'This is the current version.')
         : changes.length
-          ? h('div', {}, h('h4', { class: 'cs-eyebrow' }, 'Compared with the current version'), h('ul', { class: 'cs-gver__changes' }, changes.map((c) => h('li', {}, c.text))))
+          ? h('div', {}, h('h4', { class: 'cs-eyebrow' }, 'Compared with the current version'), h('ul', { class: 'cs-gver__changes' }, changes.map((c) => h('li', {}, c.text, c.details?.length ? h('details', {}, h('summary', {}, 'View changed values'), ...c.details.map((d) => h('div', { class: 'cs-stack' }, h('strong', {}, d.field), h('p', { class: 'cs-soft cs-small' }, 'Selected version'), h('pre', {}, d.before), h('p', { class: 'cs-soft cs-small' }, 'Current version'), h('pre', {}, d.after)))) : null))))
           : h('p', { class: 'cs-soft' }, 'Identical to the current version.'));
   }
   draw();

@@ -28,7 +28,8 @@ export function mountHelper(side, { project, getWorkflow, onApply, onClose, memo
   const send = h('button', { class: 'cs-btn cs-btn--primary', type: 'button' }, icon('send', 's'), 'Ask');
   let busy = false;
   const allowed = project.permissions?.claude === true;
-  const claudeOk = state.engines.find((e) => e.id === 'claude')?.usable !== false;
+  const claudeOk = state.engines.some((e) => e.usable && (e.id === 'claude' || e.capabilities?.structuredOutput));
+  const engineSel = h('select', { class: 'cs-select', 'aria-label': 'Helper engine' }, h('option', { value: '' }, 'Preferred available engine'), state.engines.filter((e) => e.usable && (e.id === 'claude' || e.capabilities?.structuredOutput)).map((e) => h('option', { value: e.id }, e.label)));
 
   function proposalCard(m) {
     const applied = m.applied;
@@ -123,7 +124,7 @@ export function mountHelper(side, { project, getWorkflow, onApply, onClose, memo
     send.disabled = true;
     draw();
     try {
-      const r = await api.discoverSkills(project.id, { workflow: getWorkflow(), message: text, links });
+      const r = await api.discoverSkills(project.id, { workflow: getWorkflow(), message: text, links, engine: engineSel.value || undefined });
       msgs.push({ role: 'helper', text: '', skills: r, models: r.models });
     } catch (e) {
       msgs.push({ role: 'helper', text: '', error: e.detail?.resetAt ? `${e.message} Try again after ${new Date(e.detail.resetAt).toLocaleTimeString()}.` : e.message });
@@ -170,7 +171,7 @@ export function mountHelper(side, { project, getWorkflow, onApply, onClose, memo
     send.disabled = true;
     draw();
     try {
-      const r = await api.suggestWorkflow(project.id, { message, workflow: getWorkflow(), history });
+      const r = await api.suggestWorkflow(project.id, { message, workflow: getWorkflow(), history, engine: engineSel.value || undefined });
       msgs.push({ role: 'helper', text: r.reply, proposal: r.proposal, changes: r.changes || [], warnings: r.warnings || [], models: r.models, ms: r.ms, read: r.read });
     } catch (e) {
       msgs.push({ role: 'helper', text: '', error: e.message });
@@ -190,10 +191,11 @@ export function mountHelper(side, { project, getWorkflow, onApply, onClose, memo
       msgs.length ? h('button', { class: 'cs-btn cs-btn--quiet cs-btn--small', type: 'button', onclick: () => { msgs.length = 0; draw(); } }, 'Clear') : null,
       h('button', { class: 'cs-btn cs-btn--quiet cs-btn--icon', type: 'button', 'aria-label': 'Close the helper', onclick: onClose }, icon('close', 'm'))),
     !allowed ? h('div', { class: 'cs-banner cs-banner--warn' }, icon('lock', 's'), h('span', {}, 'This project does not allow sending text to an engine. Turn it on under Permissions to use the helper.'))
-      : !claudeOk ? h('div', { class: 'cs-banner cs-banner--warn' }, icon('warning', 's'), h('span', {}, 'The helper runs on Claude, which is not signed in.')) : null,
+      : !claudeOk ? h('div', { class: 'cs-banner cs-banner--warn' }, icon('warning', 's'), h('span', {}, 'Set up Codex or Claude to use the helper.')) : null,
+    engineSel,
     log,
     h('div', { class: 'cs-stack cs-stack--tight' }, h('label', { class: 'cs-sr', for: 'helper-input' }, 'Ask the workflow helper'), input,
-      h('div', { class: 'cs-row' }, h('span', { class: 'cs-soft cs-small cs-grow' }, 'Sent to Claude through your login. Ctrl+Enter'),
+      h('div', { class: 'cs-row' }, h('span', { class: 'cs-soft cs-small cs-grow' }, 'Through your selected engine. Ctrl+Enter'),
         h('button', { class: 'cs-btn cs-btn--quiet cs-btn--small', type: 'button', title: FIND_SKILLS, onclick: () => findSkills() }, icon('github', 's'), 'Find skills'), send))));
   draw();
   return { destroy() { side.replaceChildren(); }, ask };

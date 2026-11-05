@@ -100,7 +100,7 @@ $byId = @{}; foreach ($p in $procs) { $byId[[int]$p.ProcessId] = $p }
 $best = $null; $how = ''; $running = 0
 # 1. a Claude Code session working in this folder (newest first)
 $target = & $norm $folder
-foreach ($c in @($procs | Where-Object { $_.Name -eq 'claude.exe' } | Sort-Object CreationDate -Descending)) {
+foreach ($c in @($procs | Where-Object { $_.Name -eq ($env:CS_ENGINE + '.exe') } | Sort-Object CreationDate -Descending)) {
   $cwd = & $norm ([CsWork]::Cwd([int]$c.ProcessId))
   if (-not $cwd -or ($cwd -ne $target -and -not $cwd.StartsWith($target + '\'))) { continue }
   $running++
@@ -143,10 +143,10 @@ if ($env:CS_FOCUS -eq '1') { [CsWork]::Focus([long]$best[0]) }
  * The terminal or editor window where Claude Code works in `folder`: { found, kind, title, how, sessions } (and brought
  * to the front when `focus`). only: 'terminal' leaves editors out (an editor's Claude Code panel is not a terminal).
  */
-export function findWorkWindow({ folder, titles = [], focus = true, only = null, spawnImpl = spawn }) {
+export function findWorkWindow({ folder, titles = [], focus = true, only = null, engine = 'claude', spawnImpl = spawn }) {
   if (process.platform !== 'win32') return Promise.resolve({ found: false });
   return new Promise((resolve) => {
-    const env = { ...cleanEnv(), CS_APPS: WORK_APPS.join('|'), CS_TITLES: titles.filter(Boolean).map((t) => String(t).replace(/[|\r\n]/g, ' ').slice(0, 80)).join('|'), CS_FOLDER: path.resolve(folder || ''), CS_FOCUS: focus ? '1' : '0', CS_ONLY: only || '' };
+    const env = { ...cleanEnv(), CS_ENGINE: ['claude', 'codex', 'copilot', 'gemini'].includes(engine) ? engine : 'claude', CS_APPS: WORK_APPS.join('|'), CS_TITLES: titles.filter(Boolean).map((t) => String(t).replace(/[|\r\n]/g, ' ').slice(0, 80)).join('|'), CS_FOLDER: path.resolve(folder || ''), CS_FOCUS: focus ? '1' : '0', CS_ONLY: only || '' };
     const child = spawnImpl('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', FIND_SCRIPT], { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true, env });
     let out = '';
     child.stdout?.on('data', (c) => { out += c; });
@@ -164,21 +164,26 @@ export function findWorkWindow({ folder, titles = [], focus = true, only = null,
 }
 
 /** The PowerShell lines a new terminal runs: into the folder, then Claude Code on that conversation (or a new one). */
-export function resumeScript({ folder, sessionId = null, title = '' }) {
-  if (sessionId && !SESSION_RE.test(sessionId)) throw new Error('That conversation id is not valid.');
+export function resumeScript({ folder, sessionId = null, title = '', engine = 'claude', model = null, reasoning = null }) {
+  if (!['claude', 'codex', 'copilot', 'gemini'].includes(engine)) throw new Error('Unknown terminal engine.');
+  if (sessionId && !(engine === 'claude' ? SESSION_RE.test(sessionId) : /^[A-Za-z0-9_-]{1,100}$/.test(sessionId))) throw new Error('That conversation id is not valid.');
+  if (model && !/^[A-Za-z0-9._:-]{1,100}$/.test(model)) throw new Error('That model is not valid.');
+  if (reasoning && !['none', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(reasoning)) throw new Error('That reasoning setting is not valid.');
   const q = (s) => `'${String(s).replace(/'/g, "''")}'`;
+  const label = { claude: 'Claude Code', codex: 'Codex', copilot: 'Copilot', gemini: 'Gemini' }[engine];
+  const command = engine === 'codex' ? `codex${sessionId ? ` resume ${q(sessionId)}` : ''}${model ? ` --model ${q(model)}` : ''}${reasoning ? ` -c ${q(`model_reasoning_effort="${reasoning}"`)}` : ''}` : engine === 'claude' ? `claude${sessionId ? ` --resume ${sessionId}` : ''}${model ? ` --model ${q(model)}` : ''}` : engine === 'copilot' ? 'copilot' : 'agy';
   return [
-    `$Host.UI.RawUI.WindowTitle = ${q(`Claude Code · ${path.basename(folder)}${title ? ` · ${title}` : ''}`.slice(0, 120))}`,
+    `$Host.UI.RawUI.WindowTitle = ${q(`${label} · ${path.basename(folder)}${title ? ` · ${title}` : ''}`.slice(0, 120))}`,
     `Set-Location -LiteralPath ${q(folder)}`,
-    `Write-Host ${q(sessionId ? `Circle Studio: carrying on "${title || sessionId}" here` : 'Circle Studio: a new Claude Code session in this folder')} -ForegroundColor Cyan`,
-    sessionId ? `claude --resume ${sessionId}` : 'claude',
+    `Write-Host ${q(sessionId && ['claude', 'codex'].includes(engine) ? `Circle Studio: carrying on "${title || sessionId}" here` : `Circle Studio: a new ${label} session in this folder`)} -ForegroundColor Cyan`,
+    command,
   ].join('; ');
 }
 
 /** Open that terminal (a visible PowerShell, through the same checked launcher as Let's begin). */
-export function openResumeTerminal({ appRoot, folder, sessionId, title, spawnImpl = spawn }) {
+export function openResumeTerminal({ appRoot, folder, sessionId, title, engine = 'claude', model, reasoning, spawnImpl = spawn }) {
   if (process.platform !== 'win32') return { opened: false, why: `Open a terminal in ${folder} and run: claude${sessionId ? ` --resume ${sessionId}` : ''}` };
-  const encoded = Buffer.from(resumeScript({ folder, sessionId, title }), 'utf16le').toString('base64');
+  const encoded = Buffer.from(resumeScript({ folder, sessionId, title, engine, model, reasoning }), 'utf16le').toString('base64');
   const child = spawnImpl(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'wscript.exe'), [path.join(appRoot, 'scripts', 'open-terminal.vbs'), encoded], { detached: true, stdio: 'ignore', windowsHide: false, env: cleanEnv() });
   child.on?.('error', () => {});
   child.unref?.();

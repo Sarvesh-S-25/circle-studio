@@ -16,7 +16,8 @@ export function alertsPermission() {
 export async function enableAlerts() {
   setPref('desktopAlerts', true);
   if (typeof Notification === 'undefined') return 'unsupported';
-  if (Notification.permission === 'default') { try { return await Notification.requestPermission(); } catch { return Notification.permission; } }
+  if (Notification.permission === 'default') { try { const result = await Notification.requestPermission(); window.dispatchEvent(new Event('circle:notification-permission')); return result; } catch { return Notification.permission; } }
+  window.dispatchEvent(new Event('circle:notification-permission'));
   return Notification.permission;
 }
 

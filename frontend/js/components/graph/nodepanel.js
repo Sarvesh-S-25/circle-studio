@@ -25,6 +25,8 @@ export function openNodePanel(side, { node, workflow, graph, project, tab = 'set
   if (!node) { side.replaceChildren(); return { destroy() {} }; }
   let current = tab;
   let chat = null;
+  let generation = 0;
+  let destroyed = false;
   const body = h('div', { class: 'cs-npanel' });
   const tabs = h('div', { class: 'cs-tabs', role: 'tablist', 'aria-label': `${node.title}` });
   // "You" talks to the project's main session (the one that runs the team, and where your Claude Code conversations are).
@@ -167,7 +169,7 @@ export function openNodePanel(side, { node, workflow, graph, project, tab = 'set
       node.kind === 'agent' ? h('div', { class: 'cs-stack' },
         engineField(),
         field('Model', (() => {
-          const list = MODELS[node.engine] || [];
+          const list = state.engines.find((e) => e.id === node.engine)?.models || MODELS[node.engine] || [];
           const i = h('input', { class: 'cs-input', value: node.model || '', list: 'node-models', placeholder: 'Engine default' });
           i.addEventListener('input', () => patch({ model: i.value.trim() }, { soon: true }));
           return h('div', {}, i, h('datalist', { id: 'node-models' }, list.map((m) => h('option', { value: m }))));
@@ -186,17 +188,23 @@ export function openNodePanel(side, { node, workflow, graph, project, tab = 'set
   }
 
   async function drawChat() {
+    const mine = generation;
     body.replaceChildren(h('div', { class: 'cs-loading' }, icon('spinner', 'm'), 'Loading...'));
     const m = await import('../../views/chat.js');
     if (!state.engines.length) { try { state.engines = (await api.engines()).engines; } catch { /* shown below */ } }
+    if (destroyed || mine !== generation) return;
     if (!state.engines.length) { body.replaceChildren(h('p', { class: 'cs-soft' }, 'Could not check the engines. Open Settings to see why.')); return; }
     const host = h('div', { class: 'cs-npanel__chat' });
+    const selection = node.kind === 'human' ? (await api.project(project.id).catch(() => null))?.selectedChat : { engine: node.engine, model: node.model };
+    if (destroyed || mine !== generation) return;
     body.replaceChildren(host);
-    chat = m.mountChat(host, { project, nodeId: node.kind === 'human' ? null : node.id });
+    chat = m.mountChat(host, { project, nodeId: node.kind === 'human' ? null : node.id, engine: selection?.engine, model: selection?.model, reasoning: selection?.reasoning });
   }
 
   function draw() {
+    generation++;
     chat?.destroy();
+    chat = null;
     chat = null;
     tabs.replaceChildren(...[['settings', 'Settings', 'settings'], ...(canChat ? [['chat', chatLabel, 'chat']] : [])].map(([k, label, ic]) => h('button', { class: 'cs-tab', type: 'button', role: 'tab', 'aria-selected': String(current === k), tabindex: current === k ? '0' : '-1', onclick: () => { current = k; draw(); } }, icon(ic, 's'), label)));
     if (current === 'chat' && canChat) drawChat(); else drawSettings();
@@ -204,7 +212,7 @@ export function openNodePanel(side, { node, workflow, graph, project, tab = 'set
 
   const root = h('aside', { class: 'cs-inspector', 'aria-label': `${node.title} settings` },
     h('div', { class: 'cs-inspector__head' }, h('h2', { class: 'cs-h3 cs-grow' }, node.title), h('span', { class: 'cs-pill cs-pill--quiet' }, node.kind),
-      h('button', { class: 'cs-btn cs-btn--quiet cs-btn--icon', type: 'button', 'aria-label': 'Close the panel', onclick: () => { side.replaceChildren(); graph.select(null, { open: false }); } }, icon('close', 'm'))),
+      h('button', { class: 'cs-btn cs-btn--quiet cs-btn--icon', type: 'button', 'aria-label': 'Close the panel', onclick: () => { destroy(); graph.select(null, { open: false }); } }, icon('close', 'm'))),
     tabs, h('div', { class: 'cs-inspector__body' }, body));
   side.replaceChildren(root);
   draw();
@@ -215,5 +223,6 @@ export function openNodePanel(side, { node, workflow, graph, project, tab = 'set
       (sec?.querySelector('input:checked') || sec)?.focus({ preventScroll: true });
     });
   }
-  return { destroy() { chat?.destroy(); clearTimeout(timer); side.replaceChildren(); } };
+  function destroy() { destroyed = true; generation++; chat?.destroy(); chat = null; clearTimeout(timer); side.replaceChildren(); }
+  return { destroy };
 }

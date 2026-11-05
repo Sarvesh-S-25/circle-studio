@@ -1,0 +1,30 @@
+// Verify a local release in a workspace-only installation; never register shortcuts or touch user data.
+import fs from 'node:fs';
+import path from 'node:path';
+import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { validateReleaseZip, verifyStagedLaunch } from '../backend/lib/release-update.mjs';
+import { cleanEnv } from '../backend/lib/run.mjs';
+
+const workspace = path.resolve(import.meta.dirname, '..');
+const archive = path.resolve(process.argv[2] || '');
+const releaseRoot = path.join(workspace, 'release') + path.sep;
+if (!archive.toLowerCase().startsWith(releaseRoot.toLowerCase()) || !archive.endsWith('.zip')) throw new Error('Choose a ZIP under this workspace release folder.');
+const expected = fs.readFileSync(archive + '.sha256', 'utf8').trim().split(/\s+/)[0];
+const checksum = createHash('sha256');
+for await (const chunk of fs.createReadStream(archive)) checksum.update(chunk);
+if (checksum.digest('hex') !== expected) throw new Error('Archive checksum mismatch.');
+const zip = validateReleaseZip(archive);
+const stage = fs.mkdtempSync(path.join(path.dirname(archive), 'verification-'));
+const source = path.join(stage, 'source');
+const install = path.join(stage, 'installed');
+const env = cleanEnv({ ...process.env, CIRCLE_VERIFY_ZIP: archive, CIRCLE_VERIFY_SOURCE: source, CIRCLE_INSTALL_ROOT: install, CIRCLE_INSTALL_DATA: path.join(stage, 'data') });
+const run = (args) => execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', ...args], { env, windowsHide: true, timeout: 120000, stdio: 'pipe' });
+run(['-Command', 'Expand-Archive -LiteralPath $env:CIRCLE_VERIFY_ZIP -DestinationPath $env:CIRCLE_VERIFY_SOURCE']);
+run(['-File', path.join(source, 'scripts/install-package.ps1'), '-StageOnly', '-NoOpen']);
+const manifest = JSON.parse(fs.readFileSync(path.join(source, 'release-manifest.json'), 'utf8'));
+const root = path.join(install, `app-${manifest.version}`);
+await verifyStagedLaunch(root, stage);
+const report = { passed: true, version: manifest.version, archive, checksum: expected, entries: zip.entries, installedRoot: root, isolatedLaunch: true, shortcutsCreated: false, realDataUsed: false };
+fs.writeFileSync(path.join(path.dirname(archive), 'verification.json'), JSON.stringify(report, null, 2));
+console.log(JSON.stringify(report, null, 2));

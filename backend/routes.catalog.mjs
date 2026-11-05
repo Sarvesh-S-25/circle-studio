@@ -69,10 +69,9 @@ export function buildCatalogHandlers(app) {
       await ensureCatalog(app);
       const weak = catalog.weak().slice(0, 40);
       if (!weak.length) return { described: 0, left: 0 };
-      await claude.requireReady();
-      const r = await claude.advise({ key: 'catalog', prompt: summaryPrompt(weak), model: 'haiku', schema: SUMMARY_SCHEMA, kind: 'catalog' });
+      const r = await app.advice.run({ key: 'catalog', prompt: summaryPrompt(weak), model: 'haiku', schema: SUMMARY_SCHEMA, kind: 'catalog' });
       const ids = new Set(weak.map((e) => e.id));
-      await catalog.setSummaries((r.data?.items || []).filter((i) => ids.has(i.id)));
+      await catalog.setSummaries((r.data?.items || []).filter((i) => ids.has(i.id)), r.engine === 'codex' ? 'codex' : 'haiku');
       return { described: (r.data?.items || []).length, left: catalog.weak().length, costUsd: r.costUsd };
     },
     // Fetch one https page once, keep its text locally in chunks. This request leaves the PC: only on the human's click.

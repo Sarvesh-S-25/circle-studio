@@ -72,6 +72,8 @@ export function consultText(agent) {
 
 /** The condenser pattern: an agent hands long reading to a Haiku "reader" and works from its short answer. */
 export const READER_ID = 'reader';
+export const AGENT_START = '<!-- circle:agent:start -->';
+export const AGENT_END = '<!-- circle:agent:end -->';
 export function readerText(agent) {
   if (!agent.reader) return '';
   return 'Before you read anything long (big files, logs, test output, web pages, search results), hand it to the reader agent (Haiku) with what you need to know, and work from its short answer. Read the exact lines yourself only where you will change or quote them.';
@@ -135,7 +137,7 @@ function claudeAgentMd(agent, stage) {
   const where = stage ? `\n\nYou work in the "${oneLine(stage.title, 100)}" stage. ${checkpointText(stage.gate)}` : '';
   const consult = consultText(agent) ? `\n\n${consultText(agent)}` : '';
   const reader = readerText(agent) ? `\n\n${readerText(agent)}` : '';
-  return `${front.join('\n')}\n${body}${where}${consult}${reader}\n`;
+  return `${front.join('\n')}\n${AGENT_START}\n${body}${where}${consult}${reader}\n${AGENT_END}\n`;
 }
 
 function skillFiles(workflow, library, warnings) {

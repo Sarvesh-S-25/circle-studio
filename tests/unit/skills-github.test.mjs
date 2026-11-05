@@ -98,8 +98,17 @@ test('fetch imports all-or-nothing, wraps front matter, reports conflicts, skips
     const r2 = await gh.fetch({ url, ref: 'main', picks: ['skills/alpha'], library: lib });
     assert.equal(r2.conflicts.length, 1);
     assert.equal(r2.conflicts[0].suggestion, 'alpha-2');
-    const r3 = await gh.fetch({ url, ref: 'main', picks: ['skills/alpha'], overwrite: true, library: lib });
+    const preview = await gh.fetch({ url, ref: 'main', picks: ['skills/alpha'], overwrite: true, preview: true, library: lib });
+    const r3 = gh.applyImport(preview.planId, lib);
     assert.deepEqual(r3.imported, ['alpha']);
+    const stale = await gh.fetch({ url, ref: 'main', picks: ['skills/alpha'], overwrite: true, preview: true, library: lib });
+    const changed = lib.get('alpha').skillMd + '\nLocal instruction that must survive.\n';
+    lib.save('alpha', changed);
+    assert.throws(() => gh.applyImport(stale.planId, lib), /changed after review/);
+    assert.equal(lib.get('alpha').skillMd, changed);
+    const updated = await gh.fetch({ url, ref: 'main', picks: ['skills/alpha'], overwrite: true, preview: true, library: lib });
+    assert.equal(updated.previews[0].locallyModified, true);
+    assert.ok(updated.previews[0].files.some((f) => f.before?.includes('Local instruction')));
     assert.ok(fs.readdirSync(lib.dir).every((n) => !n.startsWith('.stage') && !n.includes('.old-')), 'no staging leftovers');
   } finally { rmDir(dir); }
 });

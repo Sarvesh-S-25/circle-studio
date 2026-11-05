@@ -32,8 +32,8 @@ test('the bundled template is seeded once; deleting it keeps it deleted', () => 
     assert.deepEqual(seed.engines, ['claude']);
     assert.ok(fs.existsSync(store.abs('templates/.seeded')), 'a marker file records that it was seeded');
     templates.remove(SEED_ID);
-    assert.deepEqual(templates.list(), []);
-    assert.deepEqual(new Templates({ store, seedFile: SEED_FILE }).list(), [], 'a new start does not bring it back');
+    assert.deepEqual(templates.list().map((t) => t.id), ['codex_build_check']);
+    assert.deepEqual(new Templates({ store, seedFile: SEED_FILE }).list().map((t) => t.id), ['codex_build_check'], 'a new start does not bring it back');
     rejects(() => templates.get(SEED_ID), 'not_found', /No such template/);
     rejects(() => templates.remove(SEED_ID), 'not_found', /No such template/);
   } finally { done(); }
@@ -45,9 +45,9 @@ test('a missing seed file is not marked as seeded, so it is tried again', () => 
   const quiet = console.error;
   console.error = () => {};
   try {
-    assert.deepEqual(new Templates({ store, seedFile: path.join(dir, 'nope.json') }).list(), []);
+    assert.deepEqual(new Templates({ store, seedFile: path.join(dir, 'nope.json') }).list().map((t) => t.id), ['codex_build_check']);
     assert.equal(fs.existsSync(store.abs('templates/.seeded')), false);
-    assert.equal(new Templates({ store, seedFile: SEED_FILE }).list().length, 1);
+    assert.equal(new Templates({ store, seedFile: SEED_FILE }).list().length, 2);
   } finally { console.error = quiet; rmDir(dir); }
 });
 
@@ -65,7 +65,7 @@ test('create: blank, from a workflow, with a name and description', () => {
     assert.equal(named.workflow.description, 'For me');
     assert.equal(named.versions.length, 1);
     assert.equal(named.versions[0].note, 'Created');
-    assert.deepEqual(templates.list().map((t) => t.name), [seedWorkflow().name, 'Untitled workflow', 'Mine']);
+    assert.deepEqual(templates.list().map((t) => t.name), [seedWorkflow().name, 'Codex build and check', 'Untitled workflow', 'Mine']);
     rejects(() => templates.create({ workflow: { nodes: 'x' } }), 'bad_request', /nodes list/);
   } finally { done(); }
 });
@@ -109,7 +109,7 @@ test('import from pasted JSON (text or object), naming it or not', () => {
     rejects(() => templates.import({ json: '{}', path: 'C:\\x.json' }), 'bad_request', /not both/);
     rejects(() => templates.import({ json: { ...tiny(), schema: 'other/9' } }), 'bad_request', /not a circle-workflow/);
     rejects(() => templates.import({ json: { ...tiny(), nodes: [{ id: 'you', kind: 'human', does: 'use sk-ant-abcdefghijklmnopqrstuvwxyz0123' }] } }), 'bad_request', /looks like a secret/);
-    assert.equal(templates.list().length, 3, 'a refused import leaves nothing behind');
+    assert.equal(templates.list().length, 4, 'a refused import leaves nothing behind');
   } finally { done(); }
 });
 

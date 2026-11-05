@@ -12,6 +12,7 @@ import { parseFrontMatter, fieldString } from './frontmatter.mjs';
 import { historyDir, SESSION_RE } from './cchistory.mjs';
 import { priceOf, costOf, tokensOf, PRICES_AS_OF, ALIASES } from './pricing.mjs';
 import { redact } from './secrets.mjs';
+import { BoundedCache } from './cache.mjs';
 
 const read = (abs) => { try { return fs.readFileSync(abs, 'utf8'); } catch { return null; } };
 const rel = (root, abs) => path.relative(root, abs).split(path.sep).join('/');
@@ -87,7 +88,7 @@ export function contextWeight(rootIn, { claudeHome }) {
 
 /* ---- measured usage from Claude Code's transcripts ------------------------------------------------- */
 
-const usageCache = new Map(); // file -> { key, records }
+const usageCache = new BoundedCache(); // file -> { key, records }
 
 async function fileUsage(file, agentType) {
   let st;

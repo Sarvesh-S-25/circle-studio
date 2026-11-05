@@ -54,10 +54,12 @@ export function appendVersion(record, workflow, { note = '', bump, at, restoredF
   const version = nextVersion(record.head, level);
   const entry = { version, at, note: clip(note), parent: head.version, ...(restoredFrom ? { restoredFrom } : {}), summary: summarize(diff), workflow: { ...workflow, version } };
   const versions = [...record.versions, entry];
-  if (versions.length > MAX_VERSIONS) {
-    versions.splice(0, versions.length - MAX_VERSIONS);
-    versions[0] = { ...versions[0], parent: null };
+  while (versions.length > MAX_VERSIONS) {
+    const remove = versions.findIndex((v) => v.version !== entry.version && v.pinned !== true);
+    if (remove < 0) throw badRequest('Unpin an older workflow version before saving another. Pinned versions were preserved.');
+    versions.splice(remove, 1);
   }
+  if (versions.length && versions[0].parent) versions[0] = { ...versions[0], parent: null };
   return { record: { ...record, head: version, versions }, unchanged: false, level, version };
 }
 

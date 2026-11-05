@@ -40,6 +40,10 @@ function limitsCard() {
     let r;
     try { r = await api.limits(); } catch (e) { card.replaceChildren(h('span', { class: 'cs-soft cs-small' }, e.message)); return; }
     const t = r.tap;
+    if (r.engine !== 'claude') {
+      card.replaceChildren(h('div', { class: 'cs-grow cs-stack cs-stack--tight' }, h('strong', { id: 'lim-title' }, `${r.engine} account limits`), h('p', { class: 'cs-soft cs-small' }, r.limits?.error || 'Account windows are shown in the Limits tile. Context capacity and account quotas are separate.')), h('button', { class: 'cs-btn', onclick: async () => { try { await api.limits(r.engine, true); await draw(); } catch (error) { toast(error.message, { kind: 'danger' }); } } }, 'Refresh account limits'));
+      return;
+    }
     const set = async (on) => {
       if (on) {
         const ok = await new Promise((resolve) => openModal({

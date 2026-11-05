@@ -11,20 +11,20 @@ import { parseAlerts } from './lib/alerts.mjs';
 import { checkUpdate } from './lib/updater.mjs';
 import { listServers } from './lib/connections.mjs';
 import { analyze } from './lib/mcpmanage.mjs';
-import { Notices } from './lib/notices.mjs';
+import { Notices, notificationAllowed } from './lib/notices.mjs';
 import { Replies } from './lib/replies.mjs';
 import { desktopWidgets } from './lib/deskhost.mjs';
 
 const ALERT_POLL_MS = 30_000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export function createDesktopServices({ config, store, projects, sessions, overrides = {} }) {
+export function createDesktopServices({ config, store, projects, sessions, overrides = {}, advisoryCount = () => 0 }) {
   const settings = new Settings(store);
   // every notice is kept for the Notifications tile; the Windows toast is extra, only when no window is open
   const notices = overrides.notices || new Notices(store);
   // Tests never pop real notifications.
   const toast = overrides.toast || (process.env.NODE_TEST_CONTEXT ? () => false : windowsToast);
-  const viewers = { count: 0 };
+  const viewers = { count: 0, notifiers: 0 };
   // chat answers to show on the desktop as cards you can reply to; `fromDesktop` marks turns you started there
   const replies = new Replies();
   const fromDesktop = new Set();
@@ -42,26 +42,29 @@ export function createDesktopServices({ config, store, projects, sessions, overr
     return alerts;
   }
 
-  const quiet = () => viewers.count > 0 || settings.get().desktopAlerts === false;
+  const quiet = () => (viewers.count > 0 && viewers.notifiers > 0) || settings.get().desktopAlerts === false;
   // the desktop host shows an agent's request as a card with its own buttons: then a Windows toast would say it twice
   const carded = () => settings.get().desktopAsks !== false && (overrides.asksOnDesktop ? overrides.asksOnDesktop() : !process.env.NODE_TEST_CONTEXT && desktopWidgets(config).status().running);
 
   // runs that took a while (or failed) are worth a notice; a quick chat answer you watched is not
   const runStarts = new Map();
-  const LONG_RUN_MS = 20_000;
   sessions.subscribe((name, data) => {
     if (name === 'run') {
       if (data.status === 'active') { if (!runStarts.has(data.runId)) runStarts.set(data.runId, Date.now()); return; }
       if (!['done', 'error', 'idle'].includes(data.status)) return; // waiting for you: still the same run
       const started = runStarts.get(data.runId);
       runStarts.delete(data.runId);
-      const who = `${nameOf(data.projectId)}: ${data.nodeId && data.nodeId !== 'main' ? data.nodeId : 'the chat'}`;
+      const who = `${nameOf(data.projectId)}: ${data.nodeId && data.nodeId !== 'main' ? data.nodeId : ({ claude: 'Claude', codex: 'Codex', copilot: 'Copilot', gemini: 'Gemini' })[data.engine] || 'the chat'}`;
       // an answer to something said from the desktop, or one nobody was watching: a card to read and reply to
       const turn = `${data.projectId}|${data.nodeId || ''}`;
-      if (data.status === 'done' && (fromDesktop.has(turn) || viewers.count === 0)) replies.add({ projectId: data.projectId, nodeId: data.nodeId && data.nodeId !== 'main' ? data.nodeId : null, engine: data.engine });
+      if (data.status === 'done' && notificationAllowed(settings.get(), 'done') && (fromDesktop.has(turn) || viewers.count === 0 || carded())) replies.add({ projectId: data.projectId, nodeId: data.nodeId && data.nodeId !== 'main' ? data.nodeId : null, engine: data.engine, conversationId: data.conversationId, runId: data.runId });
       fromDesktop.delete(turn);
-      if (data.status === 'error') notices.add({ kind: 'error', title: `${who} stopped with an error`, projectId: data.projectId, url: `#/projects/${data.projectId}/chat` });
-      else if (data.status === 'done' && started && Date.now() - started >= LONG_RUN_MS) notices.add({ kind: 'done', title: `${who} finished`, body: `after ${Math.round((Date.now() - started) / 1000)} s`, projectId: data.projectId, url: `#/projects/${data.projectId}/chat` });
+      const url = `#/projects/${data.projectId}/chat/${data.engine || 'claude'}/${data.conversationId || '_'}${data.nodeId && data.nodeId !== 'main' ? `/${data.nodeId}` : ''}`;
+      if (data.status === 'error' || data.status === 'done') {
+        const kind = data.status === 'done' ? 'done' : 'error';
+        const notice = notices.add({ kind, title: `${who} ${kind === 'done' ? 'finished' : 'stopped with an error'}`, body: started ? `after ${Math.max(0, Math.round((Date.now() - started) / 1000))} s` : '', projectId: data.projectId, url, engine: data.engine, conversationId: data.conversationId, runId: data.runId, eventId: `run:${data.runId}:${kind}` });
+        if (!quiet() && !(kind === 'done' && carded()) && notificationAllowed(settings.get(), kind)) toast({ title: notice.title, body: notice.body || 'Open the saved conversation.', url: `${base()}/${url}` });
+      }
       return;
     }
     if (name !== 'request') return;
@@ -101,7 +104,7 @@ export function createDesktopServices({ config, store, projects, sessions, overr
           this.last = await (overrides.checkUpdate || checkUpdate)(config.appRoot);
           if (this.last.available && !before) notices.add({ kind: 'update', title: 'An update for Circle Studio is ready', body: (this.last.changes || []).slice(0, 2).join('; '), url: '#/settings' });
           await settings.set({ updates: { ...settings.get().updates, lastCheck: this.last.at, available: this.last.available === true } });
-          if (this.last.available && viewers.count === 0 && settings.get().desktopAlerts !== false) toast({ title: 'Circle Studio: an update is ready', body: 'Open Circle Studio and press Update in Settings.', url: `${base()}/#/settings` });
+          if (this.last.available && viewers.count === 0 && settings.get().desktopAlerts !== false && notificationAllowed(settings.get(), 'update')) toast({ title: 'Circle Studio: an update is ready', body: 'Open Circle Studio and press Update in Settings.', url: `${base()}/#/settings` });
           return this.last;
         } finally { this.checking = null; }
       })();
@@ -122,14 +125,14 @@ export function createDesktopServices({ config, store, projects, sessions, overr
   const codeAtStart = codeFingerprint(config.appRoot);
   const restart = { pending: false };
   const isStale = () => codeFingerprint(config.appRoot) !== codeAtStart;
-  const busy = () => (sessions?.runs?.size || 0) + (sessions?.inbox?.list({ status: 'pending' }).length || 0);
-  function restartIntoNewCode() {
+  const busy = () => (sessions?.runs?.size || 0) + (sessions?.inbox?.list({ status: 'pending' }).length || 0) + advisoryCount();
+  function restartIntoNewCode(nextRoot = config.appRoot) {
     if (restart.pending) return true;
-    if (overrides.restart) { restart.pending = true; overrides.restart(); return true; }
+    if (overrides.restart) { restart.pending = true; overrides.restart(nextRoot); return true; }
     if (process.platform !== 'win32' || process.env.NODE_TEST_CONTEXT) return false;
     restart.pending = true;
     setTimeout(() => {
-      const child = spawn('wscript.exe', [path.join(config.appRoot, 'scripts', 'launch.vbs'), '--background'], { detached: true, stdio: 'ignore', windowsHide: true });
+      const child = spawn('wscript.exe', [path.join(nextRoot, 'scripts', 'launch.vbs'), '--background'], { detached: true, stdio: 'ignore', windowsHide: true });
       child.on('error', () => { restart.pending = false; });
       child.unref();
     }, 500);
@@ -213,5 +216,13 @@ export function createDesktopServices({ config, store, projects, sessions, overr
     return { shown: 'new', appWindow: open(url, size) };
   }
 
-  return { settings, notices, viewers, replies, fromDesktop, carded, listAlerts, pollAlerts, updates, watchConnections, addWindow, showWindow, restartIntoNewCode, autoRestart, isStale, busyCount: busy, restart, openWindows: () => [...windows.keys()], stopDesktop: () => { clearInterval(autoTimer); clearInterval(timer); clearInterval(updTimer); clearTimeout(first); clearInterval(cxTimer); clearTimeout(cxFirst); } };
+  const testNotification = async (engine) => {
+    if (settings.get().desktopAlerts === false) return { requested: false, reason: 'Desktop notifications are turned off in Settings.' };
+    const title = 'Circle Studio: ' + engine + ' notification test';
+    const body = 'This is a dummy test. No model turn was started.';
+    const requested = await toast({ title, body, url: base() + '/#/settings' });
+    notices.add({ kind: 'done', title, body, eventId: 'test:' + randomBytes(6).toString('hex'), engine, url: '#/settings' });
+    return { requested: Boolean(requested), reason: requested ? 'Notification submitted to Windows. Check the notification center; submission does not confirm display. Windows Do not disturb or app notification settings can hide it.' : 'The operating-system notification request could not be submitted.' };
+  };
+  return { testNotification, settings, notices, viewers, replies, fromDesktop, carded, listAlerts, pollAlerts, updates, watchConnections, addWindow, showWindow, restartIntoNewCode, autoRestart, isStale, busyCount: busy, restart, openWindows: () => [...windows.keys()], stopDesktop: () => { clearInterval(autoTimer); clearInterval(timer); clearInterval(updTimer); clearTimeout(first); clearInterval(cxTimer); clearTimeout(cxFirst); } };
 }

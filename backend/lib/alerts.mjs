@@ -41,6 +41,7 @@ export function parseAlerts(text) {
     return {
       id: e.id, title: e.title, status, open: isOpenStatus(status), raised, at: raisedAt(raised),
       question: field(e.block, 'Question for the human'), options: field(e.block, 'Options'), blocks: field(e.block, 'Blocks'),
+      answerable: field(e.block, 'Status') !== null && Boolean(field(e.block, 'Question for the human')),
       answer: field(e.block, 'Answer'),
     };
   });

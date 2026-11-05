@@ -62,12 +62,15 @@
 .cs-hist__item:focus-visible { outline: var(--bw-strong) solid var(--c-focus); outline-offset: var(--bw); }
 .cs-hist__title { font-weight: var(--fw-medium); overflow-wrap: anywhere; }
 .cs-hist__head { position: sticky; inset-block-start: calc(var(--sp-2) * -1); z-index: 1; align-items: center; flex-wrap: wrap; }
+.cs-hist__head > .cs-grow { flex: 1 1 100%; }
 .cs-hist__divider { display: flex; align-items: center; gap: var(--sp-3); color: var(--c-text-soft); font-size: var(--fs-s); }
 .cs-hist__divider::before, .cs-hist__divider::after { content: ''; flex: 1; border-block-start: var(--bw) solid var(--c-line); }
 .cs-hist__note, .cs-hist__earlier { align-self: center; text-align: center; }
 
 /* ---- settings ------------------------------------------------------------------------------------ */
 .cs-settings { max-inline-size: var(--w-xl); }
+.cs-settings .cs-table { table-layout: fixed; inline-size: 100%; overflow-wrap: anywhere; }
+.cs-settings .cs-table th { inline-size: 40%; }
 .cs-settings th { text-align: start; font-weight: var(--fw-medium); inline-size: var(--w-s); vertical-align: top; }
 
 /* ---- advisor ------------------------------------------------------------------------------------- */

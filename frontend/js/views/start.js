@@ -15,7 +15,7 @@ export async function mount(el) {
   let checking = false;
   let other = pref('start-other', '') === '1';
 
-  const statusOf = (e) => (e.usable ? ['ok', 'Ready'] : e.installed ? ['warn', 'Installed, not signed in'] : ['quiet', 'Not installed']);
+  const statusOf = (e) => (e.installed && e.loggedIn === true ? ['ok', 'Ready'] : e.installed && e.loggedIn == null ? ['warn', 'Installed, sign-in unverified'] : e.installed ? ['warn', 'Installed, not signed in'] : ['quiet', 'Not installed']);
   const copyBtn = (cmd) => h('button', { class: 'cs-btn cs-btn--quiet cs-btn--small cs-btn--icon', type: 'button', 'aria-label': `Copy ${cmd}`, title: 'Copy', onclick: async () => { try { await navigator.clipboard.writeText(cmd); toast('Copied. Paste it in a terminal (PowerShell).', { kind: 'ok', ms: 2500 }); } catch { toast('Could not copy.', { kind: 'warn' }); } } }, icon('copy', 's'));
   const doIt = (e, step) => h('button', { class: 'cs-btn cs-btn--small', type: 'button', title: 'Opens a terminal window that runs this command; watch it there', onclick: async () => {
     try { await api.engineTerminal(e.id, step); toast(step === 'login' ? 'A terminal opened: follow it (your browser may open to sign in). Then press Check again.' : 'A terminal opened and is installing. When it says Done, press Check again.', { kind: 'info', ms: 9000 }); } catch (x) { toast(x.message, { kind: 'danger' }); }
@@ -23,7 +23,7 @@ export async function mount(el) {
 
   function steps(e) {
     const s = e.setup;
-    if (!s || e.usable) return null;
+    if (!s || (e.usable && e.loggedIn === true)) return null;
     const items = [];
     if (!e.installed) {
       items.push(s.install
@@ -43,7 +43,7 @@ export async function mount(el) {
       h('label', { class: 'cs-row cs-row--wrap cs-start__pick' },
         h('input', { type: 'checkbox', checked: on || undefined, onchange: (ev) => { if (ev.target.checked) chosen.add(e.id); else chosen.delete(e.id); setPref('start-engines', JSON.stringify([...chosen])); draw(); } }),
         h('strong', { id: `st-${e.id}` }, s.label || e.label), h('span', { class: 'cs-soft cs-small' }, s.maker ? `by ${s.maker}` : ''), h('span', { class: 'cs-grow' }),
-        h('span', { class: `cs-pill cs-pill--${tone}` }, e.usable ? icon('check', 's') : null, word)),
+        h('span', { class: `cs-pill cs-pill--${tone}` }, e.loggedIn === true ? icon('check', 's') : null, word)),
       h('p', { class: 'cs-small' }, s.does || ''),
       on ? h('p', { class: 'cs-soft cs-small' }, `You need: ${s.account || 'an account for it'}`) : null,
       on ? steps(e) : null);
@@ -53,7 +53,7 @@ export async function mount(el) {
   function githubSection() {
     const g = state.github;
     if (!g?.setup) return null;
-    const pseudo = { id: 'github', installed: g.installed, usable: g.signedIn, setup: g.setup };
+    const pseudo = { id: 'github', installed: g.installed, usable: g.signedIn, loggedIn: g.signedIn, setup: g.setup };
     const [tone, word] = g.signedIn ? ['ok', `Signed in${g.account ? ` as ${g.account}` : ''}`] : g.installed ? ['warn', 'Installed, not signed in'] : ['quiet', 'Not installed'];
     return h('section', { class: 'cs-stack cs-stack--tight', 'aria-labelledby': 'st-gh' },
       h('h2', { class: 'cs-h3', id: 'st-gh' }, '2. GitHub (optional)'),
@@ -69,7 +69,7 @@ export async function mount(el) {
     // the first time: tick what is already on this PC
     if (!autoPicked && engines.length) { autoPicked = true; engines.filter((e) => e.installed).forEach((e) => chosen.add(e.id)); }
     const readyChosen = engines.filter((e) => chosen.has(e.id) && e.usable);
-    const ready = engines.filter((e) => e.usable);
+    const ready = engines.filter((e) => e.usable && e.loggedIn === true);
     body.replaceChildren(
       h('section', { class: 'cs-stack cs-stack--tight', 'aria-labelledby': 'st-which' },
         h('h2', { class: 'cs-h3', id: 'st-which' }, '1. Which AI tools do you use?'),
@@ -77,7 +77,7 @@ export async function mount(el) {
         engines.length ? h('div', { class: 'cs-start__grid' }, engines.map(card),
           h('section', { class: `cs-card cs-start__card ${other ? 'cs-start__card--on' : ''}` },
             h('label', { class: 'cs-row cs-row--wrap cs-start__pick' }, h('input', { type: 'checkbox', checked: other || undefined, onchange: (ev) => { other = ev.target.checked; setPref('start-other', other ? '1' : ''); draw(); } }), h('strong', {}, 'Something else'), h('span', { class: 'cs-soft cs-small' }, 'OpenClaw, Cursor, Aider...')),
-            other ? h('p', { class: 'cs-small' }, 'Circle Studio cannot run these. Here every agent asks you before it runs a command or changes a file; OpenClaw runs a task on its own with no way to ask you first (and usually needs API keys), and Cursor and Aider have no way for Circle Studio to relay your answers. You can still plan workflows, keep keys and skills, and use the widgets here, and run your tool in its own window.') : h('p', { class: 'cs-small cs-soft' }, 'Not supported; see why and what still works.')))
+            other ? h('p', { class: 'cs-small' }, 'Circle Studio cannot run these. Circle can relay requests raised by supported engines; OpenClaw runs a task on its own with no way to ask you first (and usually needs API keys), and Cursor and Aider have no way for Circle Studio to relay your answers. You can still plan workflows, keep keys and skills, and use the widgets here, and run your tool in its own window.') : h('p', { class: 'cs-small cs-soft' }, 'Not supported; see why and what still works.')))
           : h('div', { class: 'cs-loading' }, icon('spinner', 's'), 'Looking for AI tools on this PC...')),
       h('div', { class: 'cs-row cs-row--wrap' },
         h('button', { class: 'cs-btn', type: 'button', disabled: checking || undefined, onclick: check }, icon(checking ? 'spinner' : 'refresh', 's'), checking ? 'Checking...' : 'Check again'),
@@ -88,7 +88,7 @@ export async function mount(el) {
         ready.length
           ? h('p', {}, readyChosen.length || !chosen.size ? 'You are set. Pick a project folder on Home, or describe something new to build.' : 'Something is ready, but not what you ticked yet: finish its steps above, or start with what is ready.')
           : h('p', { class: 'cs-soft' }, 'Once one tool says Ready, you can start. You can also look around first: nothing runs without one.'),
-        !ready.some((e) => e.id === 'claude') && ready.length ? h('p', { class: 'cs-soft cs-small' }, 'Without Claude Code, the workflow helper and Find skills are off; agents and chats run on the tools that are ready.') : null,
+        !ready.some((e) => e.id === 'claude') && ready.length ? h('p', { class: 'cs-soft cs-small' }, 'Workflow helper, Advisor and Find skills can use a supported signed-in Codex or Claude engine. Set your preferred engine in Settings.') : null,
         h('div', { class: 'cs-row cs-row--wrap' },
           h('button', { class: `cs-btn ${ready.length ? 'cs-btn--primary' : ''}`, type: 'button', onclick: () => { setPref('started', '1'); location.hash = '#/'; } }, ready.length ? 'Go to Home' : 'Look around first'))),
       h('details', { class: 'cs-details cs-small' }, h('summary', {}, 'Good to know'),

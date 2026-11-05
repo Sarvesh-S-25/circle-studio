@@ -1,5 +1,15 @@
 # Circle Studio: what is built, and where it is
 
+**2026-10-28 video guide:** `videos/circle-studio-guide/` contains the editable HyperFrames tutorial,
+`Circle-Studio-Getting-Started.mp4`, and `SAMPLES.md` (bakery website, bug fix, research brief).
+The 12-chapter video uses actual UI captures from an isolated fictional project, simulated engines/messages,
+and sample task evidence. Official `heygen-com/hyperframes` core skills were installed in the user's Codex
+skills folder. The source uses CLI 0.8.210; `hf.ps1` adds the local media tools to PATH. `REVIEW.md` records
+the successful checks and limits; `CREDITS.md` gives the required music credit. Final verification:
+1920×1080 H.264, 30 fps, 3000 frames / 100 seconds, stereo AAC, -16.2 LUFS / -1.7 dBFS true peak.
+HyperFrames lint/runtime/layout/contrast/craft/audio checks passed without findings. No app feature code
+or real project data was changed for this request; this is an instructional video, not a live AI build.
+
 A map of everything in this folder, written 2026-10-04, kept up to 2026-10-19 (version 17.14). For *how* it is built and what is fixed, see
 `docs/spec.md`; for why things changed from the original request, `docs/decisions.md`; for install and commands,
 `README.md`.
@@ -8,8 +18,7 @@ A map of everything in this folder, written 2026-10-04, kept up to 2026-10-19 (v
 step, served on `http://127.0.0.1:4380`. It runs Claude Code, Codex, Gemini (`agy`) and GitHub Copilot through your own
 sign-ins, never an API key.
 
-About 29,000 lines across `backend/`, `frontend/`, `scripts/` and `tests/`. 300 tests: 297 pass, 3 skip (they need an
-optional reference folder).
+Current version: 1.3.1. Regression: 329 tests, 326 pass, 3 skip (optional reference-folder cases), zero failures on 2026-10-24.
 
 ---
 
@@ -37,6 +46,37 @@ optional reference folder).
 ---
 
 ## 2. Every feature, and where it lives
+
+**2026-10-24 notification/terminal acceptance:** `desktop.mjs` waits for actual native toast submission and initializes
+the WinRT notification type explicitly; `services.desktop.mjs` awaits the test result. Windows Notification Center
+received the labeled test on this PC. `tests/e2e/native-notification-smoke.ps1` verifies real WPF Allow/Deny/option/typed
+answer controls with fake Codex. `windows-toast-check.ps1` checks only matching Circle test entries. Terminal now carries
+the displayed Circle UUID and reasoning, materializes pending Codex copies without changing another selection, and
+uses metadata-only resume/fork. `Chats.providerSession` persists that scoped provider reference. Failed chat sends retain
+their draft. `scripts/codex-terminal-smoke.mjs` records a real 0.164.0 adapter/CLI/adapter round trip and independent fork.
+Exact user-reported thread error is unconfirmed; details and limits: `docs/research/acceptance-2026-10-24.md`.
+
+**2026-10-23 completion pass:** `lib/transcript-pages.mjs` indexes transcript byte ranges; `records.mjs` bounds page,
+metadata and offset caches. `scripts/perf-smoke.mjs` and `perf-soak.mjs` hold reproducible isolated measurements;
+`docs/research/memory-2026-10-23.md` records the completed 30-minute soak and 100 browser panel lifecycles.
+`components/handoff.js` prepares reviewed context drafts without running a model. Chat/node panels preserve explicit
+provider/model/reasoning and dispose timers/listeners. Widget UUID pins and `js/window-key.js` preserve independent
+selection and window identity. Inbox archives completed requests; versions support pins and detailed comparisons;
+Tasks keep typed acceptance evidence. Reviewed Codex MCP changes roll back after a failed retest.
+`lib/release-update.mjs` stages and validates runtime updates, probes isolated launches, and defers activation during work.
+`scripts/install-package.ps1` and `uninstall-package.ps1` provide per-user install/repair/removal with data retained by default;
+`scripts/verify-release.mjs` verifies a real artifact in a workspace-only installation. Package metadata includes download
+size/hash/version and license notices. Storage streams prepared downloads from disk and exposes generated-file retention.
+Codex short-run notifications and denied-browser native fallback are covered by `integration/codex-notifications.test.mjs`;
+Settings includes a dummy notification test. See `docs/research/notifications-2026-10-23.md` for the exact evidence.
+
+**2026-10-22 development update:** the tables below retain older feature detail. Current changes and acceptance evidence
+are tracked in `connections.md`; `definitions.md` preserves the original review. Added Codex model/history/limits discovery,
+durable conversation archives and a persistent queue, provider-selected structured advice, Tasks & progress, storage/backup/restore/cleanup,
+and a local Windows package builder. Codex approval coverage is engine-policy dependent; the blanket legacy "every operation asks"
+wording below applies only where the engine actually raises those requests. Approved temporary-folder probes verified
+CLI 0.163.0 read/edit/command, resume, denial, outside-read denial, interruption and read-only model/history/limits/config queries;
+see `docs/research/codex-2026-10-22.md` for the exact scope and remaining live gates.
 
 Each row: what you see, the screen file, the backend files, and the tests that cover it.
 
@@ -192,6 +232,13 @@ Each row: what you see, the screen file, the backend files, and the tests that c
 
 ## 3. Backend, file by file
 
+New modules: `lib/advice.mjs` (validated structured advice through Codex or Claude), `lib/cache.mjs` (bounded LRU),
+`lib/queue.mjs` (captured durable message targets and explicit recovery), `lib/progress.mjs` (reviewed tasks and local awards),
+`lib/storage.mjs` (inspection, backup, isolated restore and cleanup preview), `routes.product.mjs` (their API handlers).
+`lib/records.mjs` now stores complete conversations and indexes, selected provider/model, and crash checkpoints; its legacy
+`chats/` files are bounded active views. `engines/codex.mjs` includes read-only model/account/history RPCs, resume/fork policies,
+deadline/exit handling, request IDs and normalized output. `engines/proc.mjs` tracks owned protocol child lifetimes.
+
 ### Entry and wiring (`backend/`)
 
 | File | What it does |
@@ -331,6 +378,11 @@ Each row: what you see, the screen file, the backend files, and the tests that c
 
 ## 4. Frontend, file by file (`frontend/`)
 
+Added `js/views/progress.js` (Tasks & progress tab) and `js/views/maintenance.js` (`#/maintenance`, linked from Settings).
+Chat has saved/provider history, archive/search/paging/export, scoped drafts, persistent queue controls and a jump-to-latest action.
+`#/projects/<id>/chat/<engine>/<Circle conversation UUID>` reads the exact saved main conversation from a reply card.
+Library has a Codex partition and project-based Find skills. Provider-specific approval limitations are visible in Chat.
+
 | File | What it does |
 |---|---|
 | `index.html` | The main app page |
@@ -355,6 +407,11 @@ Each row: what you see, the screen file, the backend files, and the tests that c
 
 ## 5. Scripts (`scripts/`)
 
+`demo.mjs`: fake engines, isolated temporary homes/data/project, port 4396, no real provider turns.
+`package.mjs`: allowlisted release ZIP, SHA-256 manifest and checksum, official-checksum-verified Node runtime/license;
+`--without-runtime` creates a Node-required developer package. `install-package.ps1`: integrity-checked per-user versioned staging;
+`-StageOnly` verifies staging without shortcuts or launching. Release artifacts live under ignored `release/`. Unsigned until configured.
+
 | File | What it does |
 |---|---|
 | `circle.mjs` | The `npm run setup / open / stop / status / update / doctor / uninstall / mods / chat` commands |
@@ -371,6 +428,16 @@ Each row: what you see, the screen file, the backend files, and the tests that c
 ---
 
 ## 6. Tests (`tests/`)
+
+New suites: `unit/conversations.test.mjs`, `unit/recovery-queue.test.mjs`, `unit/codex-usage.test.mjs`,
+`unit/package.test.mjs`, `unit/product.test.mjs`, `integration/product.test.mjs`. They cover full history retention,
+crash recovery without replay, queue identity, counter resets/midnight/resumed histories/partial UTF-8,
+reviewed completion, backup and cleanup integrity, ZIP manifests and Windows installer staging/tamper refusal.
+Latest complete run recorded in `connections.md`: 329 tests, 326 passed, 3 skipped, 0 failed (2026-10-24).
+The refreshed unsigned 1.3.1 runtime ZIP is under `release/final-1.3.1/`; `connections.md` records its checksum and release gates.
+Failed transcript persistence now releases the run while retaining recovery state and suppressing automatic queue drain.
+Reopened task prerequisites return accepted dependent work to review without erasing historical evidence. Supported
+history entries offer Continue as a copy; Codex terminal handoff preserves saved model and reasoning settings.
 
 | Folder | What is there |
 |---|---|
@@ -398,6 +465,12 @@ Run: `npm test` (all of it), `npm run contrast`.
 ---
 
 ## 8. Your data (`data/`, never in git, never uploaded)
+
+New own-data records: `conversations/<chat key>/<uuid>.json` and `index.json`, `inflight/<chat key>.json`,
+`chat-selections.json`, `queue.json`, and `progress/<project>.json`. Archives retain full transcripts; `chats/` remains a
+200-message compatibility view. Interrupted checkpoints recover partial responses without sending prompts. Queued work pauses
+after restart. Backups exclude provider sign-ins and vault keys; restore creates `restored/<uuid>` and verifies checksums.
+Source checkouts retain `data/`; packaged installs use `%LOCALAPPDATA%/CircleStudio/data` via `installation.json`, with `CIRCLE_DATA` taking precedence.
 
 | Path | What it holds |
 |---|---|
@@ -448,7 +521,10 @@ Git is never written: you commit and push yourself.
 
 ---
 
-## 11. API routes (`contracts/api.json`, 111 routes)
+## 11. API routes (`contracts/api.json`)
+
+The contract is authoritative. New product endpoints cover progress, diagnostics, storage export/restore/cleanup,
+durable queue and selected chat provider/model; frontend calls remain confined to `api.js` and contract-checked.
 
 | Group | Routes |
 |---|---|
@@ -467,6 +543,16 @@ Git is never written: you commit and push yourself.
 ---
 
 ## 12. What was built when
+
+**1.3.1, 2026-10-24:** actual Windows toast delivery and native Codex-answer controls checked; exact Terminal conversation
+targets, pending provider-fork materialization and failed-message draft recovery fixed. Codex 0.164.0 real sequential
+terminal return/fork evidence added. No Git mutations. Exact reported thread-error text still needed for confirmation.
+
+### 2026-10-22 — v1.3.0 development build
+
+Codex parity, durable conversations/queue/recovery, shared structured advice, evidence-based tasks and opt-in local achievements,
+bounded caches and incremental usage accounting, storage maintenance, and verified-runtime ZIP/per-user installer foundations.
+See `connections.md` for test evidence and unfinished acceptance gates. This is local development, not a signed/published release.
 
 | Version | Date | What came in |
 |---|---|---|
@@ -506,7 +592,23 @@ The full reasoning for each is in `docs/decisions.md`.
 
 ---
 
-## 13. Where things stand right now (2026-10-19)
+## 13. Current build and historical machine state
+
+**Current, 2026-10-24:** version 1.3.1, 326 passing tests plus three optional skips. Native answer controls and one matching
+Notification Center entry verified. The real Codex 0.164.0 sequential resume/fork fixture passed; exact reported thread
+error did not reproduce. 1.3.0 package evidence below is historical; see connections.md for the current artifact.
+The final 1.3.1 runtime ZIP has 212 entries and is 35,786,232 bytes. Bundled-runtime staging/health-launch verification
+and its SHA-256 are recorded under release/final-1.3.1. QA browsers and the dummy server are closed.
+
+**Current, 2026-10-23:** local roadmap code is implemented and regression-tested; the ledger separates live acceptance
+from fake-engine evidence. Codex CLI 0.163.0 scoped real read/edit/command/resume/deny/interrupt probes passed on temporary
+fixtures. Native dummy team-question review/application and off-screen recovery passed. No user-repository Git writes.
+Historical machine observations below do not describe today's account status or supersede these results.
+
+**2026-10-22:** implementation of `definitions.md` is in progress, with tracked changes plus new modules/tests/docs.
+The human handles all Git mutations. Fake-engine tests and isolated browser checks have run; the real app's data and projects
+were not used for testing. An unsigned 35.7 MB runtime ZIP was built, then further code changes were made; rebuild before distribution.
+Current acceptance status is `connections.md`. The 2026-10-19 machine/run details below are historical evidence, not current measurements.
 
 **v17.14 (2026-10-19).** You pressed Terminal in the bar for draw-text and got Circle Studio: its Claude Code runs in
 Antigravity's Claude Code panel, so the finder brought that Antigravity window forward, and it was showing
@@ -707,6 +809,15 @@ newcomer hits is that `main` is behind.
 
 ## 14. Your to-do list
 
+**Current release gates (supersede historical try-it lists):** sign and publish the unsigned release; connect the separate
+website to its generated `release-info.json`; verify installation/shortcuts/uninstall on a clean Windows account;
+verify physical multi-monitor/mixed-DPI/focus behavior. Additional live Codex fork/question categories remain capability
+acceptance checks. Branch/commit/push are the user's work. Local fixture/browser/native checks are in `connections.md`.
+
+**Current acceptance gates:** real temporary-folder Codex approval/resume smoke run; clean Windows-account install and shortcut
+activation; signing and release publication credentials; mixed-DPI/multiple-monitor checks. Optional host-replacement experiments
+need comparative full-process measurements. The development ledger lists remaining local tasks separately. Git branch/commit/push remain the human's work.
+
 000000000. **Try v17.14** in the bar (Ctrl+Alt+C): Terminal now opens a real terminal with that chat; your message
    shows once while Claude answers; Plan limits is in the right column (Widgets menu hides or shows it).
 00000000. **Answer your terminal from the desktop**: Settings, Desktop, turn on "Answer Claude Code in my terminal
@@ -795,6 +906,17 @@ newcomer hits is that `main` is behind.
 
 ## 15. Limits and what has not been verified
 
+**Current scope:** notification fixes cover Circle-started Codex chats, not independently running Codex applications.
+An OS toast request succeeded, but visual delivery is unconfirmed. The release is unsigned and unpublished. Actual
+artifact staging/isolated launch passed; clean-account and mixed-DPI hardware acceptance remain open. Legacy rows below
+are historical observations, especially old Codex sign-out, read-only MCP and team-alert limitations.
+
+**v1.3.0 changes:** previous Claude-only history/advice/model-picker limitations are being removed. Complete transcripts are now
+retained, but backup currently caps individual files at 8 MiB and aggregate JSON at 40 MiB, records omissions and never exports possible credentials.
+Codex source parsing is local observation, not billing; missing account readings stay unknown. Codex's effective approval policy may
+permit operations without Circle cards. No fake test proves real account/OS behavior. Release signing, automatic packaged update downloads,
+full rollback/repair and clean-account acceptance are not yet complete. See `connections.md` before claiming full definitions completion.
+
 | Area | The honest state |
 |---|---|
 | Automatic condensing | Works only when the team runs in Claude Code (terminal or IDE). Circle Studio's own Chat runs with project hooks off on purpose. Verified with real Haiku in a temp folder. Written into sample-test (qa, 60%) on 2026-10-05; the hook passed a dry run there. **Not yet seen condensing in a real team run** |
@@ -831,6 +953,25 @@ newcomer hits is that `main` is behind.
 | The website | Checked locally in a browser (light and dark, 1280, 700 and 375 px, theme button, 404 page). Not yet deployed to Vercel, so `vercel.json` (redirects, headers) is untested there |
 
 ## 16. Facts learned by running things (keep these; they cost time to find)
+
+**2026-10-24:** returning true after spawning a toast helper did not establish submission. Awaiting helper completion
+and explicitly loading its WinRT type produced a matching Windows Notification Center entry. Allow/Deny/Blue/typed
+answers reached the fake Codex adapter through actual native WPF controls. A real 0.164.0 CLI round trip and fork
+readback passed. Terminal omitted the viewed Circle UUID; regression now prevents opening a different selected chat.
+
+**2026-10-23:** 100 browser node-chat panel lifecycles retained zero chat intervals/listeners after fixing close/import races.
+The 30-minute six-client HTTP soak completed with stable listener count and no engine children. History paging's isolated
+comparison measured about 32% lower peak RSS; this excludes browser/WPF/providers and is not a total-app RAM claim.
+Actual bundled-runtime package staging and private-data launch passed. Browser download completion requires an explicit
+CDP download policy in this isolated automation environment; integrity is checked separately.
+The final runtime ZIP is 35,785,338 bytes with 212 entries; its checksum and launch evidence are in connections.md.
+Removed 535.2 MiB of obsolete agent-generated extraction/staging copies under release; kept ZIPs and current evidence.
+
+**2026-10-22:** installed Node 24.13.1 and Codex CLI 0.163.0. Generated Codex schemas still accept `untrusted`; never silently
+substitute a weaker policy. Baseline: 303 tests / 300 pass / 3 skip. Latest complete development run: 317 / 314 pass / 3 skip / 0 fail.
+Windows sandboxed test workers fail `spawn EPERM`; approved runs succeed. One isolated idle diagnostics sample: Node RSS 73.1 MB,
+heap 11.1 MB, external 3.7 MB, desktop host disabled and shared Edge excluded. This is not a before/after performance result.
+Local release build matched Node's official executable SHA-256 and included the license. Staged installer tests preserve a sentinel data file and reject tampered sources before writing an installation.
 
 **Claude Code hooks (checked against Claude Code 2.1.287 on this PC):**
 - Claude Code's **PermissionRequest hook** (checked with real Claude Code 2026-10-19): stdin has `tool_name`, `tool_input`, `cwd`,
@@ -937,6 +1078,14 @@ newcomer hits is that `main` is behind.
   then fail to fast-forward.
 
 ## 17. Working on it again (for a new chat)
+
+Latest user request: implement the complete `definitions.md` roadmap, check Codex notifications, optimize measured RAM
+and storage, test with dummy fixtures, keep `connections.md` accurate, and leave branch/commit/push to the user. Read
+the current ledger before historical notes. No external Codex notification hook, release signing or website publication
+is claimed. `definitions.md` remains the original review, not a current implementation-status document.
+
+Continue the authorized build from `connections.md`, then check `definitions.md` acceptance criteria. Do not restart from the review
+baseline, retest real user data, perform Git mutations or mark external checks as passed from dummy evidence. The isolated demo is `npm run demo`.
 
 Claude Code loads `CLAUDE.md` by itself in this folder, and `CLAUDE.md` says to read this file first and to keep it
 true: every change to features, files, limits, facts or state updates the matching section here before the final

@@ -9,9 +9,9 @@ export class Replies {
   constructor() { this.items = []; }
 
   /** A chat just answered: one card per chat, the newest. */
-  add({ projectId, nodeId = null, engine = 'claude', at = new Date().toISOString() }) {
+  add({ projectId, nodeId = null, engine = 'claude', conversationId = null, runId = null, at = new Date().toISOString() }) {
     this.items = this.items.filter((r) => !(r.projectId === projectId && r.nodeId === nodeId));
-    this.items.push({ id: randomBytes(6).toString('hex'), projectId, nodeId, engine, at });
+    this.items.push({ id: randomBytes(6).toString('hex'), projectId, nodeId, engine, conversationId, runId, at });
     if (this.items.length > MAX) this.items = this.items.slice(-MAX);
   }
 

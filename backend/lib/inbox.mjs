@@ -44,7 +44,18 @@ export class Inbox {
     const rec = redactDeep(record);
     const list = this.byProject.get(rec.projectId) || [];
     list.unshift(rec);
-    if (list.length > CAP) list.length = CAP;
+    // Active approvals must remain answerable even when completed history reaches its retention cap.
+    if (list.length > CAP) {
+      let completed = 0;
+      const kept = list.filter((r) => r.status === 'pending' || completed++ < CAP);
+      const keepIds = new Set(kept.map((r) => r.id));
+      const removed = list.filter((r) => !keepIds.has(r.id));
+      if (removed.length) {
+        fs.mkdirSync(this.store.abs('inbox-archive'), { recursive: true });
+        fs.appendFileSync(this.store.abs(`inbox-archive/${rec.projectId}.jsonl`), removed.reverse().map((r) => JSON.stringify(r)).join('\n') + '\n');
+      }
+      list.splice(0, list.length, ...kept);
+    }
     this.byProject.set(rec.projectId, list);
     this.#save(rec.projectId);
     return rec;
@@ -70,4 +81,26 @@ export class Inbox {
   }
 
   pendingCount(projectId) { return (this.byProject.get(projectId) || []).filter((r) => r.status === 'pending').length; }
+
+  archivePage(projectId, cursor = null, limit = 100) {
+    const file = this.store.abs(`inbox-archive/${projectId}.jsonl`);
+    let fd; try { fd = fs.openSync(file, 'r'); } catch { return { requests: [], nextCursor: null }; }
+    try {
+      let end = cursor == null || cursor === '' ? fs.fstatSync(fd).size : Math.max(0, Math.min(fs.fstatSync(fd).size, Math.trunc(Number(cursor) || 0)));
+      let carry = Buffer.alloc(0); const requests = [];
+      while (end > 0) {
+        const start = Math.max(0, end - 65536); const block = Buffer.alloc(end - start); fs.readSync(fd, block, 0, block.length, start);
+        const data = Buffer.concat([block, carry]); let last = data.length;
+        for (let i = data.length - 1; i >= 0; i--) if (data[i] === 10) {
+          const line = data.subarray(i + 1, last).toString('utf8').trim(); last = i;
+          if (line) { try { requests.push(JSON.parse(line)); } catch { /* malformed archive row */ } }
+          if (requests.length >= limit) return { requests, nextCursor: start + i + 1 || null };
+        }
+        carry = data.subarray(0, last); if (carry.length > 4 * 1024 * 1024) throw new Error('An audit record exceeds the read limit.');
+        end = start;
+      }
+      if (carry.length) { try { requests.push(JSON.parse(carry.toString('utf8'))); } catch { /* malformed row */ } }
+      return { requests, nextCursor: null };
+    } finally { fs.closeSync(fd); }
+  }
 }

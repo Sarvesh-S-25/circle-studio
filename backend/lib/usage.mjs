@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 import { usageInDir } from './cost.mjs';
+import { BoundedCache } from './cache.mjs';
 
 const dayOf = (t) => new Date(t).toISOString().slice(0, 10);
 
@@ -43,7 +44,7 @@ export async function claudeUsage(claudeHome, { days = 30, now = Date.now() } = 
   return { found: true, usd, answers, tokensIn, tokensOut, byDay: [...byDay].map(([date, v]) => ({ date, usd: v })), byModel: [...byModel].map(([name, v]) => ({ name, usd: v })).sort((a, b) => b.usd - a.usd), byFolder: byFolder.sort((a, b) => b.usd - a.usd) };
 }
 
-const codexCache = new Map();
+const codexCache = new BoundedCache();
 
 async function codexSession(file) {
   let st;
@@ -51,18 +52,42 @@ async function codexSession(file) {
   const key = `${st.size}:${st.mtimeMs}`;
   const hit = codexCache.get(file);
   if (hit?.key === key) return hit.data;
-  let cwd = null;
-  let last = null;
-  let model = null;
-  let at = null;
-  const rl = readline.createInterface({ input: fs.createReadStream(file, { encoding: 'utf8' }), crlfDelay: Infinity });
-  for await (const line of rl) {
-    if (!cwd && line.includes('"session_meta"')) { try { const o = JSON.parse(line); cwd = o.payload?.cwd || null; at = o.payload?.timestamp || o.timestamp; } catch { /* skip */ } }
-    if (!model && line.includes('"turn_context"')) { try { model = JSON.parse(line).payload?.model || null; } catch { /* skip */ } }
-    if (line.includes('"token_count"')) { try { const t = JSON.parse(line).payload?.info?.total_token_usage; if (t) last = t; } catch { /* skip */ } }
+  // Growing logs are read from their previous byte offset; keep a partial last line until it is complete.
+  const canAppend = hit && hit.birthtime === st.birthtimeMs && st.size > hit.offset;
+  const state = canAppend ? structuredClone(hit.state) : { cwd: null, model: null, at: null, last: { input_tokens: 0, output_tokens: 0 }, byDay: {}, byModel: {}, remainder: '' };
+  const consume = (line) => {
+    let o; try { o = JSON.parse(line); } catch { return; }
+    if (o.type === 'session_meta') { state.cwd ||= o.payload?.cwd || null; state.at ||= o.payload?.timestamp || o.timestamp; }
+    if (o.type === 'turn_context') state.model = o.payload?.model || state.model;
+    if (o.payload?.type !== 'token_count') return;
+    const t = o.payload?.info?.total_token_usage;
+    if (!t) return;
+    const input = Math.max(0, Number(t.input_tokens) || 0);
+    const output = Math.max(0, Number(t.output_tokens) || 0); // includes reasoning; it is not added again
+    const di = input >= state.last.input_tokens ? input - state.last.input_tokens : input;
+    const dout = output >= state.last.output_tokens ? output - state.last.output_tokens : output;
+    const stamp = o.timestamp || state.at || st.mtime.toISOString();
+    const date = String(stamp).slice(0, 10);
+    state.byDay[date] ||= { input: 0, output: 0 };
+    state.byDay[date].input += di; state.byDay[date].output += dout;
+    const modelKey = state.model || 'unknown';
+    state.byModel[modelKey] = (state.byModel[modelKey] || 0) + di + dout;
+    state.last = { input_tokens: input, output_tokens: output };
+  };
+  let rest = Buffer.from(state.remainder || '', 'base64');
+  const stream = fs.createReadStream(file, { start: canAppend ? hit.offset : 0, end: Math.max(0, st.size - 1) });
+  for await (const chunk of stream) {
+    rest = Buffer.concat([rest, chunk]);
+    let newline;
+    while ((newline = rest.indexOf(10)) >= 0) { consume(rest.subarray(0, newline).toString('utf8')); rest = rest.subarray(newline + 1); }
+    if (rest.length > 8 * 1024 * 1024) throw new Error('A Codex log record exceeded the supported size.');
   }
-  const data = { cwd, model, at: at || st.mtime.toISOString(), tokensIn: last?.input_tokens || 0, tokensOut: (last?.output_tokens || 0) + (last?.reasoning_output_tokens || 0) };
-  codexCache.set(file, { key, data });
+  // A complete final JSON record without a newline is valid; only an incomplete record is carried forward.
+  let pending = rest;
+  if (rest.length) { try { const line = rest.toString('utf8'); JSON.parse(line); consume(line); pending = Buffer.alloc(0); } catch { /* partial write, including incomplete UTF-8 */ } }
+  state.remainder = pending.toString('base64');
+  const data = { cwd: state.cwd, model: state.model, at: state.at || st.mtime.toISOString(), byDay: state.byDay, byModel: state.byModel };
+  codexCache.set(file, { key, data, state, offset: st.size, birthtime: st.birthtimeMs });
   return data;
 }
 
@@ -76,22 +101,32 @@ export async function codexUsage(codexHome = path.join(os.homedir(), '.codex'), 
   let tokensIn = 0;
   let tokensOut = 0;
   let sessions = 0;
-  for (const d of list) {
-    const dir = path.join(base, d.slice(0, 4), d.slice(5, 7), d.slice(8, 10));
-    let files = [];
-    try { files = fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl')); } catch { continue; }
+  const dirs = [];
+  const walk = (dir, depth = 0) => {
+    if (depth === 3) { dirs.push(dir); return; }
+    let entries = []; try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) if (e.isDirectory() && /^\d{2,4}$/.test(e.name)) walk(path.join(dir, e.name), depth + 1);
+  };
+  walk(base);
+  for (const dir of dirs) {
+    let files = []; try { files = fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl')); } catch { continue; }
     for (const f of files) {
-      const s = await codexSession(path.join(dir, f));
-      if (!s || !(s.tokensIn + s.tokensOut)) continue;
+      const file = path.join(dir, f);
+      let s; try { s = await codexSession(file); } catch { continue; }
+      if (!s) continue;
+      const dates = Object.entries(s.byDay).filter(([date]) => byDay.has(date));
+      const input = dates.reduce((n, [, d]) => n + d.input, 0);
+      const output = dates.reduce((n, [, d]) => n + d.output, 0);
+      if (!input && !output) continue;
       sessions++;
-      tokensIn += s.tokensIn;
-      tokensOut += s.tokensOut;
-      byDay.set(d, byDay.get(d) + s.tokensIn + s.tokensOut);
-      const k = s.cwd ? path.basename(s.cwd) : 'unknown';
-      byFolder.set(k, (byFolder.get(k) || 0) + s.tokensIn + s.tokensOut);
+      tokensIn += input;
+      tokensOut += output;
+      for (const [date, d] of dates) byDay.set(date, byDay.get(date) + d.input + d.output);
+      const k = s.cwd ? path.resolve(s.cwd).toLowerCase() : 'unknown';
+      byFolder.set(k, (byFolder.get(k) || 0) + input + output);
     }
   }
-  return { found: true, sessions, tokensIn, tokensOut, byDay: [...byDay].map(([date, tokens]) => ({ date, tokens })), byFolder: [...byFolder].map(([name, tokens]) => ({ name, tokens })).sort((a, b) => b.tokens - a.tokens) };
+  return { found: true, sessions, tokensIn, tokensOut, byDay: [...byDay].map(([date, tokens]) => ({ date, tokens })), byFolder: [...byFolder].map(([folder, tokens]) => ({ name: path.basename(folder), path: folder, tokens })).sort((a, b) => b.tokens - a.tokens), coverage: 'Token counter deltas by recorded event date; missing timestamps use session metadata. Not a billing statement.' };
 }
 
 /** Turns run from Circle Studio per engine (all engines), from the app's own chat records. */
@@ -102,7 +137,7 @@ export function circleTurns(chats, { days = 30, now = Date.now() } = {}) {
     if (m.role !== 'assistant' || String(m.at || '').slice(0, 10) < since) continue;
     const e = m.engine || 'claude';
     out[e] ||= { turns: 0, usd: 0 };
-    out[e].turns++;
+    out[e].turns += m.turns || 1;
     if (typeof m.costUsd === 'number') out[e].usd += m.costUsd;
   }
   return out;

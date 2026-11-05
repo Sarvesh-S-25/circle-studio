@@ -147,8 +147,8 @@ test('usage: Codex tokens from its session files, Circle turns per engine', asyn
     ].join('\n'));
     const u = await codexUsage(home, { days: 7 });
     assert.equal(u.tokensIn, 3000, 'the last total counts, not the sum of totals');
-    assert.equal(u.tokensOut, 220);
-    assert.deepEqual(u.byFolder, [{ name: 'shop', tokens: 3220 }]);
+    assert.equal(u.tokensOut, 200, 'reasoning tokens are already included in output');
+    assert.deepEqual(u.byFolder, [{ name: 'shop', path: path.resolve('C:\\work\\shop').toLowerCase(), tokens: 3200 }]);
     const turns = circleTurns([{ messages: [{ role: 'assistant', engine: 'gemini', at: new Date().toISOString() }, { role: 'assistant', engine: 'claude', at: new Date().toISOString(), costUsd: 0.5 }, { role: 'user', at: new Date().toISOString() }] }]);
     assert.deepEqual(turns, { gemini: { turns: 1, usd: 0 }, claude: { turns: 1, usd: 0.5 } });
   } finally { rmDir(home); }

@@ -14,7 +14,7 @@ const META = 'library.json';
 const META_VERSION = 2;
 
 /** Which engine folder group a skill is for: shared by all its engines, or one engine's own. */
-export const PARTITIONS = ['shared', 'claude', 'copilot', 'gemini'];
+export const PARTITIONS = ['shared', 'claude', 'codex', 'copilot', 'gemini'];
 
 /** Validate a partition and an engine list from outside. Missing values mean the defaults. */
 export function normalizePlacement({ partition, engines } = {}) {

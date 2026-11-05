@@ -72,7 +72,7 @@ export function advisorArgs({ model, guarded, schema = ADVISOR_SCHEMA }) {
 
 export function advisorPrompt(name, text) {
   return [
-    'You are the advisor inside Circle Studio, a control room for a Claude Code agent team.',
+    'You are the advisor inside Circle Studio, a control room for AI agent teams.',
     'Read the file below and tell the human three things:',
     '- keep: what is good and should stay as it is;',
     '- build: what is missing and should be built or written next;',

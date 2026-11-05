@@ -22,10 +22,10 @@ test('the two readings and the tile', () => {
   const l = fromStatusLine({ five_hour: { used_percentage: 31.4, resets_at: '2030-01-01T10:00:00Z' }, seven_day: { used_percentage: 12 } });
   assert.deepEqual([l.fiveHour.pct, l.week.pct, l.week.resetsAt], [31, 12, null]);
   const now = Date.parse('2030-01-01T09:00:00Z');
-  const v = limitsView({ at: '2030-01-01T08:00:00Z', source: 'terminal', ...l }, now);
+  const v = limitsView({ at: '2030-01-01T08:55:00Z', source: 'terminal', ...l }, now);
   assert.deepEqual(v.rows.map((r) => [r.label, r.value, r.color]), [['5 hours', '31%', 'ok'], ['Week', '12%', 'ok']]);
   const later = limitsView({ at: '2030-01-01T08:00:00Z', fiveHour: { pct: 95, resetsAt: '2030-01-01T10:00:00Z' } }, Date.parse('2030-01-01T11:00:00Z'));
-  assert.deepEqual([later.rows[0].value, later.rows[0].pct], ['new', 0], 'a window that reset is not shown as the old number');
+  assert.deepEqual([later.rows[0].value, later.rows[0].pct], ['Refresh needed', null], 'a reset time is not proof of a fresh zero reading');
   assert.equal(limitsView({ fiveHour: { pct: 92, resetsAt: '2030-01-01T10:00:00Z' } }, now).rows[0].color, 'danger');
   assert.equal(limitsView(null), null);
 });

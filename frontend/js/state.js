@@ -23,6 +23,7 @@ export const notify = () => listeners.forEach((f) => f(state));
 export async function refreshShell() {
   const s = await api.state();
   state.recent = s.recent;
+  state.preferredEngine = s.preferredEngine;
   state.mostUsed = s.mostUsed;
   state.attention = s.attention;
   state.loaded = true;

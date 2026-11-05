@@ -39,13 +39,13 @@ test('backend: every contract route has a handler and every handler is in the co
 test('frontend: api.js only builds requests that the contract lists, and uses every route', () => {
   const src = fs.readFileSync(path.join(APP_ROOT, 'frontend', 'js', 'api.js'), 'utf8');
   const calls = [];
-  for (const m of src.matchAll(/request\(\s*'(GET|POST|PUT|DELETE)'\s*,\s*(?:'([^']*)'|`([^`]*)`)/g)) calls.push({ method: m[1], path: m[2] ?? m[3] });
+  for (const m of src.matchAll(/(?:request|attachment)\(\s*'(GET|POST|PUT|DELETE)'\s*,\s*(?:'([^']*)'|`([^`]*)`)/g)) calls.push({ method: m[1], path: m[2] ?? m[3] });
   for (const m of src.matchAll(/fetch\(\s*([`'])(\/api\/[^`']*)\1\s*,\s*\{\s*method:\s*'(GET|POST|PUT|DELETE)'/g)) calls.push({ method: m[3], path: m[2] });
   // fail closed: every request( or fetch( occurrence must have been read as a literal
-  const occurrences = (src.match(/\brequest\(\s*'/g) || []).length + (src.match(/\bfetch\(\s*['`]\/api/g) || []).length;
-  const allRequestCalls = (src.match(/\brequest\(/g) || []).length - 1; // minus the definition
+  const occurrences = (src.match(/\b(?:request|attachment)\(\s*'/g) || []).length + (src.match(/\bfetch\(\s*['`]\/api/g) || []).length;
+  const allRequestCalls = (src.match(/\b(?:request|attachment)\(/g) || []).length - 2; // minus both definitions
   assert.equal(calls.filter((c) => !c.path.startsWith('/api/chat') || true).length, occurrences, 'a call was not read as a literal');
-  assert.ok(allRequestCalls === (src.match(/\brequest\(\s*'/g) || []).length, 'a request() call has a non-literal method');
+  assert.ok(allRequestCalls === (src.match(/\b(?:request|attachment)\(\s*'/g) || []).length, 'a request/attachment call has a non-literal method');
   const table = new Set(contract.routes.map((r) => `${r.method} ${norm(r.path)}`));
   const used = new Set();
   for (const c of calls) {

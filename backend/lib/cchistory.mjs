@@ -8,6 +8,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { redact } from './secrets.mjs';
 import { summarize } from './claude.mjs';
+import { BoundedCache } from './cache.mjs';
 
 export const SESSION_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const AGENT_RUN_RE = /^agent-[A-Za-z0-9_-]{1,64}$/;
@@ -54,7 +55,7 @@ const clipText = (s, n = MAX_TEXT) => (s.length > n ? `${s.slice(0, n)}\n\n[... 
 /** One line per conversation: id, title, when, size, and the subagent runs inside it. Newest first. */
 // What a conversation file says about itself (title, first message, folder, start, turns, agent runs), kept until the
 // file changes (its size or time): the widgets ask every few seconds, and a file is read up to 512 KB to know this.
-const summaries = new Map();
+const summaries = new BoundedCache({ entries: 3000 });
 function aboutFile(it) {
   const key = `${it.st.mtimeMs}|${it.st.size}`;
   const hit = summaries.get(it.file);

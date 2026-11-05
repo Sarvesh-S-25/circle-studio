@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { redact } from './secrets.mjs';
+import { cleanEnv } from './run.mjs';
 
 export const DEFAULT_SETTINGS = {
   desktopAlerts: true, desktopWidgets: false, desktopAsks: true, widgetsLocked: false, github: {}, updates: { check: 'daily', lastCheck: null, autoRestart: true },
@@ -139,21 +140,29 @@ export function focusWindowMarked(mark) {
 }
 
 /** A Windows notification (toast). Clicking it opens `url` in the browser. Fire and forget. */
-export function windowsToast({ title, body, url }) {
+export async function windowsToast({ title, body, url }) {
   if (process.platform !== 'win32') return false;
-  const esc = (s) => redact(String(s ?? '')).replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' })[c]).slice(0, 240);
+  const esc = (s) => redact(String(s ?? '')).slice(0, 240).replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' })[c]);
   const xml = `<toast activationType="protocol" launch="${esc(url)}" scenario="reminder"><visual><binding template="ToastGeneric"><text>${esc(title)}</text><text>${esc(body)}</text></binding></visual><actions><action content="Open" activationType="protocol" arguments="${esc(url)}"/><action content="Later" activationType="system" arguments="dismiss"/></actions></toast>`;
   const script = [
+    "$ErrorActionPreference = 'Stop'",
     '[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null',
+    '[Windows.UI.Notifications.ToastNotification, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null',
     '[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null',
     '$x = New-Object Windows.Data.Xml.Dom.XmlDocument',
     '$x.LoadXml($env:CS_TOAST)',
     // PowerShell's own app id: a toast needs a registered one, and this is registered on every Windows install
     "$id = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe'",
-    '[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($id).Show([Windows.UI.Notifications.ToastNotification]::new($x))',
+    '$notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($id)',
+    "if ($notifier.Setting -ne 'Enabled') { exit 2 }",
+    '$toast = [Windows.UI.Notifications.ToastNotification]::new($x)',
+    "$toast.Group = 'CircleStudio'",
+    '$notifier.Show($toast)',
   ].join('; ');
-  const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { detached: true, stdio: 'ignore', windowsHide: true, env: { ...process.env, CS_TOAST: xml } });
-  child.on('error', () => {});
-  child.unref();
-  return true;
+  return new Promise((resolve) => {
+    const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { stdio: 'ignore', windowsHide: true, env: { ...cleanEnv(), CS_TOAST: xml } });
+    const timer = setTimeout(() => { child.kill(); resolve(false); }, 8000); timer.unref();
+    child.once('error', () => { clearTimeout(timer); resolve(false); });
+    child.once('close', (code) => { clearTimeout(timer); resolve(code === 0); });
+  });
 }

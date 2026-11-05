@@ -69,6 +69,7 @@ const WRITE_ALLOW = [
   /^\.gitignore$/,
   /^\.mcp\.json$/,
   /^\.claude\/settings\.json$/,
+  /^\.codex\/config\.toml$/,
 ];
 
 export function isWritable(relPosix) {

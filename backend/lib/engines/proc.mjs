@@ -8,13 +8,18 @@ import { StringDecoder } from 'node:string_decoder';
 import { cleanEnv, killTree, runCommand } from '../run.mjs';
 
 export { killTree, runCommand };
+const ownedChildren = new Map();
+export const engineChildren = () => [...ownedChildren.values()].map((c) => ({ ...c }));
 
 /**
  * Start a CLI. `bin` may be a name on PATH (resolved by the OS, .exe only) or an absolute path. Returns the child or
  * throws. `extraEnv` adds variables for this run (keys from the vault); credentials are still stripped by cleanEnv.
  */
 export function startChild(bin, args, { cwd, env, extraEnv } = {}) {
-  return spawn(bin, args, { cwd, env: cleanEnv({ ...(env || process.env), ...(extraEnv || {}) }), windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+  const child = spawn(bin, args, { cwd, env: cleanEnv({ ...(env || process.env), ...(extraEnv || {}) }), windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+  if (child.pid) ownedChildren.set(child.pid, { pid: child.pid, executable: path.basename(bin), startedAt: new Date().toISOString() });
+  child.once('close', () => ownedChildren.delete(child.pid)); child.once('error', () => ownedChildren.delete(child.pid));
+  return child;
 }
 
 /** Feed `onLine` every complete line of a stream. Returns a flush function for the last partial line. */

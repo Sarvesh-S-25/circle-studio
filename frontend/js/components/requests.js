@@ -25,7 +25,13 @@ export function initRequests(windowKey = '') {
   window.addEventListener('circle:requests', countWaiting);
   window.addEventListener('circle:alerts', countWaiting);
   api.events((name, data) => {
-    if (name === 'show') {
+    if (name === 'sync') {
+      state.pending = data.requests || [];
+      const ids = new Set(state.pending.map((r) => r.id));
+      for (const id of snoozed) if (!ids.has(id)) snoozed.delete(id);
+      if (shown && !ids.has(shown.id)) shown.ctrl.close('sent');
+      notify(); announce('circle:requests', null); showNext();
+    } else if (name === 'show') {
       // Circle Studio was opened again: this window comes forward (on the page asked for) instead of a second one
       if (typeof data.hash === 'string' && data.hash.startsWith('#/') && location.pathname === '/') location.hash = data.hash;
       comeForward(data.mark);
@@ -47,7 +53,10 @@ export function initRequests(windowKey = '') {
       showNext();
     } else if (name === 'run' || name === 'usage') announce('circle:run', data);
     else if (name === 'progress') announce('circle:progress', data);
-    else if (name === 'notice') announce('circle:notice', data);
+    else if (name === 'notice') {
+      announce('circle:notice', data);
+      if (['done', 'error', 'update', 'connection'].includes(data.kind) && data.notify !== false && !data.carded) desktopAlert({ title: data.title, body: data.body || '', tag: data.id, onClick: () => { location.hash = data.url || '#/inbox'; } });
+    }
   }, windowKey);
 }
 
@@ -77,7 +86,7 @@ export function openRequest(id) {
 
 function metaLine(rec) {
   // from Claude Code in a terminal or an editor: the folder it works in
-  const where = rec.source === 'terminal' ? `Claude Code in your terminal · ${rec.folder || rec.folderName}` : `${engineName(rec.engine)} · ${projectName(rec.projectId)}`;
+  const where = rec.source === 'terminal' ? `${engineName(rec.engine)} in your terminal · ${rec.folder || rec.folderName}` : `${engineName(rec.engine)} · ${projectName(rec.projectId)}`;
   return h('p', { class: 'cs-soft cs-small' }, `${where}${rec.nodeId ? ` · ${rec.nodeId}` : ''} · ${timeAgo(rec.at)}`);
 }
 
@@ -119,7 +128,7 @@ function questionForm(rec) {
     for (const f of fields) {
       const typed = f.other.value.trim();
       const chosen = [...f.node.querySelectorAll(`input[name="${f.name}"]:checked`)].map((x) => x.value);
-      answers[f.q.question] = f.q.multiSelect ? [...chosen, ...(typed ? [typed] : [])] : (typed || chosen[0] || '');
+      answers[f.q.id || f.q.question] = f.q.multiSelect ? [...chosen, ...(typed ? [typed] : [])] : (typed || chosen[0] || '');
     }
     return answers;
   };

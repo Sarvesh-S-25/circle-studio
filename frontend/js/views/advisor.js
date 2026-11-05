@@ -15,7 +15,10 @@ export async function mount(el) {
   const pathInput = h('input', { class: 'cs-input', id: 'adv-path', placeholder: 'C:\\Users\\you\\Desktop\\notes\\plan.md', autocomplete: 'off', spellcheck: 'false' });
   const picked = h('p', { class: 'cs-small cs-soft', role: 'status' });
   const fileInput = h('input', { type: 'file', class: 'cs-sr', id: 'adv-file', tabindex: '-1' });
-  const modelSel = h('select', { class: 'cs-select', 'aria-label': 'Model' }, [['', 'Default model'], ['haiku', 'haiku'], ['sonnet', 'sonnet'], ['opus', 'opus']].map(([v, l]) => h('option', { value: v }, l)));
+  const modelSel = h('select', { class: 'cs-select', 'aria-label': 'Model' });
+  const updateModels = () => { const models = state.engines.find((e) => e.id === (engineSel.value || state.preferredEngine || 'claude'))?.models || []; modelSel.replaceChildren(h('option', { value: '' }, 'Engine default'), ...models.map((m) => h('option', { value: m }, m))); };
+  const engineSel = h('select', { class: 'cs-select', 'aria-label': 'Advisor engine', onchange: updateModels }, h('option', { value: '' }, 'Preferred available engine'), state.engines.filter((e) => e.usable && (e.id === 'claude' || e.capabilities?.structuredOutput)).map((e) => h('option', { value: e.id }, e.label)));
+  updateModels();
   const errorEl = h('div', { class: 'cs-stack cs-stack--tight', role: 'alert' });
   const out = h('div', { class: 'cs-stack cs-stack--loose' });
   const run = h('button', { class: 'cs-btn cs-btn--primary', type: 'button' }, icon('advisor', 's'), 'Ask the advisor');
@@ -81,7 +84,7 @@ export async function mount(el) {
     run.replaceChildren(icon('spinner', 's'), 'Reading it...');
     out.replaceChildren(h('div', { class: 'cs-loading' }, icon('spinner', 'm'), 'The advisor is reading the file. This usually takes 20 to 60 seconds.'));
     try {
-      result = await api.advise({ source: src, model: modelSel.value || undefined, redact: redact || undefined });
+      result = await api.advise({ source: src, engine: engineSel.value || undefined, model: modelSel.value || undefined, redact: redact || undefined });
       pinned.clear();
       drawResult();
     } catch (e) {
@@ -101,12 +104,12 @@ export async function mount(el) {
   pathInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey || !e.shiftKey)) { e.preventDefault(); ask(false); } });
 
   el.append(h('div', { class: 'cs-stack cs-stack--loose' },
-    h('div', {}, h('h1', { class: 'cs-h1', id: 'main-title' }, 'Advisor'), h('p', { class: 'cs-soft' }, 'A second opinion on one document: a plan, a brief, a spec, notes, a README. Claude reads it and answers in three lists: what to keep, what to build, and what is wrong (with how serious). Pin any item to a stage of a workflow so it lands in the notes of that stage, where the agents read it. It reads only the file you give it, and masks anything that looks like a secret first.')),
-    h('div', { class: 'cs-banner cs-banner--info' }, icon('shield', 's'), 'Sent to Claude through your login. Secret-like values are masked first.'),
+    h('div', {}, h('h1', { class: 'cs-h1', id: 'main-title' }, 'Advisor'), h('p', { class: 'cs-soft' }, 'A second opinion on one document: a plan, a brief, a spec, notes, a README. The selected engine reads it and answers in three lists: what to keep, what to build, and what is wrong (with how serious). Pin any item to a stage of a workflow so it lands in the notes of that stage, where the agents read it. It reads only the file you give it, and masks anything that looks like a secret first.')),
+    h('div', { class: 'cs-banner cs-banner--info' }, icon('shield', 's'), 'Sent through your selected engine’s login. Secret-like values are masked first.'),
     h('div', { class: 'cs-card cs-stack' },
       h('div', { class: 'cs-field' }, h('label', { class: 'cs-field__label', for: 'adv-path' }, 'File path'), pathInput),
       h('div', { class: 'cs-row cs-row--wrap' }, h('label', { class: 'cs-btn', for: 'adv-file' }, icon('upload', 's'), 'Choose a file...'), fileInput, picked),
-      h('div', { class: 'cs-row cs-row--wrap' }, modelSel, h('span', { class: 'cs-grow' }), run)),
+      h('div', { class: 'cs-row cs-row--wrap' }, engineSel, modelSel, h('span', { class: 'cs-grow' }), run)),
     errorEl, out));
   return { destroy: offDrop };
 }

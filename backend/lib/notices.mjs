@@ -7,6 +7,17 @@ import { redact } from './secrets.mjs';
 const FILE = 'notices.json';
 const MAX = 60;
 export const NOTICE_KINDS = ['question', 'approval', 'team', 'done', 'error', 'update', 'connection'];
+export function notificationAllowed(settings, kind, now = new Date()) {
+  if (['question', 'approval', 'team'].includes(kind)) return true;
+  const options = settings.desktopNotifications || {};
+  if (options[kind] === false) return false;
+  if (!['done', 'update'].includes(kind)) return true;
+  if (!options.quietHours) return true;
+  const minutes = (s) => { const m = /^(\d{2}):(\d{2})$/.exec(s || ''); return m && +m[1] < 24 && +m[2] < 60 ? +m[1] * 60 + +m[2] : null; };
+  const start = minutes(options.start); const end = minutes(options.end); const current = now.getHours() * 60 + now.getMinutes();
+  if (start == null || end == null || start === end) return true;
+  return !(start < end ? current >= start && current < end : current >= start || current < end);
+}
 const clip = (s, n) => redact(String(s ?? '')).replace(/\s+/g, ' ').trim().slice(0, n);
 
 export class Notices {
@@ -21,13 +32,13 @@ export class Notices {
   #save() { try { this.store.writeJson(FILE, { notices: this.items }); } catch { /* a full disk must not stop the app */ } }
 
   /** Keep one notice. The same kind and title within a minute is the same notice (a retry, a second poll). */
-  add({ kind, title, body = '', projectId = null, url = '#/' }) {
+  add({ kind, title, body = '', projectId = null, url = '#/', eventId = null, engine = null, conversationId = null, runId = null }) {
     if (!NOTICE_KINDS.includes(kind)) throw new Error(`Unknown notice kind ${kind}.`);
     const at = this.now();
     const t = clip(title, 140);
-    const dup = this.items.find((n) => n.kind === kind && n.title === t && at - Date.parse(n.at) < 60_000);
+    const dup = this.items.find((n) => eventId ? n.eventId === eventId : n.kind === kind && n.title === t && at - Date.parse(n.at) < 60_000);
     if (dup) return dup;
-    const rec = { id: randomBytes(6).toString('hex'), at: new Date(at).toISOString(), kind, title: t, body: clip(body, 240), projectId, url: /^#\/[\w/.-]*$/.test(url) ? url : '#/', read: false };
+    const rec = { id: randomBytes(6).toString('hex'), at: new Date(at).toISOString(), kind, title: t, body: clip(body, 240), projectId, url: /^#\/[\w/.-]*$/.test(url) ? url : '#/', read: false, ...(eventId ? { eventId, engine, conversationId, runId } : {}) };
     this.items = [rec, ...this.items].slice(0, MAX);
     this.#save();
     for (const f of this.listeners) { try { f(rec); } catch { /* a bad listener must not stop the others */ } }

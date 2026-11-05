@@ -3,6 +3,7 @@
 // The shapes and limits are in docs/spec.md.
 import { badRequest } from './errors.mjs';
 import { ID_RE, NAME_RE } from './paths.mjs';
+import { redact } from './secrets.mjs';
 
 export const SCHEMA = 'circle-workflow/1';
 export const LIMITS = { nodes: 80, edges: 200 };
@@ -318,12 +319,12 @@ export function diffWorkflows(before, after) {
   const changes = [
     ...nodes.added.map((id) => ({ kind: 'node-added', id, text: `Added ${b.get(id).kind} "${title(id)}"` })),
     ...nodes.removed.map((id) => ({ kind: 'node-removed', id, text: `Removed ${a.get(id).kind} "${title(id)}"` })),
-    ...nodes.changed.map((c) => ({ kind: 'node-changed', id: c.id, text: `Changed ${c.fields.map((f) => FIELD_LABEL[f] || f).join(', ')} of "${title(c.id)}"` })),
+    ...nodes.changed.map((c) => ({ kind: 'node-changed', id: c.id, text: `Changed ${c.fields.map((f) => FIELD_LABEL[f] || f).join(', ')} of "${title(c.id)}"`, details: c.fields.map((field) => ({ field, before: redact(JSON.stringify(a.get(c.id)[field] ?? null)).slice(0, 4000), after: redact(JSON.stringify(b.get(c.id)[field] ?? null)).slice(0, 4000) })) })),
     ...edges.added.map((k) => ({ kind: 'edge-added', id: k, text: `Connected ${k.replace('>', ' to ')}` })),
     ...edges.removed.map((k) => ({ kind: 'edge-removed', id: k, text: `Disconnected ${k.replace('>', ' from ')}` })),
     ...edges.changed.map((k) => ({ kind: 'edge-changed', id: k, text: `Changed the label of ${k.replace('>', ' to ')}` })),
     ...(stageOrderChanged ? [{ kind: 'stage-order', text: 'Changed the order of the stages' }] : []),
-    ...meta.map((k) => ({ kind: 'meta', id: k, text: `Changed the workflow ${k}` })),
+    ...meta.map((k) => ({ kind: 'meta', id: k, text: `Changed the workflow ${k}`, details: [{ field: k, before: redact(JSON.stringify(before[k] ?? null)).slice(0, 4000), after: redact(JSON.stringify(after[k] ?? null)).slice(0, 4000) }] })),
   ];
   return { nodes, edges, needsChanged, stageOrderChanged, meta, changes, empty: changes.length === 0 };
 }

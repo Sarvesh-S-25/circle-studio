@@ -132,6 +132,24 @@ export class ChangeManager {
 
     const warnings = [...cs.warnings];
     const results = [];
+    for (const effect of cs.effects.filter((e) => e.kind === 'verify-codex-connection')) {
+      let passed = false;
+      try { passed = (await this.verifyConnection?.(cs.projectId, effect.server)) === true; } catch { /* rollback below */ }
+      if (!passed) {
+        for (const f of written) {
+          resolveInside(proj.root, f.rel);
+          if (sha256(fs.readFileSync(f.abs)) !== sha256(f.after)) throw conflict('The connection test failed, but a file changed afterwards. Automatic rollback was refused to preserve that edit. Use the saved backup to review recovery.');
+          if (f.existed && sha256(fs.readFileSync(path.join(backupRoot, ...f.rel.split('/')))) !== f.hash) throw conflict('The connection test failed and its backup changed. Review recovery manually.');
+        }
+        for (const f of written) {
+          if (f.existed) atomicWrite(f.abs, fs.readFileSync(path.join(backupRoot, ...f.rel.split('/'))));
+          else fs.unlinkSync(f.abs);
+        }
+        this.sets.delete(cs.id);
+        return { applied: [], viaScript: [], commands: [], rolledBack: true, warnings: [...warnings, 'The connection test failed. The reviewed files were restored to their previous contents; no configuration change remains.'] };
+      }
+      results.push({ id: 'codex-mcp-test', label: 'Test reviewed Codex connection', ok: true });
+    }
     for (const c of cs.commands) {
       const cmd = c.cmd === 'node' ? this.nodeBin : c.cmd;
       const r = await runCommand(cmd, c.args, { cwd: path.join(proj.root, c.cwd === '.' ? '' : c.cwd), timeoutMs: 30_000 });
@@ -144,7 +162,7 @@ export class ChangeManager {
       try { now = fs.readFileSync(f.abs, 'utf8'); } catch { /* missing */ }
       if (now !== f.after) warnings.push(`${f.rel} is not what the preview predicted. Check it.`);
     }
-    for (const e of cs.effects) { try { this.onEffect(e); } catch { /* usage counters must not fail a write */ } }
+    for (const e of cs.effects.filter((e) => e.kind !== 'verify-codex-connection')) { try { this.onEffect(e); } catch { /* usage counters must not fail a write */ } }
     this.sets.delete(cs.id);
     return {
       applied: written.map((f) => f.rel),

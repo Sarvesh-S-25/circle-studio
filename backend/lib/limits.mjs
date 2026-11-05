@@ -31,15 +31,43 @@ export function fromStatusLine(rl) {
 }
 
 export class Limits {
-  constructor(store) { this.store = store; }
+  constructor(store) { this.store = store; this.refreshing = new Map(); }
 
   /** The newest reading, or null when Claude Code has not said yet. */
-  get() { return this.store.readJson(FILE, null); }
+  get(provider = 'claude') { return this.store.readJson(provider === 'claude' ? FILE : `limits-${/^(codex|gemini|copilot)$/.test(provider) ? provider : 'unknown'}.json`, null); }
 
   record(reading, source) {
     if (!reading) return;
+    if (reading.provider && reading.provider !== 'claude') {
+      if (reading.provider !== 'codex') return;
+      const buckets = reading.rateLimitsByLimitId || (reading.rateLimits ? { codex: reading.rateLimits } : {});
+      const windows = Object.entries(buckets).flatMap(([id, bucket]) => ['primary', 'secondary'].flatMap((kind) => {
+        const w = bucket?.[kind];
+        if (!w || pct(w.usedPercent) == null) return [];
+        const mins = w.windowDurationMins;
+        const label = mins === 10080 ? 'Week' : mins === 300 ? '5 hours' : mins >= 60 && mins % 60 === 0 ? `${mins / 60} hours` : mins > 0 ? `${mins} minutes` : kind === 'primary' ? 'Current window' : 'Longer window';
+        return [{ id: `${id}:${kind}`, label: Object.keys(buckets).length > 1 ? `${bucket.limitName || id} · ${label}` : label, durationMins: mins ?? null, pct: pct(w.usedPercent), resetsAt: when(w.resetsAt) }];
+      }));
+      this.store.writeJson('limits-codex.json', { provider: 'codex', profileId: reading.profileId || null, at: new Date().toISOString(), source, windows, available: windows.length > 0 });
+      return;
+    }
     const prev = this.get();
     this.store.writeJson(FILE, { at: new Date().toISOString(), source, fiveHour: reading.fiveHour || prev?.fiveHour || null, week: reading.week || prev?.week || null });
+  }
+
+  async refresh(provider, adapter) {
+    if (!adapter?.readLimits) return this.get(provider);
+    if (this.refreshing.has(provider)) return this.refreshing.get(provider);
+    const pending = (async () => {
+      try { this.record(await adapter.readLimits(), 'account'); return this.get(provider); }
+      catch {
+        const state = { provider, at: new Date().toISOString(), source: 'account', available: false, windows: [], error: 'Could not refresh account limits. Check sign-in and try again.' };
+        this.store.writeJson(`limits-${provider}.json`, state);
+        return state;
+      } finally { this.refreshing.delete(provider); }
+    })();
+    this.refreshing.set(provider, pending);
+    return pending;
   }
 }
 

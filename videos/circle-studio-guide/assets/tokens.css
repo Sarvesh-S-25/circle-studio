@@ -1,0 +1,240 @@
+/* =============================================================================
+   Circle Studio design tokens: "Open Ring".
+
+   The ONLY file in the app that may hold raw colours, sizes and durations. Every other
+   stylesheet and script reads them through var(--name). Rules: docs/design-rules.md.
+   Identity and rationale: docs/design.md.
+
+   Themes
+     light  :root                                     "Vellum": warm paper, ink text, petrol accent
+     dark   :root[data-theme="dark"]                  "Graphite": cool graphite
+            @media (prefers-color-scheme: dark)       the same values, when the person has not chosen
+              :root:not([data-theme="light"])
+   The two dark blocks are copies, because CSS cannot share one block between a selector and a
+   media query. Keep them identical: scripts/check-contrast.mjs fails when they drift, and when
+   any text pair falls below AA in either theme.
+
+   Only colour and shadow change with the theme. Everything else is shared.
+   ============================================================================= */
+
+:root {
+  color-scheme: light;
+
+  /* ---- colour: light ("Vellum") ---------------------------------------------------------- */
+  --c-bg:             #eeeeeb;  /* the desk: app frame and rail */
+  --c-surface:        #fafaf8;  /* the sheet: content area, cards, panels */
+  --c-surface-raised: #ffffff;  /* floating layers: menus, dialogs, drawers, toasts, inputs on a card */
+  --c-sunken:         #e8e7e3;  /* wells: segmented tracks, table heads, inline code */
+  --c-line:           #dad9d5;  /* hairlines and dividers (decorative, exempt from contrast) */
+  --c-line-strong:    #828078;  /* control borders and the timeline: 3:1 on every surface */
+  --c-text:           #192323;  /* ink: primary text */
+  --c-text-soft:      #4a5555;  /* secondary text: AA on every surface */
+  --c-text-faint:     #758080;  /* disabled and large text only, never body copy or placeholders */
+  --c-accent:         #016e73;  /* petrol: agents, primary action, selection, links */
+  --c-accent-hover:   #057d82;  /* accent fill while hovered (one step toward the page) */
+  --c-accent-soft:    #ddf0f0;  /* selected rows and drop targets */
+  --c-on-accent:      #ffffff;  /* text and icons on accent (and solid danger) fills */
+  --c-gate:           #715700;  /* brass: human gates, rings and their labels */
+  --c-gate-soft:      #fbf0cf;  /* gate label and banner fill */
+  --c-ok:             #1b6c36;  /* passed, healthy */
+  --c-ok-soft:        #dcf7e1;
+  --c-warn:           #974c00;  /* needs attention, drift */
+  --c-warn-soft:      #ffecde;
+  --c-danger:         #b02a2d;  /* blocked, failed, destructive */
+  --c-danger-soft:    #ffebea;
+  --c-info:           #3a60aa;  /* neutral information, diff hunk headers */
+  --c-info-soft:      #e7f1ff;
+  --c-focus:          #070c0d;  /* keyboard focus ring: ink, never a brand colour */
+  --c-scrim:          rgb(22 32 33 / 0.42);  /* overlay behind modals and drawers */
+  --c-hover:          rgb(22 32 33 / 0.06);  /* hover overlay for rows and quiet buttons */
+  --c-press:          rgb(22 32 33 / 0.11);  /* pressed overlay */
+  --c-diff-add-bg:    #d6f7dc;  /* added line */
+  --c-diff-add-fg:    #115629;  /* added marker and word */
+  --c-diff-del-bg:    #ffe6e5;  /* removed line */
+  --c-diff-del-fg:    #942124;  /* removed marker and word */
+  --c-code-bg:        #f4f3f1;  /* code, editor and diff body */
+
+  /* ---- shadow: light (floating layers only; cards use hairlines, not shadows) ------------- */
+  --sh-1: 0 1px 2px rgb(22 32 33 / 0.08);  /* a lifted card or a dragged item */
+  --sh-2: 0 6px 16px -4px rgb(22 32 33 / 0.16), 0 1px 3px rgb(22 32 33 / 0.1);  /* menus, popovers, toasts */
+  --sh-3: 0 20px 48px -12px rgb(22 32 33 / 0.3), 0 4px 12px rgb(22 32 33 / 0.12);  /* modals, the palette, the inspector drawer when it overlays */
+
+  /* ---- type ------------------------------------------------------------------------------- */
+  --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Cascadia Mono", "Cascadia Code", Consolas, "SF Mono", ui-monospace, monospace;
+
+  --fs-xs: 0.75rem;     /* 12: kbd, pills, captions */
+  --fs-s: 0.8125rem;    /* 13: secondary text, dense tables, diffs */
+  --fs-m: 0.875rem;     /* 14: interface text and controls */
+  --fs-l: 1rem;         /* 16: section titles, chat and preview prose */
+  --fs-xl: 1.25rem;     /* 20: view titles */
+  --fs-2xl: 1.75rem;    /* 28: first-run and empty-state headings, the drop overlay */
+
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+
+  --lh-tight: 1.2;      /* titles */
+  --lh-normal: 1.45;    /* interface text */
+  --lh-loose: 1.65;     /* long reading: chat, skill preview */
+
+  /* ---- space: 4px base -------------------------------------------------------------------- */
+  --sp-1: 0.25rem;      /* 4 */
+  --sp-2: 0.5rem;       /* 8 */
+  --sp-3: 0.75rem;      /* 12 */
+  --sp-4: 1rem;         /* 16 */
+  --sp-5: 1.5rem;       /* 24 */
+  --sp-6: 2rem;         /* 32 */
+  --sp-7: 3rem;         /* 48 */
+  --sp-8: 4rem;         /* 64 */
+
+  /* ---- radius and border: only rings are round; rectangles stay crisp ---------------------- */
+  --r-s: 0.1875rem;     /* 3: kbd, tags, checkboxes, diff marks */
+  --r-m: 0.3125rem;     /* 5: buttons, inputs, rows, tabs, menu items */
+  --r-l: 0.5rem;        /* 8: cards, panels, dialogs, drawers, the palette */
+  --r-xl: 1.25rem;      /* 20: desktop widget tiles */
+  --r-pill: 62.5rem;    /* circles and capsules that mean something: dots, rings, switches, counts */
+  --bw: 1px;            /* hairline */
+  --bw-strong: 2px;     /* the ring stroke: focus ring, gate ring, selected edge, timeline */
+
+  /* ---- motion ------------------------------------------------------------------------------ */
+  --dur-fast: 100ms;    /* hover, press */
+  --dur-med: 180ms;     /* menus, tooltips, toasts, drawers opening */
+  --dur-slow: 300ms;    /* a gate ring closing, a modal arriving */
+  --dur-spin: 1000ms;   /* one turn of the loader */
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+
+  /* ---- layout ------------------------------------------------------------------------------ */
+  --rail-w: 16rem;      /* 256: the taskbar */
+  --content-max: 80rem; /* 1280 */
+  --panel-w: 24rem;     /* 384: inspector drawer */
+  --tap: 2.25rem;       /* 36: control height and minimum target */
+  --icon-s: 1rem;       /* 16 */
+  --icon-m: 1.25rem;    /* 20: the drawing size */
+  --icon-l: 2rem;       /* 32: empty states */
+  --measure: 72ch;      /* comfortable reading width */
+
+  --tile: 10.5rem;      /* 168: one cell of the widget board (small tile = 1x1, medium 2x1, large 2x2) */
+  --w-s: 15rem;         /* 240: menus, tooltips, card minimum */
+  --w-m: 26rem;         /* 416: confirm dialogs, toasts */
+  --w-l: 40rem;         /* 640: standard dialog, command palette */
+  --w-xl: 62rem;        /* 992: diff review and other wide dialogs */
+  --h-row: 2.25rem;     /* 36: list row */
+  --h-bar: 3.5rem;      /* 56: view header bar */
+
+  --z-rail: 20;         /* rail as a drawer, sticky bars, the inspector when it overlays */
+  --z-modal: 50;        /* scrim and dialogs */
+  --z-drop: 70;         /* menus, popovers, tooltips and the file-drop overlay: above dialogs */
+  --z-toast: 90;        /* toasts: above everything */
+}
+
+/* ---- colour: dark ("Graphite"), chosen in the app ------------------------------------------ */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --c-bg:             #111718;
+  --c-surface:        #182020;
+  --c-surface-raised: #202828;
+  --c-sunken:         #0b1111;
+  --c-line:           #2d3535;
+  --c-line-strong:    #6a7b7c;
+  --c-text:           #e0e8e8;
+  --c-text-soft:      #afbaba;
+  --c-text-faint:     #778383;
+  --c-accent:         #29a0a6;
+  --c-accent-hover:   #1d8f95;
+  --c-accent-soft:    #002a2d;
+  --c-on-accent:      #020e0e;
+  --c-gate:           #dbbb56;
+  --c-gate-soft:      #372d0c;
+  --c-ok:             #6fd087;
+  --c-ok-soft:        #17321e;
+  --c-warn:           #f9aa60;
+  --c-warn-soft:      #402811;
+  --c-danger:         #ff847f;
+  --c-danger-soft:    #451e1d;
+  --c-info:           #8fb9f7;
+  --c-info-soft:      #1a2c44;
+  --c-focus:          #ffffff;
+  --c-scrim:          rgb(0 0 0 / 0.62);
+  --c-hover:          rgb(255 255 255 / 0.07);
+  --c-press:          rgb(255 255 255 / 0.12);
+  --c-diff-add-bg:    #17321e;
+  --c-diff-add-fg:    #8cdd9e;
+  --c-diff-del-bg:    #431f1f;
+  --c-diff-del-fg:    #ffaba3;
+  --c-code-bg:        #0d1313;
+
+  --sh-1: 0 1px 2px rgb(0 0 0 / 0.5);
+  --sh-2: 0 8px 20px -4px rgb(0 0 0 / 0.55), 0 1px 3px rgb(0 0 0 / 0.4);
+  --sh-3: 0 24px 56px -12px rgb(0 0 0 / 0.7), 0 4px 14px rgb(0 0 0 / 0.45);
+}
+
+/* ---- colour: dark, following the system unless the person chose light ---------------------- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --c-bg:             #111718;
+    --c-surface:        #182020;
+    --c-surface-raised: #202828;
+    --c-sunken:         #0b1111;
+    --c-line:           #2d3535;
+    --c-line-strong:    #6a7b7c;
+    --c-text:           #e0e8e8;
+    --c-text-soft:      #afbaba;
+    --c-text-faint:     #778383;
+    --c-accent:         #29a0a6;
+    --c-accent-hover:   #1d8f95;
+    --c-accent-soft:    #002a2d;
+    --c-on-accent:      #020e0e;
+    --c-gate:           #dbbb56;
+    --c-gate-soft:      #372d0c;
+    --c-ok:             #6fd087;
+    --c-ok-soft:        #17321e;
+    --c-warn:           #f9aa60;
+    --c-warn-soft:      #402811;
+    --c-danger:         #ff847f;
+    --c-danger-soft:    #451e1d;
+    --c-info:           #8fb9f7;
+    --c-info-soft:      #1a2c44;
+    --c-focus:          #ffffff;
+    --c-scrim:          rgb(0 0 0 / 0.62);
+    --c-hover:          rgb(255 255 255 / 0.07);
+    --c-press:          rgb(255 255 255 / 0.12);
+    --c-diff-add-bg:    #17321e;
+    --c-diff-add-fg:    #8cdd9e;
+    --c-diff-del-bg:    #431f1f;
+    --c-diff-del-fg:    #ffaba3;
+    --c-code-bg:        #0d1313;
+
+    --sh-1: 0 1px 2px rgb(0 0 0 / 0.5);
+    --sh-2: 0 8px 20px -4px rgb(0 0 0 / 0.55), 0 1px 3px rgb(0 0 0 / 0.4);
+    --sh-3: 0 24px 56px -12px rgb(0 0 0 / 0.7), 0 4px 14px rgb(0 0 0 / 0.45);
+  }
+}
+
+/* ---- reduced motion: nothing animates; the loader stays a still ring ----------------------- */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0s;
+    --dur-med: 0s;
+    --dur-slow: 0s;
+    --dur-spin: 0s;
+  }
+}
+
+/* ---- touch: bigger targets ----------------------------------------------------------------- */
+@media (pointer: coarse) {
+  :root {
+    --tap: 2.75rem;     /* 44 */
+    --h-row: 2.75rem;
+  }
+}
+
+/* ---- density: the person may choose compact (Settings) ------------------------------------- */
+:root[data-density="compact"] {
+  --tap: 2rem;          /* 32 */
+  --h-row: 2rem;
+}

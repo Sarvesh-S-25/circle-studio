@@ -19,6 +19,7 @@ import { writeIcon } from '../backend/lib/icon.mjs';
 import { shortcutPath, specialFolder, writeShortcut, removeShortcut } from '../backend/lib/desktop.mjs';
 import { checkUpdate, applyUpdate, appVersion } from '../backend/lib/updater.mjs';
 import { copilotLoader, resolveCli } from '../backend/lib/engines/proc.mjs';
+import { permHookState, setPermHook } from '../backend/lib/permhook.mjs';
 
 const config = loadConfig();
 const argv = process.argv.slice(2);
@@ -111,6 +112,15 @@ function findProject(list, want) {
 }
 
 const commands = {
+  async hooks() {
+    const engineAt = argv.indexOf('--engine');
+    const engine = engineAt >= 0 ? argv[engineAt + 1] : 'codex';
+    if (!['claude', 'codex'].includes(engine)) { say('Choose --engine claude or codex.'); return 1; }
+    const context = { ...config, engine };
+    const result = flag('--on') || flag('--off') ? setPermHook(flag('--on'), context) : permHookState(context);
+    say(JSON.stringify(result, null, 2));
+    return result.canSet ? 0 : 1;
+  },
   async install() {
     say(c.b(`Circle Studio ${appVersion(config.appRoot)}: installing for ${process.env.USERNAME || 'you'} on this PC\n`));
     const list = checks();
@@ -164,15 +174,16 @@ const commands = {
     say('Checking for an update (read only)...');
     const u = await checkUpdate(config.appRoot);
     if (u.mode === 'zip' || !u.available) { say(u.reason || `${mark.ok} Up to date (${u.version}).`); return 0; }
-    say(`${mark.warn} An update is available on ${u.remote}/${u.remoteBranch}.`);
+    say(`${mark.warn} An update is available ${u.mode === 'release' ? `on the stable release channel (${u.nextVersion}).` : `on ${u.remote}/${u.remoteBranch}.`}`);
     if (flag('--check')) return 0;
     if (!u.canUpdate) { say(c.warn(u.reason)); return 1; }
     if (!(await ask('Update now? Only moves forward; it never touches your changes or data.', true))) return 0;
-    const r = await applyUpdate(config.appRoot);
+    const running = await serverHealth();
+    const r = running ? await (await fetch(`http://127.0.0.1:${config.port}/api/update`, { method: 'POST', headers: { 'X-Circle': '1', 'Content-Type': 'application/json' }, body: '{}', signal: AbortSignal.timeout(360000) })).json() : await applyUpdate(config.appRoot, { dataDir: config.dataDir });
     if (!r.ok) { say(c.bad(r.message)); return 1; }
     say(`${mark.ok} Updated to ${r.version}:`);
-    for (const ch of r.changes) say(`       ${ch}`);
-    if (await serverHealth()) { say('Restarting the running app...'); launcher('--background'); }
+    for (const ch of r.changes || []) say(`       ${ch}`);
+    if (!r.restarting && (await serverHealth())) { say('Restarting the running app...'); if (r.nextRoot) spawnSync(path.join(r.nextRoot, 'runtime/node.exe'), [path.join(r.nextRoot, 'scripts/launch.mjs'), '--background'], { stdio: 'inherit', windowsHide: true }); else launcher('--background'); }
     return 0;
   },
 
@@ -278,6 +289,7 @@ const commands = {
   npm run status       is it running?
   npm run update       update from the git remote (only when this folder has no changes of yours)
   npm run doctor       check Node, the engines, git, shortcuts and updates
+  node scripts/circle.mjs hooks --engine codex --on   connect terminal approvals (then trust through /hooks)
   npm run uninstall    remove the shortcuts (your data stays)
   npm run mods -- [project]        Claude Code mods and plugins: for every project, only one, or off
   npm run chat -- <project> [--engine codex] [--agent <id>] <message>

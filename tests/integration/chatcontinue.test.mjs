@@ -63,9 +63,10 @@ test('main chat: carry on what is shown, start a new chat, take up an earlier on
     // a sentence in the overlay, while a newer terminal conversation shows: it carries that one on, and is answered
     const LATEST = '3b5da320-50f4-46c7-82d1-9f24bcb77563';
     writeConversation(s.claudeHome, root, { id: LATEST, title: 'Write the docs', turns: [['Write the docs', 'Started.']] });
-    assert.equal((await chat()).continueId, LATEST);
+    assert.equal((await chat()).continueId, null, 'a newer terminal transcript cannot replace an explicitly new chat');
+    assert.equal((await s.call('POST', `/api/projects/${id}/chat/link`, { sessionId: LATEST })).status, 200, 'continuing another transcript is deliberate');
     const sent = await cmd('please go on with the docs');
-    assert.match(sent.say.lines.join(' '), /carries on "Write the docs"/);
+    assert.equal(sent.say.tone, 'ok');
     let live = null;
     for (let i = 0; i < 100 && !live?.done; i++) { await new Promise((r) => setTimeout(r, 50)); live = (await s.call('GET', `/api/overlay?projectId=${id}`)).json.live; }
     assert.equal(live.done, true);

@@ -115,3 +115,14 @@ test('at most 200 versions are kept, oldest first to go', () => {
   assert.equal(record.versions[0].parent, null);
   assert.equal(record.versions.at(-1).version, record.head);
 });
+
+test('pinned versions survive retention and a fully pinned history refuses to discard evidence', () => {
+  const at = '2026-01-01T00:00:00.000Z';
+  let record = startHistory(base(), { at }); record.versions[0].pinned = true;
+  for (let i = 0; i < MAX_VERSIONS + 5; i++) record = appendVersion(record, edit((w) => { node(w, 'x').notes = `Pinned fixture ${i}`; }), { at }).record;
+  assert.equal(record.versions[0].version, '1.0.0');
+  assert.equal(record.versions.length, MAX_VERSIONS);
+  for (const version of record.versions) version.pinned = true;
+  assert.throws(() => appendVersion(record, edit((w) => { node(w, 'x').notes = 'Another change'; }), { at }), /Unpin/);
+  assert.equal(record.versions.length, MAX_VERSIONS);
+});

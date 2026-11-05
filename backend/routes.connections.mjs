@@ -57,6 +57,10 @@ export function buildConnectionHandlers(app) {
     lastTest.set(id, out);
     return out;
   }
+  app.changes.verifyConnection = async (projectId, name) => {
+    const server = listServers({ root: rootOf(projectId), ...homeOpts() }).find((s) => s.engine === 'codex' && s.name === name && s.scope === 'project');
+    return server ? (await testServer(server.id, projectId)).result.ok : false;
+  };
 
   /** The folder whose code the server runs: the project around a .venv path, else the project. */
   function codeRootOf(server, root) {
@@ -110,7 +114,6 @@ export function buildConnectionHandlers(app) {
       if (!server) throw notFound('No such connection.');
       const codeRoot = codeRootOf(server, root);
       const digest = codeRoot ? projectDigest(codeRoot) : '';
-      await app.claude.requireReady();
       const prompt = [
         'You fix a broken MCP server (a connector an AI coding agent uses). Be concrete and short. The PC runs Windows with PowerShell.',
         `Server "${server.name}" for ${server.engine}, configured in ${server.file} (${server.scope}). Transport: ${server.transport}. Command: ${t.command || '-'}. Variables it reads: ${server.envNames.join(', ') || 'none'}.`,
@@ -121,7 +124,7 @@ export function buildConnectionHandlers(app) {
         digest ? `The code of the server's project:\n${digest}` : '',
         'Never suggest printing or opening config files that hold keys (such as ~/.claude.json): say which entry to change instead. Never invent a path: use a real one from above, or say how to find it. Answer with: summary (one or two sentences: the cause), steps (what to do, in order), commands (only commands safe to copy into PowerShell, never a secret), config (a corrected command and args only when the config itself is wrong), codebase (advice for the server code or its packaging, with the file when you know it; empty when there is none).',
       ].filter(Boolean).join('\n\n');
-      const r = await app.claude.advise({ key: `mcpfix:${id}`, prompt, model: ['haiku', 'sonnet', 'opus'].includes(body?.model) ? body.model : 'sonnet', schema: FIX_SCHEMA, kind: 'mcpfix', root: codeRoot || undefined });
+      const r = await app.advice.run({ key: `mcpfix:${id}`, engine: body?.engine, prompt, model: body?.model || 'sonnet', schema: FIX_SCHEMA, kind: 'mcpfix', root: codeRoot || undefined });
       const d = r.data || {};
       const clean = (a, n) => (Array.isArray(a) ? a.slice(0, n).map((x) => redact(String(x)).slice(0, 400)) : []);
       const placeholder = (v) => /^[A-Z]{3,}_[A-Z_]{3,}$|path[\\/]to|<[^>]+>|your[-_ ]/i.test(String(v || ''));
@@ -133,14 +136,20 @@ export function buildConnectionHandlers(app) {
         models: r.models, costUsd: r.costUsd,
       };
     },
-    'connections.list': ({ query }) => {
+    'connections.list': async ({ query }) => {
       const projectId = query.get('projectId') || null;
       const root = rootOf(projectId);
       const servers = listServers({ root, ...homeOpts() });
       const findings = [...scanServers(servers), ...(root ? scanProject(root) : [])];
       const vaultNames = new Set(vault.list().map((v) => v.name));
+      let effective = null;
+      if (query.get('effective') === 'codex') {
+        try { effective = await app.engines.adapter('codex')?.effectiveConnections({ cwd: root || config.userHome }); }
+        catch { effective = { engine: 'codex', error: 'This CLI could not report effective configuration. File-based listings remain observations, not proof of run availability.' }; }
+      }
       return {
         projectId,
+        effective,
         servers: servers.map((s) => ({ ...s, vaultRefs: s.envNames.filter((n) => vaultNames.has(n)) })),
         findings,
         github: GITHUB_PRACTICE,

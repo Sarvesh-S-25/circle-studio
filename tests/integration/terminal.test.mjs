@@ -6,9 +6,40 @@ import { startServer } from '../helpers/server.mjs';
 import { makeMiniProject, rmDir } from '../helpers/project.mjs';
 import { writeConversation } from '../helpers/fake-history.mjs';
 import { resumeScript } from '../../backend/lib/terminal.mjs';
+import { createCodexAdapter } from '../../backend/lib/engines/codex.mjs';
+import path from 'node:path';
 
 const ID = '11111111-2222-3333-4444-555555555555';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+test('Terminal resumes the displayed saved Codex conversation and forks a pending copy without moving another selection', async () => {
+  const s = await startServer({ adapters: () => [createCodexAdapter({ bin: process.execPath, prefixArgs: [path.resolve('tests/helpers/fake-engines.mjs'), 'codex'] })] });
+  const root = makeMiniProject(); const launched = [];
+  s.app.overrides.findWindow = async () => ({ found: false });
+  s.app.overrides.spawnTerminal = (bin, args) => { launched.push(Buffer.from(args[1], 'base64').toString('utf16le')); return {}; };
+  try {
+    const id = (await s.call('POST', '/api/projects', { path: root, permissions: { engine: true } })).json.project.id;
+    const key = s.app.sessions.chatKey(id, null, 'codex');
+    const original = await s.app.chats.append(key, [{ role: 'user', engine: 'codex', text: 'First thread' }], 'first-provider-thread');
+    const copy = await s.app.chats.link(key, { id: 'first-provider-thread', title: 'Reviewed copy', engine: 'codex' });
+    await s.app.chats.reset(key);
+    const selected = await s.app.chats.append(key, [{ role: 'user', engine: 'codex', text: 'Other thread' }], 'other-provider-thread');
+    const first = await s.call('POST', '/api/desktop/terminal', { projectId: id, engine: 'codex', conversationId: original.conversationId, model: 'dummy-codex-balanced', reasoning: 'medium' });
+    assert.equal(first.json.opened, true);
+    assert.match(launched[0], /codex resume 'first-provider-thread'/);
+    assert.match(launched[0], /model_reasoning_effort="medium"/);
+    assert.equal(s.app.chats.get(key).conversationId, selected.conversationId);
+    const forked = await s.call('POST', '/api/desktop/terminal', { projectId: id, engine: 'codex', conversationId: copy.conversationId });
+    assert.equal(forked.json.opened, true, JSON.stringify(forked.json));
+    assert.match(launched[1], /codex resume 'fake-codex-copy-1'/);
+    assert.equal(s.app.chats.read(key, original.conversationId).sessionId, 'first-provider-thread');
+    assert.equal(s.app.chats.read(key, copy.conversationId).fork, false);
+    assert.equal(s.app.chats.get(key).conversationId, selected.conversationId, 'forking a viewed copy leaves the active selection intact');
+    const invalid = await s.call('POST', '/api/desktop/terminal', { projectId: id, engine: 'codex', conversationId: '00000000-0000-0000-0000-000000000000' });
+    assert.equal(invalid.status, 404);
+    assert.equal(launched.length, 2, 'missing saved conversations cannot open a different thread');
+  } finally { await s.close(); rmDir(root); }
+});
 
 test('what a new terminal runs: into the folder (quotes kept safe), then Claude on that conversation', () => {
   const s = resumeScript({ folder: "C:\\Users\\o'neil\\my app", sessionId: ID, title: 'Fix it' });
@@ -16,6 +47,9 @@ test('what a new terminal runs: into the folder (quotes kept safe), then Claude 
   assert.match(s, new RegExp(`claude --resume ${ID}$`));
   assert.match(resumeScript({ folder: 'C:\\x' }), /; claude$/);
   assert.throws(() => resumeScript({ folder: 'C:\\x', sessionId: 'x; Remove-Item C:\\' }), /not valid/);
+  const codex = resumeScript({ folder: 'C:\\x', engine: 'codex', sessionId: ID, model: 'dummy-codex', reasoning: 'high' });
+  assert.ok(codex.endsWith(`codex resume '${ID}' --model 'dummy-codex' -c 'model_reasoning_effort="high"'`));
+  assert.throws(() => resumeScript({ folder: 'C:\\x', engine: 'codex', reasoning: 'high; bad' }), /not valid/);
 });
 
 test('the terminal: shown when open, a new one that carries it on when not, never while it answers', async () => {

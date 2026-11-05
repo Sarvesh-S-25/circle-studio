@@ -13,6 +13,7 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { loadConfig } from '../backend/config.mjs';
 import { openAppWindow } from '../backend/lib/desktop.mjs';
@@ -23,6 +24,8 @@ import { codeFingerprint } from '../backend/lib/codeversion.mjs';
 const config = loadConfig();
 const base = `http://127.0.0.1:${config.port}`;
 const logFile = path.join(config.dataDir, 'server.log');
+const supervisorFile = path.join(config.dataDir, 'server-supervisor.json');
+const revokeSupervisor = () => { try { fs.unlinkSync(supervisorFile); } catch { /* no supervisor */ } };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Circle Studio's /api/health answer, or null when the port is free or held by some other app. */
@@ -74,6 +77,7 @@ function fail(message) {
 /** Stop the running Circle Studio server. Returns true when it is gone. */
 async function stopServer() {
   const pid = listeningPid();
+  revokeSupervisor();
   if (!pid) fail(`Circle Studio answers on port ${config.port} but its process could not be found. Close it from Task Manager (node.exe).`);
   spawnSync('taskkill.exe', ['/PID', String(pid), '/T', '/F'], { windowsHide: true });
   for (let i = 0; i < 20 && (await isCircleStudio()); i++) await sleep(250);
@@ -84,17 +88,20 @@ async function startServer() {
   if (listeningPid()) fail(`Port ${config.port} is used by another program. Close it, or set CIRCLE_PORT to a free port.`);
   fs.mkdirSync(config.dataDir, { recursive: true });
   const out = fs.openSync(logFile, 'a');
-  const child = spawn(process.execPath, [path.join(config.appRoot, 'backend', 'server.mjs')], {
+  const token = randomUUID();
+  fs.writeFileSync(supervisorFile, JSON.stringify({ token }));
+  const child = spawn(process.execPath, [path.join(config.appRoot, 'scripts', 'supervise.mjs'), token], {
     cwd: config.appRoot, detached: true, stdio: ['ignore', out, out], windowsHide: true,
   });
   child.on('error', (e) => fail(`Could not start the server: ${e.message}`));
   child.unref();
+  fs.closeSync(out);
   for (let i = 0; i < 40 && !(await isCircleStudio()); i++) await sleep(250);
   if (!(await isCircleStudio())) fail(`Circle Studio did not start within 10 seconds. See ${logFile}.`);
 }
 
 if (process.argv.includes('--stop')) {
-  if (!(await isCircleStudio())) { console.log(`Circle Studio is not running on port ${config.port}.`); process.exit(0); }
+  if (!(await isCircleStudio())) { revokeSupervisor(); console.log(`Circle Studio is not running on port ${config.port}.`); process.exit(0); }
   console.log((await stopServer()) ? 'Circle Studio stopped.' : 'Could not stop it.');
   process.exit(0);
 }

@@ -48,6 +48,7 @@ export class Sessions {
     this.getBrief = getBrief || (() => '');
     this.vaultEnv = () => ({}); // set by the app: keys from the vault allowed for a project
     this.runs = new Map();
+    this.starting = new Set();
     this.waiters = new Map();
     this.listeners = new Set();
     this.handoff = new Map();
@@ -62,7 +63,7 @@ export class Sessions {
 
   active() { return [...this.runs.values()].map((r) => ({ kind: 'chat', projectId: r.projectId, runId: r.runId, startedAt: r.startedAt })); }
 
-  isBusy(projectId, nodeId) { return this.runs.has(`${projectId}:${nodeId || 'project'}`); }
+  isBusy(projectId, nodeId) { const key = `${projectId}:${nodeId || 'project'}`; return this.runs.has(key) || this.starting.has(key); }
 
   pending(projectId) { return this.inbox.list({ status: 'pending', projectId }); }
 
@@ -80,8 +81,8 @@ export class Sessions {
     const r = this.runs.get(`${projectId}:${nodeId || 'project'}`);
     if (!r) return null;
     return {
-      runId: r.runId, engine: r.engine, model: r.model, status: r.status, startedAt: r.startedAt, lastEventAt: r.lastEventAt,
-      you: r.you || '', text: r.reply?.text || '', tools: (r.reply?.tools || []).map((t) => ({ summary: t.summary, ok: t.ok })),
+      runId: r.runId, engine: r.engine, model: r.model, conversationId: r.conversationId || null, status: r.status, startedAt: r.startedAt, lastEventAt: r.lastEventAt,
+      you: r.you || '', text: r.reply?.text || '', tools: (r.reply?.tools || []).map((t) => ({ id: t.id, name: t.name, summary: t.summary, ok: t.ok, output: t.output || '' })),
       waiting: [...r.pendingIds].map((id) => this.inbox.get(id)).filter(Boolean).map((q) => ({ id: q.id, kind: q.kind, title: q.title, detail: q.detail || '' })),
     };
   }
@@ -97,12 +98,12 @@ export class Sessions {
   #setStatus(run, status) {
     if (run.status === status) return;
     run.status = status;
-    this.#publish('run', { projectId: run.projectId, nodeId: run.nodeId, runId: run.runId, engine: run.engine, model: run.model, status });
+    this.#publish('run', { projectId: run.projectId, nodeId: run.nodeId, runId: run.runId, engine: run.engine, model: run.model, conversationId: run.conversationId || null, status });
   }
 
   /** Everything that can be refused before a turn starts (so the HTTP answer can still be an error, not a stream). */
   async preflight({ projectId, nodeId = null, engineId = 'claude' }) {
-    const project = this.projects.resolve(projectId, { need: 'claude' });
+    const project = this.projects.resolve(projectId, { need: 'engine' });
     const adapter = this.engines.adapter(engineId);
     if (!adapter) throw badRequest(`Unknown engine "${engineId}".`);
     const info = await this.engines.info(engineId);
@@ -115,25 +116,43 @@ export class Sessions {
   }
 
   /** Run one turn. Resolves when it is over. `emit(name, data)` is the caller's stream (server-sent events). */
-  async runTurn({ projectId, nodeId = null, engineId = 'claude', model, message, newSession = false, emit, signal }) {
+  async runTurn({ projectId, nodeId = null, engineId = 'claude', model, reasoning, conversationId = null, message, newSession = false, emit, signal }) {
     const { project, adapter, node } = await this.preflight({ projectId, nodeId, engineId });
+    const effectiveModel = model || node?.model || null;
+    if (effectiveModel && !/^[A-Za-z0-9._:-]{1,100}$/.test(effectiveModel)) throw badRequest('Choose a valid model identifier for this engine.');
+    if (engineId === 'codex' && /^(haiku|sonnet|opus)$/i.test(effectiveModel || '')) throw badRequest('Claude model names cannot be used with Codex. Choose a Codex model or the engine default.');
+    if (reasoning) {
+      const info = await this.engines.info(engineId);
+      const choice = info?.modelCatalog?.find((m) => effectiveModel ? m.id === effectiveModel : m.isDefault);
+      if (!choice?.reasoning?.includes(reasoning)) throw badRequest('This reasoning setting is not advertised for the selected model. Refresh engine models or use its default.');
+    }
     const key = `${projectId}:${nodeId || 'project'}`;
 
+    if (this.runs.has(key) || this.starting.has(key)) throw busy('An agent is already starting or answering here.');
+    this.starting.add(key);
+
     const ck = this.chatKey(projectId, nodeId, engineId);
-    if (newSession) await this.chats.reset(ck);
-    const saved = this.chats.get(ck);
+    let saved;
+    try { if (newSession) await this.chats.reset(ck); else if (conversationId) await this.chats.select(ck, conversationId); saved = this.chats.get(ck); }
+    finally { this.starting.delete(key); }
     const controller = new AbortController();
     const onAbort = () => controller.abort();
     signal?.addEventListener('abort', onAbort, { once: true });
-    const run = { runId: newId('run'), key, projectId, nodeId, engine: engineId, model: model || node?.model || null, status: 'active', startedAt: new Date().toISOString(), tokens: { input: 0, output: 0 }, contextPct: null, costUsd: null, lastEventAt: new Date().toISOString(), controller, rules: [], emit, pendingIds: new Set() };
+    const run = { runId: newId('run'), key, projectId, nodeId, engine: engineId, model: effectiveModel, status: 'active', startedAt: new Date().toISOString(), tokens: { input: 0, output: 0 }, contextPct: null, costUsd: null, lastEventAt: new Date().toISOString(), controller, rules: [], emit, pendingIds: new Set() };
+    run.reasoning = reasoning || null;
+    run.conversationId = saved.conversationId || null;
+    this.chats.selectTarget(projectId, nodeId, engineId, run.model, run.reasoning);
     this.runs.set(key, run);
     this.#publish('run', { projectId, nodeId, runId: run.runId, engine: engineId, model: run.model, status: 'active' });
 
     const at = new Date().toISOString();
-    const reply = { role: 'assistant', text: '', tools: [], at, engine: engineId };
+    const user = { role: 'user', text: message, at, engine: engineId, runId: run.runId };
+    const reply = { role: 'assistant', text: '', tools: [], at, engine: engineId, runId: run.runId };
     run.you = message;
     run.reply = reply;
     let sessionId = saved.sessionId;
+    let checkpointAt = 0;
+    this.chats.checkpoint(ck, run.runId, [user, reply], sessionId);
     const sink = (name, data) => {
       run.lastEventAt = new Date().toISOString();
       if (name === 'text') reply.text += data.delta;
@@ -141,17 +160,37 @@ export class Sessions {
         const t = reply.tools.find((x) => x.id === data.id);
         if (!t) reply.tools.push({ id: data.id, name: data.name, summary: data.summary || data.name, ok: null });
         else { if (data.summary) t.summary = data.summary; if (data.status === 'end') t.ok = data.ok; }
+      } else if (name === 'output') {
+        const tool = reply.tools.find((t) => t.id === data.id);
+        if (tool) tool.output = ((tool.output || '') + redact(String(data.delta || ''))).slice(-16000);
       } else if (name === 'session') { sessionId = data.sessionId || sessionId; reply.model = data.model; run.model = data.model || run.model; }
       else if (name === 'usage') {
         run.tokens = { input: data.inputTokens || 0, output: data.outputTokens || 0 };
         run.costUsd = data.costUsd ?? run.costUsd;
         if (data.contextTokens && data.contextWindow) run.contextPct = Math.min(100, Math.round((data.contextTokens / data.contextWindow) * 100));
+        data = { ...data, contextPct: run.contextPct };
+        reply.usage = data;
         this.#publish('usage', { projectId, nodeId, runId: run.runId, ...data, contextPct: run.contextPct });
       } else if (name === 'done') { sessionId = data.sessionId || sessionId; Object.assign(reply, { costUsd: data.costUsd, ms: data.ms, models: data.models }); }
       else if (name === 'error') reply.error = data.message;
       else if (name === 'stopped') reply.stopped = true;
       else if (name === 'limits') this.#publish('limits', data);
-      if (name === 'text' || name === 'tool') this.#progress(run, name === 'tool');
+      else if (name === 'provider-request-resolved') {
+        for (const id of [...run.pendingIds]) {
+          const waiter = this.waiters.get(id);
+          if (waiter?.req.providerRequestId !== data.providerRequestId) continue;
+          this.waiters.delete(id); run.pendingIds.delete(id);
+          const record = this.inbox.update(id, { status: 'expired', resolvedAt: new Date().toISOString(), note: 'The engine stopped waiting for this request.' });
+          if (record) this.#publish('request-resolved', record);
+          waiter.resolve({ decision: 'deny', message: 'The engine already resolved this request.' });
+        }
+        if (!run.pendingIds.size) this.#setStatus(run, 'active');
+      }
+      if (name === 'text' || name === 'tool' || name === 'output') this.#progress(run, name === 'tool');
+      if (Date.now() - checkpointAt >= 1000 || name === 'session') {
+        checkpointAt = Date.now();
+        this.chats.checkpoint(ck, run.runId, [user, reply], sessionId);
+      }
       emit(name, data);
     };
 
@@ -160,16 +199,24 @@ export class Sessions {
     let outcome = { status: 'error', sessionId };
     try {
       outcome = await adapter.runTurn({
-        cwd: project.root, prompt: message, model, sessionId: saved.sessionId, fork: saved.fork === true, extraEnv: this.vaultEnv(projectId), runId: run.runId, signal: controller.signal, emit: sink, onRequest,
+        cwd: project.root, prompt: message, model: run.model || undefined, reasoning: run.reasoning || undefined, permissions: perms, sessionId: saved.sessionId, fork: saved.fork === true, extraEnv: this.vaultEnv(projectId), runId: run.runId, signal: controller.signal, emit: sink, onRequest,
         systemPrompt: systemPrompt({ projectName: project.name, node, brief: clip(redact(this.getBrief(projectId) || ''), 1500) }),
       });
     } finally {
       signal?.removeEventListener('abort', onAbort);
       this.#expirePending(run, 'The run ended before you answered.');
-      this.runs.delete(key);
-      this.#setStatus(run, outcome.status === 'done' ? 'done' : outcome.status === 'stopped' ? 'idle' : 'error');
-      this.handoff.set(projectId, { from: 'you', to: nodeId || 'project', at: new Date().toISOString(), ms: reply.ms ?? null });
-      await this.chats.append(ck, [{ role: 'user', text: message, at, engine: engineId }, reply], outcome.sessionId || sessionId);
+      let persisted = false;
+      try {
+        const stored = await this.chats.append(ck, [user, reply], outcome.sessionId || sessionId);
+        run.conversationId = stored.conversationId;
+        this.chats.clearCheckpoint(ck);
+        persisted = true;
+      } finally {
+        this.runs.delete(key);
+        this.#setStatus(run, persisted ? outcome.status === 'done' ? 'done' : outcome.status === 'stopped' ? 'idle' : 'error' : 'error');
+        this.handoff.set(projectId, { from: 'you', to: nodeId || 'project', at: new Date().toISOString(), ms: reply.ms ?? null });
+        if (persisted) this.onSettled?.(projectId, nodeId);
+      }
     }
     return outcome;
   }
@@ -179,7 +226,7 @@ export class Sessions {
     if (ev.verdict === 'allow') return { decision: 'allow' };
     const base = {
       projectId: run.projectId, nodeId: run.nodeId, runId: run.runId, engine: run.engine, kind: ev.kind, risk: ev.risk, tool: req.tool,
-      title: ev.title || `Use ${req.tool}`, detail: ev.detail || '', input: req.input, reasons: ev.reasons, at: new Date().toISOString(),
+      title: ev.title || `Use ${req.tool}`, detail: ev.detail || '', input: req.input, reasons: ev.reasons, at: new Date().toISOString(), providerRequestId: req.providerRequestId || null, toolUseId: req.toolUseId || null,
       ...(ev.questions ? { questions: ev.questions } : {}),
     };
     if (ev.verdict === 'deny') {
@@ -212,12 +259,12 @@ export class Sessions {
    * already decided to ask; Circle Studio's policy is shown beside it (outside the folder, or what it would refuse).
    * Resolves with { decision: allow | deny | answer | terminal, message?, answers? }.
    */
-  externalRequest({ projectId, folder, tool, input, sessionId }) {
+  externalRequest({ projectId, folder, tool, input, sessionId, engine = 'claude' }) {
     const ev = evaluate({ tool, input }, { root: folder, protect: [this.config.dataDir], permissions: { shell: true, write: true } });
     const question = ev.kind === 'question';
-    const run = { runId: `terminal:${sessionId || 'session'}`, projectId, nodeId: null, engine: 'claude', model: null, status: 'waiting', pendingIds: new Set(), emit: () => {}, rules: [], external: true };
+    const run = { runId: `terminal:${engine}:${sessionId || 'session'}`, projectId, nodeId: null, engine, model: null, status: 'waiting', pendingIds: new Set(), emit: () => {}, rules: [], external: true };
     const rec = this.inbox.add({
-      id: newId('r'), projectId, nodeId: null, runId: run.runId, engine: 'claude', source: 'terminal', folder, folderName: folder.split(/[\\/]/).filter(Boolean).pop() || folder,
+      id: newId('r'), projectId, nodeId: null, runId: run.runId, engine, source: 'terminal', folder, folderName: folder.split(/[\\/]/).filter(Boolean).pop() || folder,
       kind: question ? 'question' : 'approval', risk: ev.risk, tool, title: ev.title || `Use ${tool}`, detail: ev.detail || '', input, reasons: ev.reasons || [],
       ...(question && ev.questions ? { questions: ev.questions } : {}),
       at: new Date().toISOString(), status: 'pending', resolvedAt: null,
@@ -255,9 +302,9 @@ export class Sessions {
       if (!given) throw badRequest('Send answers: an object from each question to your answer.');
       answers = {};
       for (const q of rec.questions || []) {
-        const a = answerText(given[q.question]).trim();
+        const a = answerText(given[q.id || q.question] ?? given[q.question]).trim();
         if (!a) throw badRequest(`Answer the question: ${q.question}`);
-        answers[q.question] = a.slice(0, 2000);
+        answers[q.id || q.question] = a.slice(0, 2000);
       }
     }
     const note = typeof body.note === 'string' ? body.note.slice(0, 500) : undefined;
@@ -283,7 +330,7 @@ export class Sessions {
     w.resolve(decision === 'deny' ? { decision: 'deny', message: note || 'The human said no.' } : { decision: 'allow', ...(answers ? { answers } : {}) });
     // a question: the chat says what was asked and what you answered, in place of the bare tool name
     if (rec.kind === 'question' && w.req.toolUseId) {
-      const said = (rec.questions || []).map((q) => `${q.question} ${answers ? `You answered: ${answers[q.question]}` : 'You did not answer.'}`).join(' · ');
+      const said = (rec.questions || []).map((q) => `${q.question} ${answers ? `You answered: ${answers[q.id || q.question]}` : 'You did not answer.'}`).join(' · ');
       const summary = clip(redact(said || 'A question'), 400);
       const t = w.run.reply?.tools.find((x) => x.id === w.req.toolUseId);
       // answered: the line is done (a tick); skipped: marked as not done, so it never spins on

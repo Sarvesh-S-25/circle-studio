@@ -15,7 +15,7 @@ import { desktopWidgets } from './lib/deskhost.mjs';
 import { pruneBackups } from './lib/mcpmanage.mjs';
 
 const MB = 1024 * 1024;
-const BODY_LIMIT = { 'import.files': 16 * MB, 'skills.save': 4 * MB };
+const BODY_LIMIT = { 'import.files': 16 * MB, 'skills.save': 4 * MB, 'storage.restore': 40 * MB };
 const DEFAULT_LIMIT = 1 * MB;
 
 const MIME = {
@@ -139,7 +139,20 @@ export function createServer(config, overrides = {}) {
       };
     };
     try {
-      const data = await handlers[route.id]({ app, params, query: url.searchParams, body, sse, signal: abort.signal });
+      const attachment = ({ filename, data, file }) => {
+        if (!/^[A-Za-z0-9_.-]{1,100}$/.test(filename) || (!Buffer.isBuffer(data) && !file)) throw new Error('Invalid attachment.');
+        let bytes = data?.length;
+        if (file) {
+          const root = fs.realpathSync(path.join(config.dataDir, 'cache', 'downloads')) + path.sep;
+          if (!fs.realpathSync(file).startsWith(root) || fs.lstatSync(file).isSymbolicLink()) throw new Error('Invalid attachment file.');
+          bytes = fs.statSync(file).size;
+        }
+        streamed = true;
+        res.writeHead(200, { ...SECURITY_HEADERS, 'Content-Type': 'application/json; charset=utf-8', 'Content-Disposition': `attachment; filename="${filename}"`, 'Cache-Control': 'no-store', 'Content-Length': bytes });
+        if (file) { const source = fs.createReadStream(file); source.on('error', () => res.destroy()); res.on('close', () => source.destroy()); source.pipe(res); }
+        else res.end(data);
+      };
+      const data = await handlers[route.id]({ app, params, query: url.searchParams, body, sse, attachment, signal: abort.signal });
       if (!streamed) sendJson(res, 200, { ok: true, ...(data || {}) });
     } catch (e) {
       if (streamed && res.headersSent) {
@@ -184,7 +197,10 @@ export function createServer(config, overrides = {}) {
     if (!type) throw new HttpError('not_found', 'Not found.');
     res.writeHead(200, { 'Content-Type': type, 'Content-Length': st.size, 'Cache-Control': 'no-cache', ...SECURITY_HEADERS });
     if (req.method === 'HEAD') { res.end(); return; }
-    fs.createReadStream(abs).pipe(res);
+    const source = fs.createReadStream(abs);
+    source.on('error', () => res.destroy());
+    res.on('close', () => source.destroy());
+    source.pipe(res);
   }
 
   const server = http.createServer(async (req, res) => {
@@ -223,7 +239,7 @@ export function openBrowser(url) {
 
 async function main() {
   const config = loadConfig();
-  const { server, app } = createServer(config);
+  const { server, app } = createServer(config, process.env.CIRCLE_RELEASE_PROBE === '1' ? { adapters: [] } : {});
   server.on('error', (e) => {
     if (e.code === 'EADDRINUSE') console.error(`Port ${config.port} is already in use. Circle Studio may already be running: open http://127.0.0.1:${config.port}, or set CIRCLE_PORT.`);
     else console.error('Server error:', e.message);
@@ -242,6 +258,8 @@ async function main() {
     if ((st.desktopWidgets || st.desktopAsks !== false) && process.platform === 'win32' && process.env.CIRCLE_NO_OPEN !== '1') desktopWidgets(config).start();
   });
   const shutdown = async () => {
+    app.advice.stopAll();
+    app.queue.stop();
     await Promise.all([app.sessions.stopAll(), app.claude.stopAll()]).catch(() => {});
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 1500).unref();

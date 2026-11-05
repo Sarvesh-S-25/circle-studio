@@ -27,7 +27,7 @@ async function withProject(s, fn, permissions = ALL) {
 
 test('templates over HTTP: list, create blank / from a template, get, save, remove', () => withServer(async (s) => {
   const list = await s.call('GET', '/api/templates');
-  assert.deepEqual(list.json.templates.map((t) => [t.id, t.builtin, t.stages, t.agents]), [[SEED_ID, true, 8, 19]]);
+  assert.deepEqual(list.json.templates.map((t) => [t.id, t.builtin, t.stages, t.agents]), [[SEED_ID, true, 8, 19], ['codex_build_check', true, 3, 3]]);
 
   const blank = await s.call('POST', '/api/templates', { name: 'Mine', description: 'Own flow' });
   assert.equal(blank.status, 200);
@@ -68,7 +68,7 @@ test('templates over HTTP: list, create blank / from a template, get, save, remo
   assert.equal((await s.call('GET', `/api/templates/${id}`)).status, 404);
   assert.equal((await s.call('DELETE', `/api/templates/${id}`)).status, 404);
   assert.equal((await s.call('DELETE', `/api/templates/${SEED_ID}`)).status, 200, 'the bundled one can go too');
-  assert.equal((await s.call('GET', '/api/templates')).json.templates.length, 1);
+  assert.equal((await s.call('GET', '/api/templates')).json.templates.length, 2);
 }));
 
 test('templates.import over HTTP: pasted JSON, a path, and every refusal', () => withServer(async (s) => {
@@ -93,7 +93,7 @@ test('templates.import over HTTP: pasted JSON, a path, and every refusal', () =>
     const secret = await s.call('POST', '/api/templates/import', { json: JSON.stringify({ ...tiny(), description: 'key sk-ant-abcdefghijklmnopqrstuvwxyz0123' }) });
     assert.equal(secret.status, 400);
     assert.ok(!JSON.stringify(secret.json).includes('abcdefghijkl'));
-    assert.equal((await s.call('GET', '/api/templates')).json.templates.length, 4);
+    assert.equal((await s.call('GET', '/api/templates')).json.templates.length, 5);
   } finally { rmDir(dir); }
 }));
 
@@ -147,10 +147,10 @@ test('workflow.save can write the files through the diff review, and only with p
     assert.equal(res.status, 200);
     const files = res.json.preview.files.map((f) => f.path);
     assert.ok(files.includes('workflow.json') && files.includes('AGENTS.md'));
-    assert.ok(files.includes('.claude/agents/researcher.md'));
+    assert.ok(!files.includes('.claude/agents/researcher.md'), 'handwritten agent files are preserved');
     assert.ok(!files.includes('docs/brief.md') && !files.includes('CLAUDE.md'));
     assert.ok(res.json.preview.warnings.some((w) => /Add the line @AGENTS\.md to CLAUDE\.md/.test(w)));
-    assert.ok(res.json.preview.warnings.some((w) => /agent files? already existed/.test(w)), 'planner.md and researcher.md were there');
+    assert.ok(res.json.preview.warnings.some((w) => /unmanaged|handwritten|managed section/i.test(w)), 'existing agent instructions require explicit replacement');
     assert.ok(!fs.existsSync(path.join(root, 'workflow.json')), 'a preview writes nothing');
     const applied = await s.call('POST', '/api/changes/apply', { id: res.json.preview.id });
     assert.equal(applied.status, 200);
@@ -214,7 +214,7 @@ test('skills over HTTP: partition and engines are saved, listed, and validated',
   const listed = (await s.call('GET', '/api/skills')).json.skills;
   assert.deepEqual(listed.map((k) => [k.name, k.partition]), [['demo', 'shared']]);
   assert.equal((await s.call('GET', '/api/skills/demo')).json.skill.partition, 'shared');
-  assert.equal((await s.call('PUT', '/api/skills/demo', { skillMd: skillMd('demo'), partition: 'codex' })).status, 400);
+  assert.equal((await s.call('PUT', '/api/skills/demo', { skillMd: skillMd('demo'), partition: 'unsupported' })).status, 400);
   assert.equal((await s.call('PUT', '/api/skills/demo', { skillMd: skillMd('demo'), engines: ['gpt'] })).status, 400);
   assert.equal((await s.call('PUT', '/api/skills/fresh', { partition: 'claude' })).status, 400, 'a new skill needs its text');
   const dropped = await s.call('POST', '/api/import', { files: [{ path: 'dropped/SKILL.md', data: skillMd('dropped') }], partition: 'copilot' });
@@ -269,7 +269,7 @@ test('projects.create shows every file first and writes nothing until confirmed'
   assert.equal(made.status, 200);
   assert.equal(made.json.confirmed, true);
   assert.equal(made.json.project.path, target);
-  assert.deepEqual(made.json.project.permissions, { ...ALL, autoEdits: false, autoReadsOutside: false }, 'the "always" switches start off');
+  assert.deepEqual(made.json.project.permissions, { ...ALL, engine: true, autoEdits: false, autoReadsOutside: false }, 'the "always" switches start off');
   assert.deepEqual(fs.readdirSync(target).sort(), ['.claude', 'AGENTS.md', 'CLAUDE.md', 'docs', 'workflow.json']);
   assert.equal(read(target, 'CLAUDE.md'), '@AGENTS.md\n');
   assert.match(read(target, 'AGENTS.md'), /^# fresh-one\n\nA tiny tool for tidying notes\.\n/);
@@ -381,6 +381,6 @@ test('the workflow helper answers, proposes a change, writes nothing, and needs 
   await withProject(s, async (id) => {
     const r = await s.call('POST', `/api/projects/${id}/workflow/suggest`, { message: 'hi' });
     assert.equal(r.status, 403);
-    assert.equal(r.json.error.detail.permission, 'claude');
+    assert.equal(r.json.error.detail.permission, 'engine');
   }, { write: true, run: true, claude: false });
 }));

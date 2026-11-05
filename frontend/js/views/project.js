@@ -6,8 +6,9 @@ import { confirmDialog, toast } from '../components/overlay.js';
 import { askPermissions, permissionSummary } from '../components/permissions.js';
 import { gitChip, widgetMenu } from '../components/gitpanel.js';
 
-const TABS = [['workflow', 'Workflow', 'plan'], ['team', 'Team', 'team'], ['skills', 'Skills', 'skill'], ['connections', 'Connections', 'link'], ['mods', 'Mods', 'sparkle'], ['health', 'Health', 'health'], ['cost', 'Cost', 'cost'], ['chat', 'Chat', 'chat']];
+const TABS = [['workflow', 'Workflow', 'plan'], ['team', 'Team', 'team'], ['skills', 'Skills', 'skill'], ['connections', 'Connections', 'link'], ['mods', 'Mods', 'sparkle'], ['health', 'Health', 'health'], ['cost', 'Usage & cost', 'cost'], ['chat', 'Chat', 'chat'], ['progress', 'Tasks & progress', 'plan']];
 const MODULES = {
+  progress: () => import('./progress.js'),
   workflow: () => import('./workflow.js'),
   team: () => import('./team.js'),
   skills: () => import('./pskills.js'),
@@ -29,6 +30,10 @@ export async function mount(el, ctx) {
   }
   const pctx = {
     project: data.project,
+    selectedChat: data.selectedChat,
+    chatEngine: ctx.params.chatEngine,
+    chatNode: ctx.params.chatNode,
+    conversationId: ctx.params.conversationId,
     team: data.team,
     side: ctx.side,
     id,
@@ -36,6 +41,7 @@ export async function mount(el, ctx) {
     async reload() {
       const d = await api.project(id);
       pctx.project = d.project;
+      pctx.selectedChat = d.selectedChat;
       pctx.team = d.team;
       refreshShell().catch(() => {});
       await drawTab();
@@ -99,6 +105,7 @@ export async function mount(el, ctx) {
         h('div', { class: 'cs-row' }, h('span', { class: 'cs-mono cs-soft cs-project-path', title: data.project.path }, data.project.path),
           h('button', { class: 'cs-btn cs-btn--quiet cs-btn--icon cs-btn--small', type: 'button', 'aria-label': 'Copy the project path', onclick: async () => toast((await copyText(data.project.path)) ? 'Path copied.' : 'Could not copy.', { kind: 'info', ms: 2000 }) }, icon('copy', 's')))),
       chips,
+      data.selectedChat?.engine ? h('span', { class: 'cs-pill cs-pill--info' }, `${data.selectedChat.engine}${data.selectedChat.model ? ` · ${data.selectedChat.model}` : ''}`) : null,
       gitChip(data.project),
       h('button', { class: 'cs-btn cs-btn--small', type: 'button', title: 'A small window for this project: what runs, what waits for you. Pin it to the Desktop or Start menu.', 'aria-haspopup': 'menu', onclick: (e) => widgetMenu(e.currentTarget, data.project) }, icon('pin', 's'), 'Widget'),
       h('button', { class: 'cs-btn cs-btn--small', type: 'button', title: `Allowed: ${permissionSummary(data.project.permissions).join(', ') || 'read only'}`, onclick: async () => {

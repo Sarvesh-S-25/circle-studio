@@ -9,4 +9,6 @@ For Each a In WScript.Arguments
   args = args & " """ & Replace(a, """", "") & """"
 Next
 ' 0 = hidden window, False = do not wait
-sh.Run "node """ & root & "\scripts\launch.mjs""" & args, 0, False
+node = "node"
+If fso.FileExists(root & "\runtime\node.exe") Then node = """" & root & "\runtime\node.exe"""
+sh.Run node & " """ & root & "\scripts\launch.mjs""" & args, 0, False

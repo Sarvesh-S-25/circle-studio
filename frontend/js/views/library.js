@@ -6,8 +6,8 @@ import { SKILL_TYPE, addKeyboardPath, dragSource, installSkill } from '../compon
 import { confirmDialog, openMenu, openModal, toast } from '../components/overlay.js';
 import { catalogSection } from '../components/catalog.js';
 
-const PARTITIONS = [['all', 'All'], ['shared', 'Shared'], ['claude', 'Claude'], ['copilot', 'Copilot'], ['gemini', 'Gemini']];
-const PART_NOTE = { shared: 'For every engine that supports skills', claude: 'Claude only', copilot: 'Copilot only', gemini: 'Gemini only (its skills folder is not verified)' };
+const PARTITIONS = [['all', 'All'], ['shared', 'Shared'], ['claude', 'Claude'], ['codex', 'Codex'], ['copilot', 'Copilot'], ['gemini', 'Gemini']];
+const PART_NOTE = { shared: 'For every engine that supports skills', claude: 'Claude only', codex: 'Codex only', copilot: 'Copilot only', gemini: 'Gemini only (its skills folder is not verified)' };
 let partition = 'all';
 
 function sourceLabel(s) {
@@ -18,10 +18,11 @@ function sourceLabel(s) {
   return 'Local';
 }
 
-export function openGithubImport(onDone) {
+export function openGithubImport(onDone, initialUrl = '') {
   let scan = null;
+  let review = null;
   const body = h('div', { class: 'cs-stack' });
-  const urlInput = h('input', { class: 'cs-input', id: 'gh-url', placeholder: 'https://github.com/anthropics/skills', autocomplete: 'off', spellcheck: 'false' });
+  const urlInput = h('input', { class: 'cs-input', id: 'gh-url', value: initialUrl, placeholder: 'https://github.com/openai/skills', autocomplete: 'off', spellcheck: 'false' });
   const error = h('div', { class: 'cs-banner cs-banner--danger', hidden: true, role: 'alert' });
   const primary = h('button', { class: 'cs-btn cs-btn--primary', type: 'button' }, 'Find skills');
   const picks = new Set();
@@ -30,6 +31,7 @@ export function openGithubImport(onDone) {
 
   function step1() {
     scan = null;
+    review = null;
     body.replaceChildren(
       h('p', { class: 'cs-soft' }, 'Paste a public repository URL, or a /tree/<branch>/<folder> URL for one folder. Only github.com is contacted, and nothing you import is ever run.'),
       h('div', { class: 'cs-field' }, h('label', { class: 'cs-field__label', for: 'gh-url' }, 'Repository URL'), urlInput), error);
@@ -70,8 +72,15 @@ export function openGithubImport(onDone) {
         scan = await api.scanRepo(urlInput.value);
         step2();
       } else {
+        if (!review) {
+          primary.textContent = 'Preparing file review...';
+          review = await api.fetchSkills({ url: urlInput.value, ref: scan.repo.ref, picks: [...picks], overwrite: replace.checked, preview: true });
+          body.replaceChildren(h('p', { class: 'cs-soft' }, 'Review the exact files below. Apply uses these downloaded bytes and refuses skills changed locally after this review. Reviews expire after two minutes. Text previews are redacted and capped at 12,000 characters per side.'), ...review.previews.map((p) => h('section', { class: 'cs-card cs-stack' }, h('strong', {}, p.key), h('p', { class: 'cs-soft cs-small' }, `${p.locallyModified === true ? 'Local edits detected.' : p.locallyModified === null ? 'No previous file baseline; review local files carefully.' : 'No local edits against the saved baseline.'} Upstream tree revision: ${p.revision || 'not supplied by source'}.`), p.files.length ? p.files.map((f) => h('details', {}, h('summary', {}, `${f.path} · ${fmtBytes(f.beforeBytes)} → ${fmtBytes(f.afterBytes)}`), h('p', {}, 'Current local file'), h('pre', {}, f.before ?? '(new file)'), h('p', {}, 'Reviewed replacement'), h('pre', {}, f.after ?? '(removed)'))) : h('p', {}, 'File content is unchanged.'))), ...review.conflicts.map((c) => h('p', {}, `${c.key} already exists. Choose replace and preview again to update it.`)), ...review.skipped.map((s) => h('p', {}, `${s.dir}: ${s.reason}`)), h('button', { class: 'cs-btn', onclick: () => { review = null; step1(); primary.disabled = false; } }, 'Choose again'));
+          primary.textContent = 'Apply reviewed import'; primary.disabled = !review.previews.length;
+          return;
+        }
         primary.textContent = 'Downloading...';
-        const r = await api.fetchSkills({ url: urlInput.value, ref: scan.repo.ref, picks: [...picks], overwrite: replace.checked });
+        const r = await api.fetchSkills({ planId: review.planId });
         await Promise.all([refreshSkills(), refreshShell()]);
         const lines = [];
         if (r.imported.length) lines.push(h('div', { class: 'cs-banner cs-banner--ok' }, icon('check', 's'), `Imported: ${r.imported.join(', ')}`));
@@ -93,6 +102,22 @@ export function openGithubImport(onDone) {
 
 export async function mount(el, ctx) {
   await refreshSkills();
+  const findSkills = () => {
+    const projects = state.projects.filter((p) => p.exists);
+    if (!projects.length) { toast('Add a project first so suggestions can use its workflow.', { kind: 'info' }); return; }
+    const project = h('select', { class: 'cs-select', 'aria-label': 'Project for skill suggestions' }, projects.map((p) => h('option', { value: p.id }, p.name)));
+    const message = h('input', { class: 'cs-input', 'aria-label': 'Skills you need', placeholder: 'Optional: what should the skills help with?' });
+    const results = h('div', { class: 'cs-stack' });
+    const button = h('button', { class: 'cs-btn cs-btn--primary', onclick: async () => {
+      button.disabled = true; results.replaceChildren(h('p', {}, 'Searching official provider collections and relevant repositories…'));
+      try {
+        const wf = await api.workflow(project.value);
+        const result = await api.discoverSkills(project.value, { workflow: wf.workflow, message: message.value, engine: state.preferredEngine || undefined });
+        results.replaceChildren(h('p', { class: 'cs-soft' }, result.note || `${result.suggestions.length} suggestions. Review files before importing.`), ...result.suggestions.map((s) => h('div', { class: 'cs-card cs-stack' }, h('strong', {}, s.key), h('p', {}, s.plain || s.description), h('p', { class: 'cs-soft cs-small' }, `${s.repo.fullName} · ${s.ref} · ${s.dir}`), h('button', { class: 'cs-btn', onclick: () => openGithubImport(draw, `${s.repo.url}/tree/${s.ref}/${s.dir}`) }, 'Review GitHub import'))));
+      } catch (error) { results.replaceChildren(h('p', { role: 'alert' }, error.message)); } finally { button.disabled = false; }
+    } }, 'Find skills');
+    openModal({ title: 'Find skills for your project', body: h('div', { class: 'cs-stack' }, project, message, button, results), actions: [{ label: 'Close', kind: 'quiet', onClick: (c) => c.close() }] });
+  };
   const grid = h('div', { class: 'cs-grid' });
   const search = h('input', { class: 'cs-input cs-library__search', type: 'search', placeholder: 'Search skills', 'aria-label': 'Search skills' });
 
@@ -144,7 +169,7 @@ export async function mount(el, ctx) {
     h('header', { class: 'cs-stack cs-stack--tight' }, h('h1', { class: 'cs-h1', id: 'main-title' }, 'Library'),
       h('p', { class: 'cs-soft' }, 'Skills are how-to cards your agents read when a task needs them, like "test a React component". Not sure which you need? In a project\'s Workflow, open the Workflow helper and press "Find skills".')),
     h('div', { class: 'cs-row cs-row--wrap' }, h('a', { class: 'cs-btn cs-btn--primary', href: '#/library/new' }, icon('plus', 's'), 'New skill'), h('button', { class: 'cs-btn', type: 'button', onclick: () => openGithubImport(draw) }, icon('github', 's'), 'Import from GitHub'), h('span', { class: 'cs-grow' }), search),
-    tabs, grid, catalogSection()));
+    h('button', { class: 'cs-btn', onclick: findSkills }, icon('sparkle', 's'), 'Find skills for a project'), tabs, grid, catalogSection()));
   draw();
   if (ctx.params.importOpen) setTimeout(() => openGithubImport(draw), 0);
   return {};

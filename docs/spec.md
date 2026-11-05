@@ -1,8 +1,60 @@
 # Circle Studio v2: the build spec
 
+## 1.3.1 — 24 October 2026
+
+The Windows notification sender resolves after helper completion, checks notifier enablement, loads the required WinRT
+type and bounds the helper lifetime. The manual test awaits this result; starting a process is not reported as delivery.
+Actual WPF approval/question handlers and Notification Center delivery have scoped evidence in research/acceptance-2026-10-24.md.
+Terminal requests capture the displayed Circle UUID and reasoning. Pending Codex copies receive an independent provider
+fork without moving another active selection. Resume/fork request metadata-only responses; fork writes are not shared
+as read-only queries. Failed chat messages return to an empty composer draft. No automatic failed-turn replay is added.
+
+## 2026-10-23 verification update
+
+The completion pass adds independent widget UUID pins, provider/model/reasoning capture, reviewed context-handoff
+drafts, typed task evidence, pinned/detailed workflow versions, paged completed-request archives and configurable
+generated-file retention. Codex MCP apply-and-retest failures restore the exact backup unless intervening changes
+make rollback unsafe. Native supported team questions use reviewed diffs; unsupported formats keep Open question.
+
+Transcript pages use byte offsets and bounded metadata/page/offset caches; read-only Codex RPCs share concurrent
+identical queries. Chat panel disposal guards async mounting and clears chat timers/listeners. Prepared backups are
+streamed from expiring disk files. History benchmark, completed soak and browser lifecycle evidence live in research.
+
+Packaged updates stream HTTPS release ZIPs into isolated staging, check checksum/archive paths/manifest, run installer
+staging and probe a private-data candidate launch before activation. Busy work defers activation. Per-user install
+registers repair/uninstall; data is retained by default. Generated release metadata shares the package version.
+Signing, publishing, separate website wiring, clean-account and physical mixed-DPI tests remain release gates.
+
+Every short Codex completion now records an exact-chat notice. SSE clients advertise notification permission; denied
+or default browser permission permits native fallback. Settings exposes a no-model-call notification test. OS submission
+and visual delivery are distinct; external Codex terminal/app events are not integrated.
+
+Codex CLI 0.163.0 now has scoped real-account fixture evidence in `research/codex-2026-10-22.md`.
+Provider-backed saved chats support a separate copy record, with the provider fork deferred until the next turn.
+Failed transcript persistence releases the live run, retains its checkpoint and suppresses automatic queue advancement.
+Reopened prerequisites invalidate dependent task acceptance and return that work to review; historical events remain.
+Codex terminal commands preserve saved model and reasoning settings. Windows process measurement is explicit and
+degrades to an unavailable result when spawning is blocked. Current tests and unsigned package checksums are in `../connections.md`.
+
+## 2026-10-22 development addendum
+
+The user authorized the definitions implementation after the static review. `connections.md` is the current evidence
+and outstanding-work ledger; older claims below describe the previous build. New shared services implement durable
+conversations and checkpoints, captured persistent queues, Codex model/history/account-limit RPCs, provider-selected
+structured advice, evidence-based tasks and optional local awards, bounded derived caches, incremental token parsing,
+storage maintenance and ZIP/installer staging. Provider histories are never modified by Circle's archive/cleanup.
+
+Codex approval coverage is conditional on engine policy; Circle cannot promise a card for operations the engine permits
+without a request. Unsupported request categories receive an error, never automatic consent. Unknown/stale account data
+does not become zero. Installed, signed in, protocol supported, and live verified are separate facts. `liveVerified` remains false.
+
+New writes into projects retain the existing diff-review contract. Updating generated agents preserves text outside an
+unambiguous Circle-managed section and skips unmanaged files by default. Full replacement requires an explicit operation.
+Workflow edges are instructions, not proof of an executed scheduler or a passed gate.
+
 Source of truth for this iteration (decided by the human on 2026-09-30). Engine facts with evidence are in
-`docs/research/engines.md`. The routes are in `contracts/api.json` (46: add a route only with a decisions.md line; report a
-missing route instead). The frontend client is `frontend/js/api.js` (already written for every route).
+`docs/research/engines.md`. The current route inventory is `contracts/api.json`; additions require a decisions.md record
+and matching frontend client/contract checks. The frontend client is `frontend/js/api.js`.
 
 ## What changed and why
 

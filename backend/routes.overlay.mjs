@@ -11,7 +11,7 @@ import {
   parseCommand, chatCommand, findByName, splitAgent, splitNumber, pcStats, waitingPanel, workflowMap, usagePanel, gitPanel, helpLines, projectChoices, OVERLAY_EXTRAS, PAGES,
 } from './lib/overlay.mjs';
 import { plain } from './lib/chatfeed.mjs';
-import { readConversation } from './lib/cchistory.mjs';
+import { readConversation, listConversations } from './lib/cchistory.mjs';
 import { findEditor, openInEditor, workingFile } from './lib/ide.mjs';
 import { findWorkWindow, openResumeTerminal } from './lib/terminal.mjs';
 import { spawn } from 'node:child_process';
@@ -44,7 +44,7 @@ export function buildOverlayHandlers(app, handlers) {
   };
 
   const listed = () => projects.list().filter((p) => p.exists).map((p) => ({ id: p.id, name: p.name }));
-  const current = (id) => { const all = listed(); return all.find((p) => p.id === id) || all[0] || null; };
+  const current = (id) => { const all = listed(); return id ? all.find((p) => p.id === id) || null : all[0] || null; };
   const nameOf = (id) => { try { return projects.get(id).name; } catch { return id; } };
   const pulse = (id) => { try { return handlers['projects.pulse']({ params: { id } }); } catch { return null; } };
   const agentsOf = (id) => {
@@ -54,13 +54,14 @@ export function buildOverlayHandlers(app, handlers) {
   const hotkey = () => { try { return fs.readFileSync(path.join(config.dataDir, 'desktop-widgets.hotkey'), 'utf8').trim().slice(0, 40) || null; } catch { return null; } };
 
   // Start a chat turn and let it run on its own: the overlay reads the answer as it comes, from overlay.feed.
-  async function send(project, { nodeId = null, engineId = 'claude', model, to, message }) {
+  async function send(project, { nodeId = null, engineId = 'claude', model, reasoning, conversationId, to, message }) {
     await app.sessions.preflight({ projectId: project.id, nodeId, engineId });
-    const rec = { you: message.slice(0, 2000), to, text: '', error: null, done: false, at: new Date().toISOString(), doneAt: null, nodeId };
+    if (conversationId) app.chats.read(app.sessions.chatKey(project.id, nodeId, engineId), conversationId, { limit: 1 });
+    const rec = { you: message.slice(0, 2000), to, text: '', error: null, done: false, at: new Date().toISOString(), doneAt: null, nodeId, engine: engineId, conversationId };
     live.set(project.id, rec);
     const ctl = new AbortController();
     app.sessions.runTurn({
-      projectId: project.id, nodeId, engineId, model, message,
+      projectId: project.id, nodeId, engineId, model, reasoning, conversationId, message,
       emit: (name, d) => { if (name === 'text') rec.text = (rec.text + (d.delta || '')).slice(-6000); else if (name === 'error') rec.error = String(d.message || 'It stopped.'); },
       signal: ctl.signal,
     }).catch((e) => { rec.error = String(e.message || e); }).finally(() => { rec.done = true; rec.doneAt = new Date().toISOString(); });
@@ -91,27 +92,28 @@ export function buildOverlayHandlers(app, handlers) {
 
   // Your conversations in the project folder, newest first: Claude Code's from the terminal or an IDE, and the ones
   // Circle Studio's chat had (they are Claude Code conversations too).
-  const conversations = (p) => (handlers['projects.history.list']({ params: { id: p.id }, query: new URLSearchParams() }).conversations || []);
+  const conversations = (p) => listConversations(config.claudeHome, projects.get(p.id).path).conversations;
   const when = (iso) => (iso ? new Date(iso).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');
   // Continue one of them in the main chat: the first message makes a copy, so the original stays as it was.
-  async function carryOn(p, c) {
-    await handlers['projects.chat.link']({ params: { id: p.id }, body: { sessionId: c.id } });
+  async function carryOn(p, c, engine = 'claude') {
+    await handlers['projects.chat.link']({ params: { id: p.id }, body: { sessionId: c.id, engine, source: c.source } });
     live.delete(p.id);
   }
 
   // What you typed, to a chat: the main one (carrying on the conversation it shows, as you see it) or an agent's.
   // Marked as said from the desktop, so its answer comes back as a card there.
-  async function sayTo(p, text, nodeId = null, { engine: chosen, model } = {}) {
+  async function sayTo(p, text, nodeId = null, { engine: chosen, model, reasoning, conversationId } = {}) {
     let note = '';
     let engineId = 'claude';
     let to = 'Claude';
     if (nodeId) {
       const agent = agentsOf(p.id).find((a) => a.id === nodeId);
       if (!agent) throw badRequest(`This project's workflow has no agent "${nodeId}".`);
-      engineId = agent.engine; to = agent.title;
-    } else {
+      engineId = chosen || agent.engine; to = agent.title;
+      } else {
+        chosen ||= app.chats.selected(p.id)?.engine || settings.get().overlayBar?.engine || settings.get().preferredEngine || null;
       const c = await Promise.resolve(handlers['widgets.chat']({ query: new URLSearchParams({ projectId: p.id }) })).catch(() => null);
-      if (c?.continueId) {
+      if (c?.continueId && (!chosen || chosen === 'claude')) {
         const hit = conversations(p).find((x) => x.id === c.continueId);
         if (hit) { await carryOn(p, hit); note = `It carries on "${hit.title}".`; }
       }
@@ -120,7 +122,8 @@ export function buildOverlayHandlers(app, handlers) {
     }
     // its answer comes back as a card (the card you typed on stays, saying so, until the new one replaces it)
     app.fromDesktop?.add(`${p.id}|${nodeId || ''}`);
-    await send(p, { nodeId, engineId, model: engineId === 'claude' ? model : undefined, to, message: text });
+    const target = app.chats.selected(p.id, nodeId);
+    await send(p, { nodeId, engineId, model: model ?? (target?.engine === engineId ? target.model : undefined), reasoning: reasoning ?? (target?.engine === engineId ? target.reasoning : undefined), conversationId, to, message: text });
     return note;
   }
 
@@ -134,8 +137,33 @@ export function buildOverlayHandlers(app, handlers) {
   // Its window brought to the front (a terminal titled with the conversation, or the editor open on the folder); when
   // none is open, a new terminal in the folder that carries the newest conversation on. mode: auto, show or new.
   // Only a terminal: an editor's Claude Code panel is not one (the editor stays as it is; "Open in" opens it).
-  async function openTerminal(p, mode = 'auto') {
+  async function openTerminal(p, mode = 'auto', options = {}) {
     const folder = projects.get(p.id).path;
+    const engine = options.engine || settings.get().overlayBar?.engine || settings.get().preferredEngine || 'claude';
+    if (!['claude', 'codex', 'gemini', 'copilot'].includes(engine)) throw badRequest('Unknown terminal engine.');
+    if (engine !== 'claude' || options.nodeId || options.conversationId) {
+      const nodeId = options.nodeId || null;
+      const chatKey = app.sessions.chatKey(p.id, nodeId, engine);
+      let saved = options.conversationId ? app.chats.read(chatKey, options.conversationId, { limit: 1 }) : app.chats.get(chatKey);
+      if (app.sessions.isBusy(p.id, nodeId)) return { opened: false, say: say('This conversation is answering in Circle Studio.', ['Wait for it or stop it before opening a second writer.'], 'warn') };
+      const find = app.overrides?.findWindow || (process.env.NODE_TEST_CONTEXT ? async () => ({ found: false }) : findWorkWindow);
+      if (mode !== 'new') {
+        const window = await find({ folder, engine, titles: [saved.linked?.title], only: 'terminal' });
+        if (window.found) return { shown: true, app: window.app, say: say(`Showing ${engine}: ${redact(window.title)}`, [`In ${folder}.`], 'ok') };
+        if (mode === 'show') return { shown: false, say: say(`No ${engine} terminal was found for this folder.`, [], 'warn') };
+      }
+      const resumable = ['codex', 'claude'].includes(engine);
+      if (saved.fork) {
+        const adapter = app.engines.adapter(engine);
+        if (!adapter?.forkHistory) return { opened: false, say: say('This conversation is a copy waiting to be created.', ['Send its first message in Circle before opening it in Terminal. The original has not been changed.'], 'warn') };
+        const branch = await adapter.forkHistory({ cwd: folder, id: saved.sessionId });
+        saved = await app.chats.providerSession(chatKey, saved.conversationId, branch.id);
+      }
+      const selected = app.chats.selected(p.id, nodeId);
+      const target = selected?.engine === engine ? selected : null;
+      const result = openResumeTerminal({ appRoot: config.appRoot, folder, engine, model: options.model ?? target?.model, reasoning: options.reasoning ?? target?.reasoning, sessionId: resumable ? saved.sessionId : null, title: saved.title || saved.linked?.title || '', spawnImpl: app.overrides?.spawnTerminal || (process.env.NODE_TEST_CONTEXT ? () => ({}) : undefined) });
+      return { ...result, say: say(result.opened ? `Opened ${engine} in this folder.` : 'Could not open a terminal.', [resumable && saved.sessionId ? 'Continues the selected conversation.' : 'Starts a new terminal conversation.', result.why || ''], result.opened ? 'ok' : 'warn') };
+    }
     // the conversation the chat here carries on (its own Claude conversation), else the folder's newest
     const all = conversations(p);
     const ownId = app.chats.get(app.sessions.chatKey(p.id, null, 'claude'))?.sessionId || null;
@@ -166,16 +194,8 @@ export function buildOverlayHandlers(app, handlers) {
     const ids = known.filter((e) => e.usable && e.capabilities?.chat !== false).map((e) => e.id);
     return ids.length ? ids : ['claude'];
   };
-  const barChoice = () => { const b = settings.get().overlayBar || {}; const ids = usableEngines(); return { engine: ids.includes(b.engine) ? b.engine : ids[0], model: b.model || null, engines: ids }; };
+  const barChoice = () => { const b = settings.get().overlayBar || {}; const ids = usableEngines(); const preferred = b.engine || settings.get().preferredEngine; return { engine: app.engines.adapter(preferred) ? preferred : ids[0], model: b.model || null, engines: ids }; };
   // what you typed while it answered: sent, in order, as soon as it is done
-  const waitingLine = new Map();
-  app.sessions.subscribe?.((name, d) => {
-    if (name !== 'run' || d.nodeId || !['done', 'error', 'idle'].includes(d.status)) return;
-    const q = waitingLine.get(d.projectId);
-    if (!q?.length) return;
-    const next = q.shift();
-    setTimeout(() => { let p; try { p = projects.get(d.projectId); } catch { return; } sayTo(p, next, null, barChoice()).catch(() => {}); }, 300);
-  });
   const ALIAS = { clear: 'new', reset: 'new', resume: 'chats', cost: 'usage' };
 
   async function barLine(text, p) {
@@ -190,15 +210,17 @@ export function buildOverlayHandlers(app, handlers) {
         const { engine, engines } = barChoice();
         const want = arg === '' || arg === 'next' ? engines[(engines.indexOf(engine) + 1) % engines.length] : arg.toLowerCase();
         if (!engines.includes(want)) return { say: say(`"${arg}" is not ready here.`, [`Ready: ${engines.map((e) => ENGINE_LABEL[e] || e).join(', ')}.`], 'warn') };
-        await settings.set({ overlayBar: { ...(settings.get().overlayBar || {}), engine: want } });
+          await settings.set({ overlayBar: { ...(settings.get().overlayBar || {}), engine: want, model: null } });
         return { say: say(`Now talking to ${ENGINE_LABEL[want] || want}.`, [], 'ok') };
       }
       if (w === 'model') {
-        const ok = ['haiku', 'sonnet', 'opus'];
+        const engine = barChoice().engine;
+        const detected = await app.engines.info(engine);
+        const ok = engine === 'claude' ? ['haiku', 'sonnet', 'opus'] : (detected?.modelCatalog || []).map((m) => m.id);
         if (!arg) return { say: say(`Model: ${barChoice().model || 'the default'}`, [`Choose: ${ok.map((m) => `/model ${m}`).join(' · ')}`]) };
         if (!ok.includes(arg.toLowerCase())) return { say: say(`No model "${arg}".`, [`Choose: ${ok.join(', ')}.`], 'warn') };
         await settings.set({ overlayBar: { ...(settings.get().overlayBar || {}), model: arg.toLowerCase() } });
-        return { say: say(`Model: ${arg.toLowerCase()}.`, ['The next message uses it (Claude).'], 'ok') };
+        return { say: say(`Model: ${arg.toLowerCase()}.`, [`The next message uses it (${ENGINE_LABEL[engine] || engine}).`], 'ok') };
       }
       if (w === 'status') {
         if (!p) return noProject;
@@ -212,8 +234,8 @@ export function buildOverlayHandlers(app, handlers) {
       }
       if (w === 'help' || w === '?') {
         return { say: say('Type a message to talk. A line starting with / is a command:', [
-          '/usage            your 5-hour and weekly limits, and spending', '/status           the folder, who answers, what it is doing',
-          '/engine codex     talk to another AI tool (or click its name)', '/model sonnet     the Claude model for the next message',
+          '/usage            reported provider quota windows and separate spending totals', '/status           the folder, who answers, what it is doing',
+          '/engine codex     talk to another AI tool (or click its name)', '/model            models available for the selected engine',
           '/waiting          what waits for you, numbered', '/allow 1  /deny 1  /answer 1 <answer>',
           '/stop             stop the answer', '/new  /chats  /continue 2   new chat, earlier ones',
           '/project <name>   show another project here', '/open chat        the full Chat in Circle Studio',
@@ -228,8 +250,8 @@ export function buildOverlayHandlers(app, handlers) {
     if (!line) return { say: say('Type a message, or / for commands.') };
     if (!p) return noProject;
     if (app.sessions.isBusy(p.id, null)) {
-      const q = waitingLine.get(p.id) || [];
-      q.push(line.slice(0, 4000)); waitingLine.set(p.id, q);
+      const choice = barChoice();
+      await app.queue.enqueue({ projectId: p.id, nodeId: null, engineId: choice.engine, model: choice.model, message: line.slice(0, 4000) });
       return { say: say('Sends when it finishes.', [line.length > 80 ? `${line.slice(0, 80)}...` : line], 'ok') };
     }
     const note = await sayTo(p, line, null, barChoice());
@@ -338,7 +360,9 @@ export function buildOverlayHandlers(app, handlers) {
   // pages left from before a restart: say what is true now
   try { for (const f of fs.readdirSync(pageDir)) if (f.endsWith('.md')) refreshPage(f.slice(0, -3)); } catch { /* none yet */ }
 
-  async function run(cmd, project) {
+  async function run(cmd, project, selectedEngine = null) {
+    const engine = selectedEngine || barChoice().engine;
+    const history = async (p) => engine === 'claude' ? conversations(p) : (await handlers['projects.history.list']({ params: { id: p.id }, query: new URLSearchParams({ engine }) })).conversations;
     const p = project;
     const noProject = { say: say('No project yet.', ['Add a folder on Home first: type open home.'], 'warn') };
     switch (cmd.id) {
@@ -385,19 +409,19 @@ export function buildOverlayHandlers(app, handlers) {
       case 'newchat': {
         if (!p) return noProject;
         if (app.sessions.isBusy(p.id, null)) return { say: say('The chat is answering.', ['Wait for it, or /stop first.'], 'warn') };
-        for (const engine of ['claude', 'codex', 'gemini', 'copilot']) await handlers['projects.chat.reset']({ params: { id: p.id }, query: new URLSearchParams(engine === 'claude' ? {} : { engine }) });
+        await handlers['projects.chat.reset']({ params: { id: p.id }, query: new URLSearchParams({ engine }) });
         live.delete(p.id);
         return { say: say(`New chat in ${p.name}.`, ['Type a sentence to start it.', 'Earlier ones stay in the folder: type chats to see them, continue 1 to carry one on.'], 'ok') };
       }
       case 'chats': {
         if (!p) return noProject;
-        const list = conversations(p).slice(0, 10);
+        const list = (await history(p)).slice(0, 10);
         if (!list.length) return { say: say(`No conversations in ${p.name} yet.`, ['Type a sentence to start one.']) };
         return { say: say(`Conversations in ${p.name}`, [...list.map((x, i) => `${i + 1}. ${redact(String(x.title || '(untitled)')).slice(0, 70)} · ${when(x.lastAt)}`), 'continue 2 carries that one on · new starts a new chat']) };
       }
       case 'continue': {
         if (!p) return noProject;
-        const list = conversations(p);
+        const list = await history(p);
         if (!list.length) return { say: say(`No conversations in ${p.name} yet.`, ['Type a sentence to start one.'], 'warn') };
         let hit = null;
         if (!cmd.rest) hit = list[0];
@@ -405,7 +429,7 @@ export function buildOverlayHandlers(app, handlers) {
         else { const f = findByName(list, cmd.rest, (x) => [x.title]); hit = f && !f.ambiguous ? f : null; if (f?.ambiguous) return { say: say('Which one?', f.ambiguous.slice(0, 6).map((x) => `${list.indexOf(x) + 1}. ${x.title}`), 'warn') }; }
         if (!hit) return { say: say(`No conversation "${cmd.rest}".`, ['Type chats to see them, numbered.'], 'warn') };
         if (app.sessions.isBusy(p.id, null)) return { say: say('The chat is answering.', ['Wait for it, or /stop first.'], 'warn') };
-        await carryOn(p, hit);
+        await carryOn(p, hit, engine);
         return { say: say(`Carrying on "${redact(String(hit.title || '')).slice(0, 80)}".`, [`Last active ${when(hit.lastAt)}. Type a sentence to go on; the original stays as it was.`], 'ok') };
       }
       case 'folder': return { open: '#/open-folder', hide: true, say: say('Choose the folder in Circle Studio.', [], 'ok') };
@@ -448,8 +472,8 @@ export function buildOverlayHandlers(app, handlers) {
       }
       case 'usage': {
         // your plan's limits first, as Claude Code's /usage shows them, then what was spent
-        const lv = limitsView(app.limits?.get() || null);
-        const limitLines = lv ? [...lv.rows.map((r) => `${r.label}: ${r.value} used${r.resets ? ` · ${r.resets}` : ''}`), ''] : ['Limits: shown after Claude answers here (or turn on "From your terminal too" in Widgets).', ''];
+        const lv = limitsView(app.limits?.get(engine) || null);
+        const limitLines = lv ? [`${ENGINE_LABEL[engine] || engine} account limits`, ...lv.rows.map((r) => `${r.label}: ${r.value} used${r.resets ? ` · ${r.resets}` : ''}`), ''] : [`${ENGINE_LABEL[engine] || engine} limits unavailable. Refresh the account limits in Widgets.`, ''];
         const u = usagePanel(usageNow());
         if (!u) return { say: say(lv ? `Your plan · ${lv.rows.map((r) => `${r.label.toLowerCase()} ${r.value}`).join(' · ')}` : 'Your use', [...limitLines, 'Adding up spending... ask again in a moment.']) };
         return { say: say(lv ? `Your plan · ${lv.rows.map((r) => `${r.label.toLowerCase()} ${r.value}`).join(' · ')}` : `${u.total} in 30 days · ${u.today} today`, [...limitLines, `Spending: ${u.total} in 30 days · ${u.today} today`, u.note, ...u.rows.map((r) => `${r.label}: ${r.value}`)]) };
@@ -497,7 +521,8 @@ export function buildOverlayHandlers(app, handlers) {
         const c = chatL; // one read of the chat serves both
         chat = { engine: c?.engine || null, messages: (c?.messages || []).slice(-3).map((m) => ({ who: m.who, text: redact(String(m.text || '')).slice(0, 400), mine: Boolean(m.mine) })) };
       }
-      const r = live.get(project?.id);
+      const ownLive = live.get(project?.id);
+      const r = ownLive?.engine === barChoice().engine ? ownLive : null;
       // widgets added from the Widgets menu, drawn like the desktop tiles for the project shown
       const extra = String(query.get('extra') || '').split(',').filter((k) => OVERLAY_EXTRAS.some((x) => x.kind === k));
       const extras = extra.length ? (await Promise.resolve(handlers['widgets.feed']({ query: new URLSearchParams({ extra: extra.join(','), projectId: project?.id || '', theme: query.get('theme') || 'dark' }) })).catch(() => null))?.tiles || [] : [];
@@ -512,7 +537,7 @@ export function buildOverlayHandlers(app, handlers) {
         agents: project ? agentsOf(project.id).map((a) => a.title) : [],
         usage: usagePanel(usageNow()),
         // your plan's 5-hour and weekly limits, as Claude Code's /usage says them (null until Claude has answered once)
-        limits: (() => { const lv = limitsView(app.limits?.get() || null); return lv ? { ...lv, from: lv.source === 'terminal' ? 'your terminal' : 'a chat here', read: clock(lv.at) } : null; })(),
+        limits: (() => { const lv = limitsView(app.limits?.get(barChoice().engine) || null); return lv ? { ...lv, from: lv.source === 'terminal' ? 'your terminal' : lv.source === 'account' ? 'your account' : 'a chat here', read: clock(lv.at) } : null; })(),
         git: pu ? gitPanel(pu.repo) : null,
         pc: pcStats(),
         chat,
@@ -522,7 +547,7 @@ export function buildOverlayHandlers(app, handlers) {
           const { engine, model, engines } = barChoice();
           const t = project ? app.sessions.turnOf(project.id, null) : null;
           let where = null; try { where = project ? projects.get(project.id).path : null; } catch { /* gone */ }
-          return { engine, engineLabel: ENGINE_LABEL[engine] || engine, model, engines: engines.length, where, now: t && t.tools.length ? redact(String(t.tools[t.tools.length - 1].summary || '')).slice(0, 120) : null, waiting: t?.waiting?.length || 0, lined: (waitingLine.get(project?.id) || []).length };
+          return { engine, engineLabel: ENGINE_LABEL[engine] || engine, model, engines: engines.length, where, now: t && t.tools.length ? redact(String(t.tools[t.tools.length - 1].summary || '')).slice(0, 120) : null, waiting: t?.waiting?.length || 0, lined: app.queue.list(project?.id).filter((e) => e.status === 'queued').length };
         })(),
         editor: findEditor()?.name || null,
         live: r ? { to: r.to, you: redact(r.you), text: redact(r.text).slice(-1500), error: r.error ? redact(r.error).slice(0, 300) : null, done: r.done } : null,
@@ -539,7 +564,7 @@ export function buildOverlayHandlers(app, handlers) {
       if (!p) throw badRequest('No project yet.');
       const nodeId = typeof body?.nodeId === 'string' && /^[A-Za-z0-9_-]{1,60}$/.test(body.nodeId) ? body.nodeId : null;
       if (app.sessions.isBusy(p.id, nodeId)) return { sent: false, say: say('It is still answering.', ['Wait for it, or stop it first.'], 'warn') };
-      const note = await sayTo(p, body.text.trim(), nodeId);
+      const note = await sayTo(p, body.text.trim(), nodeId, { engine: body?.engine, model: body?.model, reasoning: body?.reasoning, conversationId: body?.conversationId });
       return { sent: true, projectId: p.id, say: say(`Sent to ${p.name}.`, [note, 'The answer comes back here.'], 'ok') };
     },
     // The answers waiting as desktop cards: what you asked, what came back (plain words, masked), and the file it was on.
@@ -548,7 +573,9 @@ export function buildOverlayHandlers(app, handlers) {
       for (const r of app.replies?.list() || []) {
         let p;
         try { p = projects.get(r.projectId); } catch { continue; }
-        const msgs = app.chats.get(app.sessions.chatKey(r.projectId, r.nodeId, r.engine || 'claude')).messages || [];
+        const key = app.sessions.chatKey(r.projectId, r.nodeId, r.engine || 'claude');
+        let msgs = app.chats.get(key).messages || [];
+        if (r.conversationId) { try { let offset = 0; msgs = []; do { const page = app.chats.read(key, r.conversationId, { offset, limit: 400 }); msgs.push(...page.messages.filter((m) => !r.runId || m.runId === r.runId)); offset = page.nextOffset; } while (offset != null); } catch { continue; } }
         const answer = [...msgs].reverse().find((m) => m.role === 'assistant' && m.text);
         const asked = [...msgs].reverse().find((m) => m.role === 'user');
         if (!answer) continue;
@@ -557,6 +584,7 @@ export function buildOverlayHandlers(app, handlers) {
         out.push({
           id: r.id, projectId: p.id, project: p.name, nodeId: r.nodeId, who: r.nodeId ? (agentsOf(p.id).find((a) => a.id === r.nodeId)?.title || r.nodeId) : (r.engine || 'claude').replace(/^./, (c) => c.toUpperCase()),
           asked: asked ? redact(String(asked.text || '')).replace(/\s+/g, ' ').slice(0, 160) : '',
+          engine: r.engine, conversationId: r.conversationId, url: r.conversationId ? `#/projects/${p.id}/chat/${r.engine}/${r.conversationId}${r.nodeId ? `/${r.nodeId}` : ''}` : `#/projects/${p.id}/chat`,
           text: text.length > 1500 ? `${text.slice(0, 1500)}…` : text,
           file: file ? path.relative(p.path, file).split(path.sep).join('/') : null,
           at: r.at,
@@ -586,7 +614,7 @@ export function buildOverlayHandlers(app, handlers) {
       const p = current(typeof body?.projectId === 'string' ? body.projectId : null);
       if (!p) throw badRequest('No project yet.');
       const mode = ['auto', 'show', 'new'].includes(body?.mode) ? body.mode : 'auto';
-      const r = await openTerminal(p, mode);
+      const r = await openTerminal(p, mode, { engine: body?.engine, model: body?.model, reasoning: body?.reasoning, nodeId: body?.nodeId, conversationId: body?.conversationId });
       return { shown: Boolean(r.shown), opened: Boolean(r.opened), app: r.app || null, window: r.window || null, resumed: r.resumed || null, say: r.say };
     },
     // Open the project in your editor (Antigravity IDE, else VS Code), at the file the agent last worked on.
@@ -620,7 +648,9 @@ export function buildOverlayHandlers(app, handlers) {
       if (!cmd) return { command: 'none', projectId: project?.id || null };
       if (fromChat && (cmd.id === 'ask' || cmd.id === 'hide')) return { command: cmd.id, projectId: project?.id || null, passthrough: cmd.id === 'ask' ? cmd.rest : null };
       try {
-        const out = await run(cmd, project);
+        const selectedEngine = body?.engine;
+        if (selectedEngine && !app.engines.adapter(selectedEngine)) throw badRequest('Unknown command engine.');
+        const out = await run(cmd, project, selectedEngine);
         // in a chat box a command needs its slash, so the hints say it with one
         if (fromChat && out.say) {
           // only hints: "allow 1", "continue 2", "· new starts", "type open inbox" (never the words of a request)
